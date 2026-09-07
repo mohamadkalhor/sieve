@@ -68,3 +68,20 @@ test('nothing scrolls sideways at 390px', async ({ page }) => {
     expect(overflow, `${path} scrolls sideways at 390px`).toBe(false);
   }
 });
+
+test('the list still re-ranks with motion reduced', async ({ page }) => {
+  // FLIP is a nicety; the reorder is the function. With reduce-motion on, the
+  // animation has to collapse to nothing without taking the reorder with it.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/profiles/coder');
+
+  const list = page.locator('.live li');
+  await expect(list.first()).toBeVisible();
+  const before = await list.first().locator('.id').innerText();
+
+  const cost = page.locator('#w-cost');
+  await cost.fill('0.95');
+  await cost.dispatchEvent('input');
+
+  await expect(list.first().locator('.id')).not.toHaveText(before);
+});

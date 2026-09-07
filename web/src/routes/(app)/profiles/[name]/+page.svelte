@@ -12,6 +12,8 @@
   import Empty from '$lib/components/Empty.svelte';
   import WeightSlider from '$lib/components/WeightSlider.svelte';
   import { carriedBy, rankWithFloor, renormalise, weigh, type AxesByModel } from '$lib/rank/weigh';
+  import { duration, reducedMotion } from '$lib/motion/reduced';
+  import { flip } from 'svelte/animate';
 
   let profile = $state<Profile | null>(null);
   let ranking = $state<Ranking | null>(null);
@@ -223,7 +225,11 @@
       {/if}
       <ol class="live">
         {#each live as row, index (row.model_id)}
-          <li class:lead={index === 0} class:dim={index >= chainCut}>
+          <li
+            class:lead={index === 0}
+            class:dim={index >= chainCut}
+            animate:flip={{ duration: duration(240, $reducedMotion) }}
+          >
             <span class="pos num">{index + 1}</span>
             <span class="id mono">{row.model_id}</span>
             <ConfDots confidence={row.confidence} />

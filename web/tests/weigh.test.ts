@@ -140,3 +140,11 @@ describe('carriedBy', () => {
     expect(carriedBy({ a: 0.1 }, { a: 0.5 })).toBeNull();
   });
 });
+
+describe('reduced motion', () => {
+  it('collapses an animation to nothing when motion is not wanted', async () => {
+    const { duration } = await import('../src/lib/motion/reduced');
+    expect(duration(240, false)).toBe(240);
+    expect(duration(240, true)).toBe(0);
+  });
+});
