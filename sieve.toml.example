@@ -1,0 +1,65 @@
+# Copy to sieve.toml. Values here are examples; nothing secret ever lives in
+# this file -- a source names the environment variable that holds its key.
+
+[store]
+path = "data/sieve.db"
+
+[server]
+host = "127.0.0.1"
+port = 8110
+cors = []            # e.g. ["http://localhost:5173"] while developing the web app
+read_token = false   # true makes reads need a token with the `read` scope
+web = "web/build"    # served at / when the directory exists
+
+[paths]
+axes = "data/axes"
+profiles = "profiles"
+aliases = "data/aliases.yaml"
+out = "out"
+
+# --- sources ---------------------------------------------------------------
+
+[sources.aa_llm]
+enabled = true
+key_env = "ARTIFICIAL_ANALYSIS_API_KEY"
+modalities = ["llm"]
+
+[sources.aa_media]
+enabled = true
+key_env = "ARTIFICIAL_ANALYSIS_API_KEY"
+modalities = [
+  "text-to-image",
+  "image-editing",
+  "text-to-video",
+  "image-to-video",
+  "text-to-speech",
+]
+
+[sources.openrouter]
+enabled = true       # no key needed
+modalities = ["llm"]
+
+[sources.manual]
+enabled = true
+dir = "data/observations"
+
+# --- inventory: the models you can actually reach ---------------------------
+
+[inventories.gateway]
+kind = "openai_compat"
+base_url = "http://localhost:20128"
+token_env = "GATEWAY_TOKEN"
+
+[inventories.pinned]
+kind = "list"
+models = ["anthropic/claude-sonnet-5"]
+
+# --- targets: where chains go ----------------------------------------------
+
+[targets.out]
+kind = "file"
+dir = "out"
+
+[schedule]
+pull = "hourly"
+evaluate = "hourly"

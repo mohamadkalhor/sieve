@@ -99,7 +99,8 @@ def _profiles_module() -> Any:
 def load_profile(cfg: Config, name: str) -> Profile | None:
     for profile in _profiles_module().load_profiles(cfg.profiles_dir):
         if profile.name == name:
-            return profile
+            found: Profile = profile
+            return found
     return None
 
 

@@ -129,9 +129,7 @@ class Bridge:
         if spec is None:
             return {"error": {"code": "no_such_tool", "message": name}}
         path = spec["path"].format(**{k: arguments.get(k, "") for k in ("name", "profile")})
-        params = {
-            k: arguments[k] for k in spec.get("query", []) if arguments.get(k) is not None
-        }
+        params = {k: arguments[k] for k in spec.get("query", []) if arguments.get(k) is not None}
         body: Any = None
         key = spec.get("body")
         if key == "*":
@@ -140,9 +138,7 @@ class Bridge:
             body = arguments.get(key)
 
         transport = httpx.ASGITransport(app=self.app)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://sieve.local"
-        ) as client:
+        async with httpx.AsyncClient(transport=transport, base_url="http://sieve.local") as client:
             response = await client.request(
                 spec["method"], path, params=params, json=body, headers=self._headers()
             )
@@ -231,9 +227,7 @@ def build_server(bridge: Bridge | None = None) -> Any:
         """Report call outcomes back as telemetry. Needs the telemetry scope."""
         return await hub.call("report_outcome", {"events": events})
 
-    async def apply(
-        profiles: list[str] | None = None, targets: list[str] | None = None
-    ) -> Any:
+    async def apply(profiles: list[str] | None = None, targets: list[str] | None = None) -> Any:
         """Write the current chains to their targets. Needs the apply scope."""
         return await hub.call("apply", {"profiles": profiles, "targets": targets})
 
@@ -258,10 +252,7 @@ def main(transport: str = "stdio", host: str = "127.0.0.1", port: int = 8111) ->
     """Run the server: `stdio` for an editor, `http` for streamable HTTP."""
     server = build_server()
     if transport == "http":
-        server.settings.host = host  # type: ignore[attr-defined]
-        server.settings.port = port  # type: ignore[attr-defined]
-        server.run(transport="streamable-http")
+        server.run(transport="streamable-http", host=host, port=port)
     else:
         server.run(transport="stdio")
     return 0
-

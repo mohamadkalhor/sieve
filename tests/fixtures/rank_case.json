@@ -1,0 +1,483 @@
+{
+  "$comment": "Shared fixture for sieve/scoring/weigh.py and web/src/lib/rank/weigh.ts. Both must reproduce `expected` exactly, to 1e-6. Regenerate with tests/fixtures/make_rank_case.py; never hand-edit the expected block.",
+  "rules": {
+    "score": "sum over weighted axes of weight * value; an unmeasured axis contributes 0",
+    "confidence": "sum over weighted axes of weight * coverage",
+    "unweighted_axes": "axes absent from `weights` are ignored entirely (d, e, f here)",
+    "unmeasured_axis": "value null contributes 0 to the score and 0 to that axis's share of confidence -- the loss must be visible in `confidence`, never silent",
+    "min_confidence": "a model whose confidence is below policy.min_confidence is excluded with excluded_by = 'min_confidence' and keeps position 0",
+    "tie_break": "equal scores rank by model id ascending (m03 before m05)"
+  },
+  "profile": {
+    "name": "rank_case",
+    "modality": "llm",
+    "purpose": "the shared scoring fixture",
+    "weights": {
+      "a": 0.4,
+      "b": 0.3,
+      "c": 0.3
+    },
+    "policy": {
+      "min_confidence": 0.75,
+      "chain": 5
+    }
+  },
+  "models": [
+    {
+      "id": "m01",
+      "axes": {
+        "a": {
+          "value": 0.92,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.81,
+          "coverage": 1.0
+        },
+        "c": {
+          "value": 0.55,
+          "coverage": 1.0
+        },
+        "d": {
+          "value": 0.1,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.2,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.3,
+          "coverage": 1.0
+        }
+      }
+    },
+    {
+      "id": "m02",
+      "axes": {
+        "a": {
+          "value": 0.88,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.9,
+          "coverage": 1.0
+        },
+        "c": {
+          "value": 0.6,
+          "coverage": 1.0
+        },
+        "d": {
+          "value": 0.9,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.15,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.45,
+          "coverage": 1.0
+        }
+      }
+    },
+    {
+      "id": "m03",
+      "axes": {
+        "a": {
+          "value": 0.95,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.7,
+          "coverage": 1.0
+        },
+        "c": {
+          "value": 0.4,
+          "coverage": 1.0
+        },
+        "d": {
+          "value": 0.55,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.6,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.05,
+          "coverage": 1.0
+        }
+      }
+    },
+    {
+      "id": "m04",
+      "axes": {
+        "a": {
+          "value": 0.6,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.95,
+          "coverage": 1.0
+        },
+        "c": {
+          "value": 0.9,
+          "coverage": 1.0
+        },
+        "d": {
+          "value": 0.35,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.85,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.65,
+          "coverage": 1.0
+        }
+      }
+    },
+    {
+      "id": "m05",
+      "axes": {
+        "a": {
+          "value": 0.68,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.72,
+          "coverage": 1.0
+        },
+        "c": {
+          "value": 0.74,
+          "coverage": 1.0
+        },
+        "d": {
+          "value": 0.25,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.45,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.75,
+          "coverage": 1.0
+        }
+      }
+    },
+    {
+      "id": "m06",
+      "axes": {
+        "a": {
+          "value": 0.8,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.6,
+          "coverage": 1.0
+        },
+        "c": {
+          "value": 0.6,
+          "coverage": 1.0
+        },
+        "d": {
+          "value": 0.7,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.3,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.2,
+          "coverage": 1.0
+        }
+      }
+    },
+    {
+      "id": "m07",
+      "axes": {
+        "a": {
+          "value": 0.5,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.5,
+          "coverage": 1.0
+        },
+        "c": {
+          "value": 0.95,
+          "coverage": 1.0
+        },
+        "d": {
+          "value": 0.4,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.95,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.5,
+          "coverage": 1.0
+        }
+      }
+    },
+    {
+      "id": "m08",
+      "axes": {
+        "a": {
+          "value": 0.99,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.4,
+          "coverage": 1.0
+        },
+        "c": {
+          "value": 0.3,
+          "coverage": 1.0
+        },
+        "d": {
+          "value": 0.05,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.1,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.9,
+          "coverage": 1.0
+        }
+      }
+    },
+    {
+      "id": "m09",
+      "axes": {
+        "a": {
+          "value": 0.3,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.99,
+          "coverage": 1.0
+        },
+        "c": {
+          "value": 0.99,
+          "coverage": 1.0
+        },
+        "d": {
+          "value": 0.6,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.7,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.35,
+          "coverage": 1.0
+        }
+      }
+    },
+    {
+      "id": "m10",
+      "axes": {
+        "a": {
+          "value": 0.65,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.75,
+          "coverage": 1.0
+        },
+        "c": {
+          "value": 0.85,
+          "coverage": 1.0
+        },
+        "d": {
+          "value": 0.5,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.55,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.6,
+          "coverage": 1.0
+        }
+      }
+    },
+    {
+      "id": "m11",
+      "axes": {
+        "a": {
+          "value": 0.9,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.9,
+          "coverage": 1.0
+        },
+        "c": {
+          "value": null,
+          "coverage": 0.0
+        },
+        "d": {
+          "value": 0.8,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.4,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.55,
+          "coverage": 1.0
+        }
+      }
+    },
+    {
+      "id": "m12",
+      "axes": {
+        "a": {
+          "value": 0.85,
+          "coverage": 1.0
+        },
+        "b": {
+          "value": 0.8,
+          "coverage": 0.5
+        },
+        "c": {
+          "value": 0.78,
+          "coverage": 1.0
+        },
+        "d": {
+          "value": 0.45,
+          "coverage": 1.0
+        },
+        "e": {
+          "value": 0.5,
+          "coverage": 1.0
+        },
+        "f": {
+          "value": 0.4,
+          "coverage": 1.0
+        }
+      }
+    }
+  ],
+  "expected": {
+    "order": [
+      "m12",
+      "m02",
+      "m04",
+      "m01",
+      "m10",
+      "m09",
+      "m03",
+      "m05",
+      "m06",
+      "m07",
+      "m08"
+    ],
+    "scores": {
+      "m01": 0.776,
+      "m02": 0.802,
+      "m03": 0.71,
+      "m04": 0.795,
+      "m05": 0.71,
+      "m06": 0.68,
+      "m07": 0.635,
+      "m08": 0.606,
+      "m09": 0.714,
+      "m10": 0.74,
+      "m11": 0.63,
+      "m12": 0.814
+    },
+    "confidence": {
+      "m01": 1.0,
+      "m02": 1.0,
+      "m03": 1.0,
+      "m04": 1.0,
+      "m05": 1.0,
+      "m06": 1.0,
+      "m07": 1.0,
+      "m08": 1.0,
+      "m09": 1.0,
+      "m10": 1.0,
+      "m11": 0.7,
+      "m12": 0.85
+    },
+    "contributions": {
+      "m01": {
+        "a": 0.368,
+        "b": 0.243,
+        "c": 0.165
+      },
+      "m02": {
+        "a": 0.352,
+        "b": 0.27,
+        "c": 0.18
+      },
+      "m03": {
+        "a": 0.38,
+        "b": 0.21,
+        "c": 0.12
+      },
+      "m04": {
+        "a": 0.24,
+        "b": 0.285,
+        "c": 0.27
+      },
+      "m05": {
+        "a": 0.272,
+        "b": 0.216,
+        "c": 0.222
+      },
+      "m06": {
+        "a": 0.32,
+        "b": 0.18,
+        "c": 0.18
+      },
+      "m07": {
+        "a": 0.2,
+        "b": 0.15,
+        "c": 0.285
+      },
+      "m08": {
+        "a": 0.396,
+        "b": 0.12,
+        "c": 0.09
+      },
+      "m09": {
+        "a": 0.12,
+        "b": 0.297,
+        "c": 0.297
+      },
+      "m10": {
+        "a": 0.26,
+        "b": 0.225,
+        "c": 0.255
+      },
+      "m11": {
+        "a": 0.36,
+        "b": 0.27,
+        "c": 0.0
+      },
+      "m12": {
+        "a": 0.34,
+        "b": 0.24,
+        "c": 0.234
+      }
+    },
+    "excluded": {
+      "m11": "min_confidence"
+    }
+  }
+}
