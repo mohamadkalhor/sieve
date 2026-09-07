@@ -2,7 +2,7 @@
 
 A owns `tests/test_scoring*.py` and `tests/test_axes*.py`; B owns
 `tests/test_sources*.py` and `tests/test_catalog*.py`. This file covers only
-what CONTRACTS section 9 lists under negar-cl.
+what CONTRACTS section 9 lists under the integrator.
 """
 
 from __future__ import annotations

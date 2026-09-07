@@ -244,7 +244,7 @@ as `sieve/scoring/weigh.py` on the shared fixture `tests/fixtures/rank_case.json
 
 | owner | files |
 |---|---|
-| negar-cl | `sieve/contracts.py`, `sieve/cli.py`, `sieve/engine.py`, `sieve/api/**`, `sieve/mcp/**`, `sieve/store/**`, `pyproject.toml`, `sieve.toml.example`, `.env.example`, `CONTRACTS.md`, `tests/fixtures/rank_case.json`, `web/src/lib/types.ts` (generated) |
+| integrator | `sieve/contracts.py`, `sieve/cli.py`, `sieve/engine.py`, `sieve/api/**`, `sieve/mcp/**`, `sieve/store/**`, `pyproject.toml`, `sieve.toml.example`, `.env.example`, `CONTRACTS.md`, `tests/fixtures/rank_case.json`, `web/src/lib/types.ts` (generated) |
 | A · scoring (opus) | `sieve/axes/**`, `sieve/scoring/**`, `tests/test_axes*.py`, `tests/test_scoring*.py` |
 | B · sources (sonnet) | `sieve/catalog/**`, `sieve/sources/**`, `sieve/inventory/**`, `sieve/targets/{base,file,http}.py`, `sieve/profiles/**`, `tests/fixtures/{aa_llm,aa_media,openrouter,gateway}*.json`, `tests/test_sources*.py`, `tests/test_catalog*.py` |
 | C · web I (opus) | `web/` scaffold, `web/src/lib/{tokens,scroll,chart,api}/**`, `web/src/routes/(app)/{field,rankings,sources}/**`, `web/src/lib/components/{Rail,Kpi,Scatter,AxisBars,ConfDots}.svelte` |

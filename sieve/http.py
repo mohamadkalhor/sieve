@@ -20,7 +20,7 @@ import httpx
 
 from sieve.contracts import HttpResponse, RateLimit
 
-USER_AGENT = "sieve/0.1 (+https://github.com/mohamadkalhor/sieve)"
+USER_AGENT = "sieve/0.1"
 
 RETRY_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
