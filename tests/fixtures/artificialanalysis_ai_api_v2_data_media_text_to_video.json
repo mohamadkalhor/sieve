@@ -1,0 +1,108 @@
+{
+ "data": [
+  {
+   "slug": "veo-4",
+   "name": "Veo 4",
+   "model_creator": {
+    "slug": "google"
+   },
+   "elo": 1288,
+   "rank": 1,
+   "appearances": 4210,
+   "ci95": "-9/9",
+   "style_category": {
+    "Anime": 1250,
+    "Photoreal": 1301
+   },
+   "subject_matter_category": {
+    "Physics": 1274,
+    "Nature": 1290
+   },
+   "format_category": {
+    "Moving camera": 1268,
+    "Text": 1211
+   },
+   "pricing": {
+    "price_per_second": 0.35
+   }
+  },
+  {
+   "slug": "sora-3",
+   "name": "Sora 3",
+   "model_creator": {
+    "slug": "openai"
+   },
+   "elo": 1265,
+   "rank": 2,
+   "appearances": 3980,
+   "ci95": "-11/11",
+   "style_category": {
+    "Anime": 1272,
+    "Photoreal": 1259
+   },
+   "subject_matter_category": {
+    "Physics": 1240,
+    "Nature": 1266
+   },
+   "format_category": {
+    "Moving camera": 1249,
+    "Text": 1230
+   },
+   "pricing": {
+    "price_per_second": 0.45
+   }
+  },
+  {
+   "slug": "kling-3-5",
+   "name": "Kling 3 5",
+   "model_creator": {
+    "slug": "kuaishou"
+   },
+   "elo": 1201,
+   "rank": 3,
+   "appearances": 860,
+   "ci95": "-24/24",
+   "style_category": {
+    "Anime": 1210,
+    "Photoreal": 1188
+   },
+   "subject_matter_category": {
+    "Physics": 1176,
+    "Nature": 1205
+   },
+   "format_category": {
+    "Moving camera": 1194,
+    "Text": 1150
+   },
+   "pricing": {
+    "price_per_second": 0.12
+   }
+  },
+  {
+   "slug": "runway-gen5",
+   "name": "Runway Gen5",
+   "model_creator": {
+    "slug": "runway"
+   },
+   "elo": 1150,
+   "rank": 4,
+   "appearances": 320,
+   "ci95": "-40/38",
+   "style_category": {
+    "Anime": 1140,
+    "Photoreal": 1161
+   },
+   "subject_matter_category": {
+    "Physics": 1120,
+    "Nature": 1158
+   },
+   "format_category": {
+    "Moving camera": 1147,
+    "Text": 1099
+   },
+   "pricing": {
+    "price_per_second": 0.2
+   }
+  }
+ ]
+}

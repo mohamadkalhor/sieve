@@ -73,7 +73,9 @@ def cmd_pull(args: argparse.Namespace) -> int:
     for name in wanted:
         source_cfg = cfg.sources.get(name)
         if source_cfg is None:
-            _out(f"{name}: no such source in sieve.toml")
+            if name in cfg.inventories:
+                continue  # an inventory name; handled below
+            _out(f"{name}: no such source or inventory in sieve.toml")
             failures += 1
             continue
         try:
@@ -108,7 +110,49 @@ def cmd_pull(args: argparse.Namespace) -> int:
             _out(f"  warning: {warning}")
         if result.rate_limit.remaining is not None:
             _out(f"  rate limit remaining: {result.rate_limit.remaining}")
+
+    if not args.source or any(n in cfg.inventories for n in args.source):
+        failures += _refresh_inventories(cfg, store, http, args.source)
     return EXIT_ERROR if failures else EXIT_OK
+
+
+def _refresh_inventories(
+    cfg: Config, store: Store, http: Any, only: Sequence[str] | None = None
+) -> int:
+    """List every gateway, match each local id to the catalog, store the result.
+
+    An id that cannot be matched confidently keeps `model_id` None and shows up
+    on the Sources screen for a person to alias. It is never guessed at and
+    never dropped.
+    """
+    from sieve.catalog.aliases import load_aliases
+    from sieve.catalog.registry import Registry
+
+    wanted = [n for n in (only or cfg.inventories) if n in cfg.inventories]
+    if not wanted:
+        return 0
+
+    registry = Registry(load_aliases(cfg.aliases_file))
+    registry.extend(store.models())
+
+    failures = 0
+    for name in wanted:
+        inventory_cfg = cfg.inventories[name]
+        try:
+            inventory = plugins.load(plugins.INVENTORIES, inventory_cfg.kind)
+            found = inventory.list(inventory_cfg, http)
+        except Exception as exc:  # a gateway being down is not a crash
+            _out(f"{name}: {exc}")
+            failures += 1
+            continue
+        matched, unmatched = registry.attach(found)
+        store.set_reachable(name, matched + unmatched)
+        _out(f"{name}: {len(found)} reachable, {len(matched)} matched, {len(unmatched)} unmatched")
+        for item in unmatched[:5]:
+            _out(f"  unmatched: {item.local_id}")
+        if len(unmatched) > 5:
+            _out(f"  ... and {len(unmatched) - 5} more; see /v1/inventory?unmatched=true")
+    return failures
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -318,8 +362,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", default="sieve.toml", help="path to sieve.toml")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("pull", help="pull measurements from a source")
-    p.add_argument("source", nargs="*", help="source names; default every enabled source")
+    p = sub.add_parser("pull", help="pull measurements from a source, and list inventories")
+    p.add_argument("source", nargs="*", help="source or inventory names; default every enabled one")
     p.set_defaults(func=cmd_pull)
 
     p = sub.add_parser("check", help="validate axes, profiles and aliases")
