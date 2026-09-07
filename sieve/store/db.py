@@ -21,8 +21,8 @@ from sieve.contracts import (
     Decision,
     Modality,
     ModelRef,
-    ObsTable,
     Observation,
+    ObsTable,
     Price,
     Ranking,
     Reachable,
@@ -344,8 +344,7 @@ class Store:
         """Canonical model id -> the local ids that serve it."""
         out: dict[str, list[str]] = {}
         for r in self.db.execute(
-            "SELECT model_id, local_id FROM reachable WHERE model_id IS NOT NULL"
-            " ORDER BY local_id"
+            "SELECT model_id, local_id FROM reachable WHERE model_id IS NOT NULL ORDER BY local_id"
         ):
             out.setdefault(r["model_id"], []).append(r["local_id"])
         return out
