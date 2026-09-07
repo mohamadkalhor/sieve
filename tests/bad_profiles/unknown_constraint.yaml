@@ -1,0 +1,10 @@
+# `must_be_fast` is not a constraint; a typo here would otherwise be ignored,
+# and the profile would quietly rank models it was meant to exclude.
+name: bad_constraint
+modality: llm
+purpose: names a constraint that does not exist
+weights:
+  agentic_coding: 1.0
+require:
+  must_be_fast: true
+shape: {in: 1000, out: 500}

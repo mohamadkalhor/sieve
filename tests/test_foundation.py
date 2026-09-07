@@ -219,14 +219,16 @@ def test_write_routes_need_the_right_scope(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_unbuilt_routes_answer_501_with_the_shape(tmp_path: Path) -> None:
+    """A route whose owner module is absent names the owner and ships the shape,
+    so the web can be built against it before the code behind it exists."""
     app = create_app(default_config(tmp_path))
     with TestClient(app) as client:
-        response = client.get("/v1/profiles")
+        response = client.get("/v1/axes")  # sieve.axes.load is agent A's
         assert response.status_code == 501
         body = response.json()
         assert body["error"]["code"] == "not_built"
-        assert "owned by B" in body["error"]["message"]
-        assert body["shape"]["properties"]["weights"], "the contract shape travels with the 501"
+        assert "owned by A" in body["error"]["message"]
+        assert body["shape"]["properties"]["fields"], "the contract shape travels with the 501"
 
 
 # --------------------------------------------------------------------------- #

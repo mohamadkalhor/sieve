@@ -1,0 +1,8 @@
+# `vibes` is not an axis; sieve check must say so rather than ignore it.
+name: bad_axis
+modality: llm
+purpose: names an axis that does not exist
+weights:
+  agentic_coding: 0.5
+  vibes: 0.5
+shape: {in: 1000, out: 500}

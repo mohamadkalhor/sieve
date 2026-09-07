@@ -172,6 +172,7 @@ export interface PullResult {
   models?: ModelRef[];
   observations?: Observation[];
   prices?: Price[];
+  capabilities?: Record<string, Capability>;
   rate_limit?: RateLimit;
   warnings?: string[];
 }

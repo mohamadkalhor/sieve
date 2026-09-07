@@ -1,0 +1,8 @@
+# The weights add up to 0.8, so this profile would silently score everything low.
+name: bad_sum
+modality: llm
+purpose: weights that do not sum to one
+weights:
+  agentic_coding: 0.5
+  cost: 0.3
+shape: {in: 1000, out: 500}
