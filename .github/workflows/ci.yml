@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # No job may reach the network for data. Every source plays a recorded fixture.
+  SIEVE_FIXTURES: '1'
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run mypy
+      - run: uv run pytest -q
+
+      - name: types.ts is not stale
+        run: |
+          uv run sieve export-types
+          git diff --exit-code web/src/lib/types.ts
+
+      - name: axes and profiles validate
+        run: uv run sieve check
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - working-directory: web
+        run: pnpm lint
+
+      - working-directory: web
+        run: pnpm check
+
+      - working-directory: web
+        run: pnpm test
+
+      - working-directory: web
+        run: pnpm build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: web/build
+          retention-days: 7
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: [python, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - run: uv sync --frozen
+      - working-directory: web
+        run: pnpm install --frozen-lockfile
+      - working-directory: web
+        run: pnpm build
+
+      - name: load the fixtures and compute
+        env:
+          ARTIFICIAL_ANALYSIS_API_KEY: fixture-mode
+        run: |
+          cp sieve.toml.example sieve.toml
+          uv run sieve pull openrouter aa_llm aa_media
+          uv run sieve check
+          uv run sieve score --profile coder
+          uv run sieve plan --store
+
+      - working-directory: web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: playwright smoke against a real server
+        env:
+          SIEVE_TOKENS: 'ci:read,profiles:write,apply,telemetry:ci-secret'
+        working-directory: web
+        run: pnpm exec playwright test
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

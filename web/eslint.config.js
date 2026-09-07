@@ -12,5 +12,5 @@ export default [
     files: ['**/*.svelte'],
     languageOptions: { parserOptions: { parser: ts.parser } }
   },
-  { ignores: ['build/', '.svelte-kit/', 'node_modules/', 'src/lib/types.ts'] }
+  { ignores: ['build/', '.svelte-kit/', 'node_modules/', 'src/lib/types.ts', 'playwright-report/', 'test-results/'] }
 ];

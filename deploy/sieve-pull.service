@@ -1,0 +1,23 @@
+[Unit]
+Description=Sieve — pull sources and recompute chains
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/sieve
+WorkingDirectory=/opt/sieve
+# `plan` alone never writes to a target: a chain only ships on `sieve apply`,
+# or on a profile that has opted in with auto_apply.
+ExecStart=/opt/sieve/.venv/bin/sieve pull
+ExecStart=/opt/sieve/.venv/bin/sieve plan --store
+
+User=sieve
+Group=sieve
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/sieve/data /opt/sieve/out
+
+MemoryMax=400M

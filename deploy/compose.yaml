@@ -1,0 +1,36 @@
+services:
+  sieve:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: sieve:local
+    ports:
+      - '127.0.0.1:8110:8110'
+    environment:
+      # names only; put the values in a .env beside this file
+      ARTIFICIAL_ANALYSIS_API_KEY: ${ARTIFICIAL_ANALYSIS_API_KEY:-}
+      SIEVE_TOKENS: ${SIEVE_TOKENS:-}
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:-}
+      SIEVE_FIXTURES: ${SIEVE_FIXTURES:-}
+    volumes:
+      - sieve-data:/app/data
+      - sieve-out:/app/out
+      # so a profile the API edits survives a restart
+      - ../profiles:/app/profiles
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 400m
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8110/healthz').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  sieve-data:
+  sieve-out:

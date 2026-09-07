@@ -1,0 +1,40 @@
+[Unit]
+Description=Sieve — weighted model selection
+Documentation=https://github.com/mohamadkalhor/sieve
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+# Keys live here, not in sieve.toml. The leading `-` means the unit still
+# starts when the file is absent: OpenRouter needs no key.
+EnvironmentFile=-/etc/default/sieve
+WorkingDirectory=/opt/sieve
+ExecStart=/opt/sieve/.venv/bin/uvicorn sieve.api.app:app --host 127.0.0.1 --port 8110
+Restart=on-failure
+RestartSec=5
+
+User=sieve
+Group=sieve
+StateDirectory=sieve
+
+# It reads public APIs and writes one SQLite file. Nothing else is needed.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ReadWritePaths=/opt/sieve/data /opt/sieve/out /opt/sieve/profiles
+
+MemoryMax=400M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
