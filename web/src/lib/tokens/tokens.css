@@ -1,0 +1,38 @@
+/* PLAN section 8. Dark by design: one palette, no light variant to keep in step. */
+:root {
+  --bg: #0b0c10;
+  --panel: #13151b;
+  --panel2: #1a1d25;
+  --rule: #242833;
+  --ink: #ece8e1;
+  --muted: #7c8290;
+  --accent: #e9a23b; /* the decision */
+  --reach: #7fa6ff;  /* you can use this */
+  --good: #5dbb8a;
+  --warn: #e0704a;
+  --bad: #e05a5a;
+
+  --display: 'Fraunces', Georgia, serif;
+  --ui: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --rail: 168px;
+  --radius: 10px;
+}
+
+@theme {
+  --color-bg: #0b0c10;
+  --color-panel: #13151b;
+  --color-panel2: #1a1d25;
+  --color-rule: #242833;
+  --color-ink: #ece8e1;
+  --color-muted: #7c8290;
+  --color-accent: #e9a23b;
+  --color-reach: #7fa6ff;
+  --color-good: #5dbb8a;
+  --color-warn: #e0704a;
+  --color-bad: #e05a5a;
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-ui: 'Hanken Grotesk', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}

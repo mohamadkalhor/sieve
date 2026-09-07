@@ -325,9 +325,18 @@ def cmd_apply(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
+    import os
+
     import uvicorn
 
     cfg = _config(args)
+    # uvicorn imports `sieve.api.app:app` in a fresh module, so --config has to
+    # travel through the environment or the server would quietly read a
+    # different sieve.toml than the one the command was given.
+    config_path = Path(args.config)
+    if config_path.exists():
+        os.environ["SIEVE_CONFIG"] = str(config_path.resolve())
+
     uvicorn.run(
         "sieve.api.app:app",
         host=args.host or cfg.server.host,

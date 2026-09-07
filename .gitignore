@@ -18,3 +18,4 @@ test-results/
 playwright-report/
 .DS_Store
 uv.lock.bak
+web/node_modules/

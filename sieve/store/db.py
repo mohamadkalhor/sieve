@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
 from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -58,18 +59,48 @@ def _dt(raw: str) -> datetime:
 
 
 class Store:
-    """Everything that touches the database. Nothing else opens a connection."""
+    """Everything that touches the database. Nothing else opens a connection.
+
+    One connection per thread. FastAPI runs a sync endpoint in a threadpool, so
+    several requests really do read at the same time, and a single sqlite3
+    connection shared between them interleaves statements: the symptoms are
+    `InterfaceError: bad parameter or other API misuse` and rows that come back
+    empty. WAL lets those readers run concurrently without a lock.
+    """
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
-        if str(self.path) != ":memory:":
+        self._shared = str(self.path) == ":memory:"
+        if not self._shared:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(str(self.path), check_same_thread=False)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA foreign_keys=ON")
-        self.db.execute("PRAGMA busy_timeout=5000")
+        self._local = threading.local()
+        self._memory: sqlite3.Connection | None = None
+        self._all: list[sqlite3.Connection] = []
+        self._write_lock = threading.RLock()
         self.migrate()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(str(self.path), check_same_thread=False)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA busy_timeout=5000")
+        self._all.append(connection)
+        return connection
+
+    @property
+    def db(self) -> sqlite3.Connection:
+        """This thread's connection. An in-memory store keeps one, since a
+        second connection would be a second, empty database."""
+        if self._shared:
+            if self._memory is None:
+                self._memory = self._connect()
+            return self._memory
+        held: sqlite3.Connection | None = getattr(self._local, "db", None)
+        if held is None:
+            held = self._connect()
+            self._local.db = held
+        return held
 
     # ------------------------------------------------------------------ #
     # lifecycle
@@ -97,16 +128,24 @@ class Store:
         return applied
 
     def close(self) -> None:
-        self.db.close()
+        for connection in self._all:
+            with suppress(sqlite3.Error):
+                connection.close()
+        self._all.clear()
+        self._memory = None
+        self._local = threading.local()
 
     @contextmanager
     def tx(self) -> Iterator[sqlite3.Connection]:
-        try:
-            yield self.db
-        except Exception:
-            self.db.rollback()
-            raise
-        self.db.commit()
+        """One write, on this thread's connection. Writers serialise on WAL."""
+        connection = self.db
+        with self._write_lock:
+            try:
+                yield connection
+            except Exception:
+                connection.rollback()
+                raise
+            connection.commit()
 
     # ------------------------------------------------------------------ #
     # catalog

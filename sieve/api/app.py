@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -94,7 +94,25 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     web = cfg.path(cfg.server.web)
     if web.is_dir():
-        app.mount("/", StaticFiles(directory=str(web), html=True), name="web")
+        index = web / "index.html"
+
+        # The web app is a static SPA: the client owns routing, so every path
+        # the API does not claim has to serve the shell. Without this a deep
+        # link like /rankings/coder -- the link a person actually shares -- is
+        # a 404 from StaticFiles.
+        @app.get("/{path:path}", include_in_schema=False)
+        async def spa(path: str) -> Response:
+            candidate = (web / path).resolve()
+            if path and candidate.is_file() and candidate.is_relative_to(web.resolve()):
+                return FileResponse(candidate)
+            if index.is_file():
+                return FileResponse(index)
+            return JSONResponse(
+                status_code=404,
+                content={"error": {"code": "no_web_build", "message": "run pnpm build in web/"}},
+            )
+
+        app.mount("/", StaticFiles(directory=str(web)), name="web")
 
     return app
 
