@@ -46,14 +46,24 @@ Auth = Annotated[str | None, Header()]
 # --------------------------------------------------------------------------- #
 
 
-def store_of(request: Request) -> Store:
-    store: Store = request.app.state.store
-    return store
-
-
 def config_of(request: Request) -> Config:
-    cfg: Config = request.app.state.config
+    """The app's config, built on demand when the app runs without a lifespan
+    (an in-process ASGI call from the MCP bridge, or a sub-mounted app)."""
+    cfg: Config | None = getattr(request.app.state, "config", None)
+    if cfg is None:
+        from sieve.api.app import build_config
+
+        cfg = build_config()
+        request.app.state.config = cfg
     return cfg
+
+
+def store_of(request: Request) -> Store:
+    store: Store | None = getattr(request.app.state, "store", None)
+    if store is None:
+        store = Store(config_of(request).db_path)
+        request.app.state.store = store
+    return store
 
 
 def error(status: int, code: str, message: str, **extra: Any) -> JSONResponse:
