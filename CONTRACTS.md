@@ -23,7 +23,11 @@ class Observation(BaseModel):
     source: str             # "aa_llm", "openrouter", "manual", ...
     field: str              # source field name, verbatim, e.g. "terminalbench_v2_1", "elo:moving_camera"
     value: float
-    unit: str               # "index_0_100" | "fraction" | "elo" | "usd_per_1m_tokens" | "tokens_per_s" | "seconds" | "usd_per_image" | "usd_per_second" | "usd_per_1m_chars" | "count"
+    unit: str               # "index_0_100" | "fraction" | "elo" | "usd_per_1m_tokens" | "tokens_per_s" | "seconds" | "usd_per_image" | "usd_per_second" | "usd_per_1m_chars" | "count" | "usd_per_task"
+                            # "usd_per_task" is derived by the engine from a Price and a
+                            # profile's Shape, not published by any source: cost is the one
+                            # axis that depends on the profile, so it is injected per run as
+                            # `price:per_task` and read by a cost axis like any other field.
     n: int | None = None    # appearances / sample size
     ci95: float | None = None
     observed_at: datetime   # when the source published or was pulled
@@ -140,7 +144,12 @@ CI fails if it is stale.
 ```python
 class Source(Protocol):
     name: str; modality: list[Modality]; needs_key: bool
-    def pull(self, cfg: SourceConfig, http: HttpClient) -> PullResult   # models, observations, prices
+    def pull(self, cfg: SourceConfig, http: HttpClient) -> PullResult
+    # PullResult: models, observations, prices, capabilities, rate_limit, warnings.
+    # `capabilities: dict[model_id, Capability]` is how a catalogue that publishes
+    # what a model can do (OpenRouter's context_length, supported_parameters) reaches
+    # the `require:` gate. Without it only a gateway inventory could ever answer
+    # `tools: true` or `context_min`, and a model nobody serves yet is unjudgeable.
 class Inventory(Protocol):
     name: str
     def list(self, cfg: InventoryConfig, http: HttpClient) -> list[Reachable]
