@@ -218,17 +218,42 @@ def test_write_routes_need_the_right_scope(tmp_path: Path, monkeypatch: pytest.M
         assert telemetry.status_code == 200 and telemetry.json() == {"accepted": 1}
 
 
-def test_unbuilt_routes_answer_501_with_the_shape(tmp_path: Path) -> None:
-    """A route whose owner module is absent names the owner and ships the shape,
-    so the web can be built against it before the code behind it exists."""
+def test_the_not_built_envelope_names_the_owner_and_ships_the_shape() -> None:
+    """While a module was missing, its route answered 501 with the contract's
+    JSON schema, so the web could be built against it first. Every module has
+    landed now, so this asserts the mechanism rather than a live 501."""
+    from sieve.api.routes.v1 import not_built
+    from sieve.contracts import Axis
+
+    response = not_built(Axis, "A", "sieve.axes.load")
+    body = json.loads(bytes(response.body))
+    assert response.status_code == 501
+    assert body["error"]["code"] == "not_built"
+    assert "owned by A" in body["error"]["message"]
+    assert body["shape"]["properties"]["fields"], "the contract shape travels with the 501"
+
+
+def test_every_route_of_the_contract_answers(tmp_path: Path) -> None:
+    """CONTRACTS section 6, end to end. An empty store may answer 404; nothing
+    may answer 501 any more, and nothing may raise."""
     app = create_app(default_config(tmp_path))
+    reads = [
+        "/v1/modalities",
+        "/v1/axes",
+        "/v1/models",
+        "/v1/profiles",
+        "/v1/decisions",
+        "/v1/sources",
+        "/v1/inventory",
+        "/v1/rankings/coder",
+        "/v1/chains/coder",
+        "/v1/recommend?profile=coder",
+    ]
     with TestClient(app) as client:
-        response = client.get("/v1/axes")  # sieve.axes.load is agent A's
-        assert response.status_code == 501
-        body = response.json()
-        assert body["error"]["code"] == "not_built"
-        assert "owned by A" in body["error"]["message"]
-        assert body["shape"]["properties"]["fields"], "the contract shape travels with the 501"
+        for path in reads:
+            response = client.get(path)
+            assert response.status_code in (200, 404), f"{path} -> {response.status_code}"
+            assert response.status_code != 501, f"{path} still answers not_built"
 
 
 # --------------------------------------------------------------------------- #
