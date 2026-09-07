@@ -34,6 +34,16 @@ MIGRATIONS = Path(__file__).parent / "migrations"
 TELEMETRY_RETENTION_DAYS = 30
 
 
+def _merge_capability(base: Capability, extra: Capability) -> Capability:
+    """Fill the gaps in `base` from `extra`; what `base` states already wins."""
+    update = {
+        field: getattr(extra, field)
+        for field in Capability.model_fields
+        if getattr(base, field) in (None, []) and getattr(extra, field) not in (None, [])
+    }
+    return base.model_copy(update=update) if update else base
+
+
 def now() -> datetime:
     return datetime.now(UTC)
 
@@ -298,6 +308,35 @@ class Store:
         for r in rows:
             table.add(self._observation(r))
         return table
+
+    # ------------------------------------------------------------------ #
+    # capabilities (what a source says a model can do)
+    # ------------------------------------------------------------------ #
+
+    def set_capabilities(self, source: str, modality: Modality, caps: dict[str, Capability]) -> int:
+        stamp = _iso(now())
+        rows = 0
+        with self.tx() as db:
+            for model_id, capability in caps.items():
+                db.execute(
+                    "INSERT OR REPLACE INTO capabilities (model_id, modality, source,"
+                    " capability, seen_at) VALUES (?,?,?,?,?)",
+                    (model_id, modality, source, capability.model_dump_json(), stamp),
+                )
+                rows += 1
+        return rows
+
+    def capabilities(self, modality: Modality) -> dict[str, Capability]:
+        """What every source says, merged; a later source fills only the gaps."""
+        out: dict[str, Capability] = {}
+        for r in self.db.execute(
+            "SELECT model_id, capability FROM capabilities WHERE modality=? ORDER BY source",
+            (modality,),
+        ):
+            found = Capability.model_validate_json(r["capability"])
+            held = out.get(r["model_id"])
+            out[r["model_id"]] = found if held is None else _merge_capability(held, found)
+        return out
 
     # ------------------------------------------------------------------ #
     # inventory

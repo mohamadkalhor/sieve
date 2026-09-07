@@ -299,6 +299,9 @@ class PullResult(_Model):
     models: list[ModelRef] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)
     prices: list[Price] = Field(default_factory=list)
+    #: model_id -> what the source says the model can do. Never from a
+    #: benchmark: only a catalogue that publishes it (OpenRouter today).
+    capabilities: dict[str, Capability] = Field(default_factory=dict)
     rate_limit: RateLimit = Field(default_factory=RateLimit)
     warnings: list[str] = Field(default_factory=list)
 

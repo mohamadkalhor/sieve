@@ -90,6 +90,16 @@ def cmd_pull(args: argparse.Namespace) -> int:
         store.upsert_models(result.models)
         added = store.add_observations(result.observations, snapshot=snapshot)
         priced = store.add_prices(result.prices)
+        for modality in {m.modality for m in result.models} or set(source_cfg.modalities):
+            store.set_capabilities(
+                name,
+                modality,
+                {
+                    model_id: capability
+                    for model_id, capability in result.capabilities.items()
+                    if any(m.id == model_id and m.modality == modality for m in result.models)
+                },
+            )
         _out(
             f"{name}: {len(result.models)} models, {added} new observations "
             f"({len(result.observations)} seen), {priced} prices"
