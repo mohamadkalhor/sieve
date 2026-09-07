@@ -1,5 +1,7 @@
 # Sieve
 
+[![CI](https://github.com/mohamadkalhor/sieve/actions/workflows/ci.yml/badge.svg)](https://github.com/mohamadkalhor/sieve/actions/workflows/ci.yml)
+
 Weighted model selection for agent fleets — language, image, video, speech and
 music models.
 
