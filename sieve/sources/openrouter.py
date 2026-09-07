@@ -111,7 +111,8 @@ class OpenRouterSource:
             return result
 
         body = response.body if isinstance(response.body, dict) else {}
-        entries = body.get("data") if isinstance(body.get("data"), list) else []
+        raw = body.get("data")
+        entries: list[Any] = raw if isinstance(raw, list) else []
         if not entries:
             result.warnings.append("openrouter: the payload carried no `data` list")
 
