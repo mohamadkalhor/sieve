@@ -1,0 +1,38 @@
+1xnegar-cl opus
+
+SIEVE, phase 1 — a new open-source web tool: weighted model selection for agent fleets
+(LLM + image + video + speech + music), pulling Artificial Analysis / OpenRouter / user
+sources, scoring per profile, exporting chains to gateways, steerable by agents via API
+and MCP. Independent project: nothing from any other product of ours goes in.
+
+Repo: https://github.com/mohamadkalhor/sieve   (clone it; branch main)
+
+READ IN THIS ORDER, all of it, before writing code:
+  1. briefs/00-READ-FIRST.md   — your order of work: foundation, fan-out, integrate, report
+  2. PLAN.md                   — what it is, sources, axes, profiles, scoring, API, web, phases
+  3. CONTRACTS.md              — types, plugin interfaces, storage, config, API, ownership map
+  4. briefs/A.md … E.md        — one brief per agent you fan out
+
+THE SHAPE OF THE WORK
+  Step 1  you alone: contracts.py, store, cli/engine/api/mcp skeletons, export-types,
+          the rank_case fixture, HANDOFF.md. Push. (00-READ-FIRST §1, items 1–11)
+  Step 2  fan out FIVE agents in parallel, each with its brief + CONTRACTS.md:
+            A scoring & axes ............. opus
+            B catalog/sources/inventory .. sonnet
+            C web scaffold/Field/Rankings  opus
+            D web Profiles/Chains/rank ... opus
+            E axes+profiles data/docs/CI . sonnet
+          Each owns only the files in CONTRACTS §9, commits per unit of work, writes
+          cross-owner needs in briefs/HANDOFF.md, and reports when its "Done when" is green.
+  Step 3  integrate: sieve check → pull → score → plan → serve + web; all validators.
+  Step 4  push main; complete this card AND `relay say --as negar-cl` with the report
+          format in 00-READ-FIRST §4 (commit, PLAN §12 acceptance pass/fail with proof,
+          unfinished items verbatim, decisions you took, any CONTRACTS change as a diff).
+
+RULES THAT DO NOT BEND
+  - No secret, hostname, person or product name in the tree. Keys from env only.
+  - Do not point a target at a live gateway; `sieve apply` only against the file target.
+  - The web reads only /v1. types.ts is generated, never edited.
+  - Missing benchmark = declared penalty + coverage loss, never a silent zero.
+  - Every profile change, switch, hold and apply is a decision row with an actor.
+  - On quota: push what compiles, QUOTA REACHED + last step in HANDOFF.md, report, stop.
