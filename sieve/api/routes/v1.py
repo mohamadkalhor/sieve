@@ -351,13 +351,17 @@ def evaluate(request: Request, name: str, authorization: Auth = None, _: Read = 
 # --------------------------------------------------------------------------- #
 
 
-@router.get("/rankings/{profile}")
-def get_ranking(request: Request, profile: str, _: Read = None) -> Any:
-    store = store_of(request)
+def ranking_for(request: Request, profile: str) -> Ranking | JSONResponse:
+    """The stored ranking, or one computed on the spot.
+
+    A fresh install has pulled but not yet run `sieve plan --store`, and a
+    gateway asking for a recommendation then should get an answer rather than a
+    404 telling it to run a command it has never heard of.
+    """
+    store, cfg = store_of(request), config_of(request)
     stored = store.ranking(profile)
     if stored is not None:
         return stored
-    cfg = config_of(request)
     try:
         found = load_profile(cfg, profile)
     except OwnerMissingError:
@@ -365,10 +369,17 @@ def get_ranking(request: Request, profile: str, _: Read = None) -> Any:
     if found is None:
         return error(404, "not_found", f"no profile {profile!r}")
     deps = EngineDeps()
-    ranking = rank_profile(cfg, store, found, deps=deps, snapshot=store.latest_snapshot() or "none")
-    if deps.warnings and not ranking.ranks:
+    computed = rank_profile(
+        cfg, store, found, deps=deps, snapshot=store.latest_snapshot() or "none"
+    )
+    if deps.warnings and not computed.ranks:
         return not_built(Ranking, "A", "sieve.scoring.weigh")
-    return ranking
+    return computed
+
+
+@router.get("/rankings/{profile}")
+def get_ranking(request: Request, profile: str, _: Read = None) -> Any:
+    return ranking_for(request, profile)
 
 
 @router.get("/chains/{profile}")
@@ -387,9 +398,15 @@ def recommend(
 ) -> Any:
     store = store_of(request)
     chain = store.chain(profile)
-    ranking = store.ranking(profile)
-    if chain is None and ranking is None:
-        return error(404, "not_found", f"nothing computed for {profile!r} yet")
+
+    found = ranking_for(request, profile)
+    if isinstance(found, JSONResponse):
+        if chain is None:
+            return found
+        ranking = None
+    else:
+        ranking = found
+
     models: list[dict[str, Any]] = []
     if ranking is not None:
         for rank in ranking.ranks:

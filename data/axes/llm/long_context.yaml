@@ -1,0 +1,12 @@
+# The context window itself is a constraint (`require: context_min`), not an
+# axis: a model either fits your input or it does not.
+
+name: long_context
+modality: llm
+label: "Long context"
+describes: "readers and summarisers working over a lot of text at once"
+fields:
+  - {source: aa_llm, field: lcr, weight: 1.0}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

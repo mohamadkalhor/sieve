@@ -1,0 +1,12 @@
+
+name: math
+modality: llm
+label: "Mathematics"
+describes: "quantitative work"
+fields:
+  - {source: aa_llm, field: artificial_analysis_math_index, weight: 0.4}
+  - {source: aa_llm, field: aime_25, weight: 0.35}
+  - {source: aa_llm, field: math_500, weight: 0.25}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

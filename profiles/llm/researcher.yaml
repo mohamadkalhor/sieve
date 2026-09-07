@@ -1,0 +1,16 @@
+name: researcher
+modality: llm
+purpose: "multi-step research loops that call tools and read a lot"
+weights:
+  agentic_tools: 0.35
+  reasoning: 0.2
+  long_context: 0.2
+  knowledge: 0.15
+  cost: 0.1
+require:
+  tools: true
+  context_min: 200000
+shape: {in: 60000, out: 3000, cached: 0.3}
+policy:
+  margin: 4.0
+  chain: 5

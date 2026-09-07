@@ -1,0 +1,11 @@
+
+name: agentic_tools
+modality: llm
+label: "Agentic tool use"
+describes: "multi-step tool use: research loops, assistants that act"
+fields:
+  - {source: aa_llm, field: tau_banking, weight: 0.5}
+  - {source: aa_llm, field: tau2, weight: 0.5}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

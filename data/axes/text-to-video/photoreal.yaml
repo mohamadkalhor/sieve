@@ -1,0 +1,12 @@
+# Generated from the categories the source publishes. Delete it if
+# Photoreal is not a category you choose models on.
+
+name: photoreal
+modality: text-to-video
+label: "Photoreal"
+describes: "Elo within the Photoreal category only"
+fields:
+  - {source: aa_media, field: elo:photoreal, weight: 1.0}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

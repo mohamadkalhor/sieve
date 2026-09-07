@@ -1,0 +1,17 @@
+name: video_product_shot
+modality: text-to-video
+purpose: "short product clips with a moving camera and readable text"
+weights:
+  quality: 0.35
+  moving_camera: 0.25
+  text: 0.2
+  maturity: 0.1
+  cost: 0.1
+require:
+  min_appearances: 500
+shape: {seconds: 8}
+policy:
+  margin: 15.0
+  max_tenure_days: 30
+  chain: 3
+  min_confidence: 0.5

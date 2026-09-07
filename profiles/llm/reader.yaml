@@ -1,0 +1,13 @@
+name: reader
+modality: llm
+purpose: "summarising and answering over a large input"
+weights:
+  long_context: 0.45
+  cost: 0.35
+  speed: 0.2
+require:
+  context_min: 200000
+shape: {in: 200000, out: 1500, cached: 0.5}
+policy:
+  margin: 4.0
+  chain: 5

@@ -1,0 +1,12 @@
+name: quick_chat
+modality: llm
+purpose: "short interactive turns where waiting is the worst outcome"
+weights:
+  intelligence: 0.35
+  cost: 0.3
+  latency: 0.25
+  instruction: 0.1
+shape: {in: 1500, out: 400}
+policy:
+  margin: 3.0
+  chain: 5

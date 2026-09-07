@@ -23,6 +23,7 @@ from sieve.contracts import (
     Decision,
     EngineResult,
     Modality,
+    Observation,
     ObsTable,
     Profile,
     Rank,
@@ -52,6 +53,14 @@ def _optional(module: str, owner: str) -> Any:
         if exc.name and not module.startswith(str(exc.name)):
             raise
         raise OwnerMissingError(module, owner) from exc
+
+
+def _overlay(base: Capability | None, gateway: Capability) -> Capability:
+    """The gateway wins where it speaks: it describes this deployment."""
+    if base is None:
+        return gateway
+    stated = gateway.model_dump(exclude_none=True, exclude_defaults=True)
+    return base.model_copy(update=stated) if stated else base
 
 
 class _AxesModule(Protocol):
@@ -143,6 +152,44 @@ def passes_constraints(
     return None
 
 
+#: the synthetic source and field a `cost` axis reads.
+COST_SOURCE = "price"
+COST_FIELD = "per_task"
+
+
+def add_cost_observations(obs: ObsTable, profile: Profile, at: datetime) -> dict[str, float]:
+    """Put `price:per_task` into the table so a cost axis can rank it.
+
+    Cost is the one axis that cannot be computed once per modality: it is the
+    published price *times this profile's shape*, so a reader paying for 200k
+    input tokens and a chat paying for 2k do not share a cost ranking. The
+    engine therefore derives it per profile and injects it as an observation,
+    which keeps `sieve/axes` free of prices and shapes.
+    """
+    from sieve.scoring.weigh import cost_per_task
+
+    costs: dict[str, float] = {}
+    for model_id in obs.models():
+        price = obs.price(model_id)
+        cost = cost_per_task(price, profile.shape)
+        if cost is None or cost <= 0:
+            continue
+        costs[model_id] = cost
+        obs.add(
+            Observation(
+                model_id=model_id,
+                modality=profile.modality,
+                source=COST_SOURCE,
+                field=COST_FIELD,
+                value=cost,
+                unit="usd_per_task",
+                observed_at=at,
+                pulled_at=at,
+            )
+        )
+    return costs
+
+
 def _appearances(obs: ObsTable, model_id: str) -> int | None:
     for bucket in (obs.latest.get(model_id) or {}).values():
         if bucket.field == "elo" and bucket.n is not None:
@@ -167,8 +214,15 @@ def rank_profile(
     """One profile, scored end to end. Empty (with warnings) until A has landed."""
     at = at or datetime.now(UTC)
     obs = store.obs_table(profile.modality)
+    costs = add_cost_observations(obs, profile, at)
     local = store.local_ids()
-    caps = {r.model_id: r.capability for r in store.reachable(unmatched=False) if r.model_id}
+
+    # what a source publishes about the model, with the gateway's own view of
+    # this deployment laid over the top
+    caps = dict(store.capabilities(profile.modality))
+    for reachable in store.reachable(unmatched=False):
+        if reachable.model_id:
+            caps[reachable.model_id] = _overlay(caps.get(reachable.model_id), reachable.capability)
 
     axes_load, axes_compute, weigh_mod = deps.axes_load, deps.axes_compute, deps.weigh
     if axes_load is None or axes_compute is None or weigh_mod is None:
@@ -249,7 +303,7 @@ def rank_profile(
                 health=health_value,
                 final=score * health_value,
                 axes=axis_scores,
-                cost_per_task=None,
+                cost_per_task=costs.get(model_id),
                 dominated_by=dominated.get(model_id),
                 excluded_by=excluded.get(model_id)
                 or ("min_confidence" if confidence < profile.policy.min_confidence else None),

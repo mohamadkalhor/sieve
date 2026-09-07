@@ -1,0 +1,12 @@
+# neg_log because the difference between 0.5 s and 1 s is felt, and the
+# difference between 20 s and 21 s is not.
+
+name: latency
+modality: llm
+label: "Latency"
+describes: "how long before the first token arrives; interactive roles feel this"
+fields:
+  - {source: aa_llm, field: median_time_to_first_token_seconds, weight: 1.0, transform: neg_log}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

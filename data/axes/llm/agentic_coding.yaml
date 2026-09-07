@@ -1,0 +1,16 @@
+# The livebench field is phase 2: it is ignored until that source exists,
+# and starts counting on its own the day the first observation lands.
+
+name: agentic_coding
+modality: llm
+label: "Agentic coding"
+describes: "end-to-end software tasks in a terminal or a repository"
+fields:
+  - {source: aa_llm, field: terminalbench_v2_1, weight: 0.5}
+  - {source: aa_llm, field: terminalbench_hard, weight: 0.2}
+  - {source: aa_llm, field: artificial_analysis_coding_index, weight: 0.2}
+  - {source: aa_llm, field: livecodebench, weight: 0.1}
+  - {source: livebench, field: coding, weight: 0.3, phase: 2}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

@@ -45,6 +45,9 @@ Unit = Literal[
     "usd_per_second",
     "usd_per_1m_chars",
     "count",
+    #: what one task costs at a profile's shape -- derived from a Price and a
+    #: Shape by the engine, not published by any source.
+    "usd_per_task",
 ]
 
 Transform = Literal["identity", "neg_log", "log", "invert"]

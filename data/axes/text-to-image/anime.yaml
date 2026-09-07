@@ -1,0 +1,12 @@
+# Generated from the categories the source publishes. Delete it if
+# Anime is not a category you choose models on.
+
+name: anime
+modality: text-to-image
+label: "Anime"
+describes: "Elo within the Anime category only"
+fields:
+  - {source: aa_media, field: elo:anime, weight: 1.0}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

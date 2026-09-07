@@ -1,0 +1,14 @@
+name: reasoner
+modality: llm
+purpose: "hard problems where thinking time is worth paying for"
+weights:
+  reasoning: 0.5
+  math: 0.2
+  intelligence: 0.2
+  cost: 0.1
+require:
+  reasoning: true
+shape: {in: 4000, out: 6000}
+policy:
+  margin: 4.0
+  chain: 4

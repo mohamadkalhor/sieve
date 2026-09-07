@@ -88,6 +88,10 @@ class Matcher:
 
         self._alias_norm = {normalise(a): c for a, c in self.aliases.items()}
 
+    def knows(self, model_id: str) -> bool:
+        """True when this id is already canonical in the catalog."""
+        return model_id in self._by_id
+
     def match(self, local_id: str) -> Match:
         """`(model_id, confidence)` for a gateway id, or a falsy Match."""
         if local_id in self._by_id:

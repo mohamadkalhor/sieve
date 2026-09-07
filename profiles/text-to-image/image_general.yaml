@@ -1,0 +1,15 @@
+name: image_general
+modality: text-to-image
+purpose: "everyday image generation"
+weights:
+  quality: 0.7
+  maturity: 0.2
+  cost: 0.1
+require:
+  min_appearances: 500
+shape: {images: 1}
+policy:
+  margin: 15.0
+  max_tenure_days: 30
+  chain: 3
+  min_confidence: 0.5

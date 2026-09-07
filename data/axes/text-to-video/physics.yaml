@@ -1,0 +1,12 @@
+# Generated from the categories the source publishes. Delete it if
+# Physics is not a category you choose models on.
+
+name: physics
+modality: text-to-video
+label: "Physics"
+describes: "Elo within the Physics category only"
+fields:
+  - {source: aa_media, field: elo:physics, weight: 1.0}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

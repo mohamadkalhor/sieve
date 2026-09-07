@@ -1,0 +1,13 @@
+name: vision
+modality: llm
+purpose: "reading images: screenshots, documents, photographs"
+weights:
+  intelligence: 0.5
+  cost: 0.3
+  latency: 0.2
+require:
+  input_modalities: [image]
+shape: {in: 4000, out: 800}
+policy:
+  margin: 4.0
+  chain: 4

@@ -1,0 +1,12 @@
+# Generated from the categories the source publishes. Delete it if
+# Text is not a category you choose models on.
+
+name: text
+modality: text-to-image
+label: "Text"
+describes: "Elo within the Text category only"
+fields:
+  - {source: aa_media, field: elo:text, weight: 1.0}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

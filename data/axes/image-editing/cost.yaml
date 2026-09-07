@@ -1,0 +1,13 @@
+# `price:per_task` is derived by the engine from the published price and
+# the profile's shape. The axis exists even where the source publishes no
+# price -- it then reports unmeasured, and the coverage loss is visible.
+
+name: cost
+modality: image-editing
+label: "Cost"
+describes: "what one task costs at this profile's shape (per image)"
+fields:
+  - {source: price, field: per_task, weight: 1.0, transform: neg_log}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

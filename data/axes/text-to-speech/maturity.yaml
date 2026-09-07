@@ -1,0 +1,14 @@
+# Not a measure of quality. It is how much to trust the quality number:
+# appearances on a log scale, and the confidence interval inverted so a
+# narrow one scores high.
+
+name: maturity
+modality: text-to-speech
+label: "Maturity"
+describes: "how settled the score is: a model with 200 votes and a wide interval is not a safe primary"
+fields:
+  - {source: aa_media, field: appearances, weight: 0.6, transform: log}
+  - {source: aa_media, field: ci95, weight: 0.4, transform: invert}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

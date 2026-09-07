@@ -1,0 +1,10 @@
+
+name: instruction
+modality: llm
+label: "Instruction following"
+describes: "following a brief exactly: judges, writers, structured output"
+fields:
+  - {source: aa_llm, field: ifbench, weight: 1.0}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

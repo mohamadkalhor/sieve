@@ -1,0 +1,12 @@
+
+name: reasoning
+modality: llm
+label: "Reasoning"
+describes: "hard science and the roles that need to think before answering"
+fields:
+  - {source: aa_llm, field: gpqa, weight: 0.4}
+  - {source: aa_llm, field: hle, weight: 0.3}
+  - {source: aa_llm, field: scicode, weight: 0.3}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

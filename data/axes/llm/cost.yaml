@@ -1,0 +1,14 @@
+# `price:per_task` is derived by the engine from the published price and the
+# profile's shape, so a reader paying for 200k input tokens and a chat paying
+# for 2k do not share one cost ranking. neg_log: the gap from $0.10 to $1.00
+# matters far more than the gap from $10 to $11.
+
+name: cost
+modality: llm
+label: "Cost"
+describes: "what one task costs at this profile's shape"
+fields:
+  - {source: price, field: per_task, weight: 1.0, transform: neg_log}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

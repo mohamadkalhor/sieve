@@ -1,0 +1,27 @@
+# The seat that changes most often, so it has the tightest margin: a coding
+# agent feels a real difference quickly, and the work is expensive enough to
+# be worth switching for.
+
+name: coder
+modality: llm
+purpose: "agentic coding inside a repository"
+weights:
+  agentic_coding: 0.45
+  cost: 0.2
+  agentic_tools: 0.1
+  reasoning: 0.1
+  long_context: 0.1
+  latency: 0.05
+require:
+  tools: true
+  reasoning: true
+  context_min: 200000
+  min_axis: {agentic_coding: 0.5}
+shape: {in: 30000, out: 4000, cached: 0.5}
+policy:
+  margin: 3.0
+  max_tenure_days: 14
+  min_confidence: 0.75
+  chain: 5
+  suspend_below_health: 0.75
+  auto_apply: false

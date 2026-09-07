@@ -1,0 +1,17 @@
+# A judge that drifts is worse than a judge that is slightly weaker, so
+# instruction-following outweighs raw capability, and cost is left out
+# entirely: judging is cheap next to the work being judged.
+
+name: judge
+modality: llm
+purpose: "scoring or classifying against a rubric, exactly as written"
+weights:
+  instruction: 0.4
+  reasoning: 0.3
+  intelligence: 0.3
+require:
+  structured_output: true
+shape: {in: 8000, out: 500}
+policy:
+  margin: 4.0
+  chain: 4

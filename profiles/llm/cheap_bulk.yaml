@@ -1,0 +1,14 @@
+# Volume work: a small quality difference is not worth a large bill, so the
+# margin is wide and cost carries half the weight.
+
+name: cheap_bulk
+modality: llm
+purpose: "high-volume work where the cheapest adequate model wins"
+weights:
+  cost: 0.5
+  intelligence: 0.3
+  speed: 0.2
+shape: {in: 2000, out: 500}
+policy:
+  margin: 5.0
+  chain: 5

@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 
 from sieve.catalog.match import MIN_CONFIDENCE, Match, Matcher
-from sieve.contracts import Modality, ModelRef, Reachable
+from sieve.contracts import Modality, ModelRef, PullResult, Reachable
 
 _SEPARATORS = re.compile(r"[\s_]+")
 
@@ -132,3 +132,64 @@ def model_ref(
             release_date.astimezone(UTC).date() if isinstance(release_date, datetime) else None
         ),
     )
+
+
+def merge_pull(
+    result: PullResult,
+    known_ids: list[str],
+    aliases: dict[str, str] | None = None,
+    *,
+    min_confidence: float = 0.9,
+) -> tuple[PullResult, dict[str, str]]:
+    """Fold a pull onto ids the catalog already holds.
+
+    Artificial Analysis calls a model `openai/gpt-5-2` and OpenRouter calls it
+    `openai/gpt-5.2`. Left alone that is two catalog records: one carrying the
+    benchmarks and one carrying the price and the capabilities, and a profile
+    that asks for `tools: true` silently drops the benchmarked one.
+
+    So a pull's ids are matched against what the catalog already knows before
+    anything is stored. The id seen first stays canonical and the newcomer
+    becomes an alias -- deterministic, and visible in the model's alias list.
+    The bar is deliberately higher than the matcher's own floor: a wrong merge
+    fuses two different models, which is far worse than two records a person
+    can alias by hand.
+
+    Returns the rewritten pull and `{new id: canonical id}` for what was folded.
+    """
+    if not known_ids:
+        return result, {}
+
+    matcher = Matcher(known_ids, aliases)
+    rewrite: dict[str, str] = {}
+    for model in result.models:
+        if matcher.knows(model.id):
+            continue
+        found = matcher.match(model.id)
+        if found.model_id and found.confidence >= min_confidence:
+            rewrite[model.id] = found.model_id
+
+    if not rewrite:
+        return result, {}
+
+    folded = result.model_copy(deep=True)
+    folded.models = [
+        m.model_copy(
+            update={
+                "id": rewrite[m.id],
+                "aliases": sorted({*m.aliases, m.id} - {rewrite[m.id]}),
+            }
+        )
+        if m.id in rewrite
+        else m
+        for m in folded.models
+    ]
+    for observation in folded.observations:
+        observation.model_id = rewrite.get(observation.model_id, observation.model_id)
+    for price in folded.prices:
+        price.model_id = rewrite.get(price.model_id, price.model_id)
+    folded.capabilities = {
+        rewrite.get(model_id, model_id): capability
+        for model_id, capability in folded.capabilities.items()
+    }
+    return folded, rewrite

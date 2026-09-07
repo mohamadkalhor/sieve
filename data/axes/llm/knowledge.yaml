@@ -1,0 +1,11 @@
+
+name: knowledge
+modality: llm
+label: "Knowledge"
+describes: "breadth of facts"
+fields:
+  - {source: aa_llm, field: mmlu_pro, weight: 0.6}
+  - {source: aa_llm, field: hle, weight: 0.4}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

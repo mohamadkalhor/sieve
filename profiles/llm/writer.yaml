@@ -1,0 +1,16 @@
+# A long tenure on purpose: swapping the writer mid-project changes the
+# voice, which costs more than the points gained.
+
+name: writer
+modality: llm
+purpose: "long-form prose to a brief"
+weights:
+  instruction: 0.4
+  intelligence: 0.3
+  knowledge: 0.2
+  cost: 0.1
+shape: {in: 3000, out: 2000}
+policy:
+  margin: 5.0
+  max_tenure_days: 30
+  chain: 4

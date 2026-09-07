@@ -1,0 +1,9 @@
+name: quality
+modality: text-to-image
+label: "Quality"
+describes: "human-preference Elo across the whole arena"
+fields:
+  - {source: aa_media, field: elo, weight: 1.0}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

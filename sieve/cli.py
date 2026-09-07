@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from sieve import plugins
+from sieve.catalog.registry import merge_pull
 from sieve.config import Config, default_config, load_config
 from sieve.contracts import Profile
 from sieve.engine import OwnerMissingError, apply_targets, run
@@ -88,6 +89,10 @@ def cmd_pull(args: argparse.Namespace) -> int:
             _out(f"{name}: needs {source_cfg.key_env}; skipped")
             continue
         result = source.pull(source_cfg, http)
+
+        # two sources naming one model must land on one record
+        result, folded = merge_pull(result, [m.id for m in store.models()], store.aliases())
+
         snapshot = store.new_snapshot(source_rows=len(result.observations))
         store.upsert_models(result.models)
         added = store.add_observations(result.observations, snapshot=snapshot)
@@ -106,6 +111,10 @@ def cmd_pull(args: argparse.Namespace) -> int:
             f"{name}: {len(result.models)} models, {added} new observations "
             f"({len(result.observations)} seen), {priced} prices"
         )
+        for was, now in sorted(folded.items())[:5]:
+            _out(f"  merged: {was} -> {now}")
+        if len(folded) > 5:
+            _out(f"  ... and {len(folded) - 5} more merged into existing ids")
         for warning in result.warnings:
             _out(f"  warning: {warning}")
         if result.rate_limit.remaining is not None:
@@ -170,13 +179,39 @@ def cmd_check(args: argparse.Namespace) -> int:
     except ModuleNotFoundError as exc:
         raise OwnerMissingError("sieve.profiles.validate", "B") from exc
 
-    axes = list(axes_load.load_all_axes(cfg.axes_dir))
-    _out(f"axes: {len(axes)} loaded from {cfg.axes_dir}")
+    # a file that will not parse is one problem, reported like any other --
+    # never a traceback, because the person fixing it is editing YAML.
+    try:
+        axes = list(axes_load.load_all_axes(cfg.axes_dir))
+        _out(f"axes: {len(axes)} loaded from {cfg.axes_dir}")
+    except ValueError as exc:
+        _out(f"axes: could not load {cfg.axes_dir}")
+        _out(f"  fail: {exc}")
+        return EXIT_ERROR
 
-    profiles = _profiles(cfg)
+    try:
+        profiles = _profiles(cfg)
+    except ValueError as exc:
+        _out(f"profiles: could not load {cfg.profiles_dir}")
+        _out(f"  fail: {exc}")
+        return EXIT_ERROR
+
     axis_names = {(a.modality, a.name) for a in axes}
     for profile in profiles:
         problems += list(validate.validate_profile(profile, axis_names))
+
+    # `/v1/chains/{profile}` and the chains table are keyed by name alone, so
+    # two profiles sharing a name would silently share one chain.
+    by_name: dict[str, list[str]] = {}
+    for profile in profiles:
+        by_name.setdefault(profile.name, []).append(profile.modality)
+    for name, modalities in sorted(by_name.items()):
+        if len(modalities) > 1:
+            problems.append(
+                f"profile name {name!r} is used by more than one modality "
+                f"({', '.join(sorted(modalities))}); names address a profile on their "
+                "own, so they must be unique across the whole profiles directory"
+            )
     _out(f"profiles: {len(profiles)} loaded from {cfg.profiles_dir}")
 
     for problem in problems:
@@ -240,7 +275,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     for chain in result.chains:
         _out(f"{chain.profile}: {chain.primary} -> {', '.join(chain.fallbacks) or '(none)'}")
     for decision in result.decisions:
-        _out(f"  {decision.kind}: {decision.reason}  [{decision.actor}]")
+        _out(f"  {decision.reason}  [{decision.actor}]")
     if not result.chains and not result.decisions:
         _out("nothing to plan yet")
     for warning in result.warnings:

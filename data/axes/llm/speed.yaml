@@ -1,0 +1,10 @@
+
+name: speed
+modality: llm
+label: "Speed"
+describes: "throughput once the answer has started"
+fields:
+  - {source: aa_llm, field: median_output_tokens_per_second, weight: 1.0}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true
