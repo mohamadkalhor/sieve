@@ -24,6 +24,7 @@ aa_llm = "sieve.sources.aa_llm:AALLMSource"
 aa_media = "sieve.sources.aa_media:AAMediaSource"
 openrouter = "sieve.sources.openrouter:OpenRouterSource"
 fal = "sieve.sources.fal:FalSource"
+arena = "sieve.sources.arena:ArenaSource"
 manual = "sieve.sources.manual:ManualSource"
 
 [project.entry-points."sieve.inventories"]

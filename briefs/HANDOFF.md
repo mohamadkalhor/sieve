@@ -627,6 +627,76 @@ by building.
 - **`min_axis` is not editable** in the constraints block, only shown. It is a
   map of axis to floor rather than a flag, and it needs a different control.
 
+## Part 7 · Arena
+
+Landed, and the brief was wrong about it in a useful way.
+
+**"None has a REST API; each is a download."** LMArena does have one. Hugging
+Face's datasets-server serves the same rows as JSON, and its `/filter` endpoint
+narrows the text leaderboard from 10,517 rows to the 399 that are the
+leaderboard proper. So there is **no parquet reader and no `pyarrow`** — a
+40 MB dependency avoided by checking rather than believing the brief.
+
+Live pull, before the fixtures were recorded: **684 models, 1,390 observations**
+across llm, text-to-image, image-editing, text-to-video and image-to-video.
+
+Two things this source has that nothing else does:
+
+- **A real publication date.** Every row carries `leaderboard_publish_date`, so
+  `observed_at` is when the leaderboard was published rather than when we
+  fetched it. Observations are unique on `(model, source, field, observed_at)`,
+  so an unchanged leaderboard pulled hourly writes one set of rows instead of
+  twenty-four. `aa_llm` still stamps pull time; this is what the fix should
+  look like when somebody does it.
+- **Effort modes already separated** — `claude-opus-5-high`, `gpt-image-2
+  (medium)`. PLAN §2.1a's rule arriving from outside, which is a useful check
+  on it. The brackets are folded into the id, because brackets match nothing.
+
+Six of its leaderboards measure `llm` (text, agent, webdev, vision, document,
+search) and each gets its own field. Writing them all as `elo` is exactly how
+the two music leaderboards overwrote each other in part 2.
+
+**The cache is the ETag.** Each pull asks for the dataset's commit sha first; if
+it matches the last one, the pull stops there — one request instead of ten, no
+rows written, and a warning saying how to force a full read. It is
+`enabled = false` in `sieve.toml.example` and a test pins that: a bulk read of
+somebody else's dataset has no business running on every CI push.
+
+`docs/sources.md` is new, and carries the CC-BY-4.0 attribution the licence
+requires, with a test asserting it is actually there.
+
+### Two bugs it found on the way
+
+- **A transport failure took the whole run down.** `Http.get` let httpx's
+  `ReadTimeout` propagate, so one slow endpoint crashed `sieve run` and nothing
+  was re-ranked, from data already on disk. A dropped connection is now a 599
+  response, which every source already knows how to report. This is the bug
+  behind the part 5 promise that a source being down does not stop the loop —
+  that promise was only true for endpoints that answered.
+- **`fixture_slug` drops the query string**, so every arena config folded onto
+  one recording name and each overwrote the last. The source passes its query
+  as `params` now, which is what the `__include_categories_true` suffix on the
+  Artificial Analysis recordings was always for.
+
+### Left open
+
+- **LiveBench and Epoch are not started.** Part 7 says to do them in order and
+  not to start one until the part before it is pushed and green. Arena is
+  pushed and green; the next session starts with LiveBench.
+- **Two leaderboards failed on the live pull** — `vision` timed out, `webdev`
+  answered HTTP 500. Both were reported and the pull continued. The
+  datasets-server `/filter` endpoint builds an index on first call and can take
+  over 30 s, which is longer than the default client timeout; a source cannot
+  set its own timeout under the current `Source` protocol, and giving it one is
+  a contract change nobody has asked for yet.
+- **No axis uses an arena field.** The observations are stored and nothing
+  scores on them. Adding `data/axes/llm/preference.yaml` over `elo:text` is a
+  small change, but it alters every shipped LLM profile's weights, which is a
+  judgement about what the seats should value rather than a mechanical step.
+- **`categories = false` by default**, so the sub-leaderboards — 3d_modeling,
+  multi_image_edit and the rest — are not pulled. They are per-category Elo of
+  exactly the kind `aa_media` publishes and would be worth axes.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

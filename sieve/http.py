@@ -42,6 +42,10 @@ def fixture_slug(url: str, params: dict[str, str] | None = None) -> str:
     return slug
 
 
+#: What a source sees when the request never reached a server at all. Not a
+#: real status code -- 599 is unassigned -- so it cannot be confused with one.
+TRANSPORT_FAILED = 599
+
 #: The longest a retry will wait for a published reset. Past this a scheduled
 #: run should fail and be retried by the timer, not hold the job open.
 MAX_RESET_WAIT = 120.0
@@ -74,16 +78,36 @@ class Http:
         params: dict[str, str] | None = None,
     ) -> HttpResponse:
         last: httpx.Response | None = None
+        failure: str | None = None
         for attempt in range(self.retries + 1):
-            response = self._client.get(url, headers=headers, params=params)
+            try:
+                response = self._client.get(url, headers=headers, params=params)
+            except httpx.HTTPError as exc:
+                # A dropped connection, a DNS failure or a read timeout is the
+                # same thing to a source as an HTTP 503: the endpoint could not
+                # be read. Raising here instead took the whole `sieve run` down
+                # -- one slow endpoint and no profile got re-ranked, from data
+                # already on disk.
+                failure = f"{type(exc).__name__}: {exc}"
+                last = None
+                if attempt < self.retries:
+                    time.sleep(self._wait_for(attempt))
+                continue
             self._record(response.headers)
             if response.status_code not in RETRY_STATUS:
                 return self._wrap(url, response)
             last = response
+            failure = None
             if attempt < self.retries:
                 time.sleep(self._wait_for(attempt))
-        assert last is not None
-        return self._wrap(url, last)
+        if last is not None:
+            return self._wrap(url, last)
+        return HttpResponse(
+            url=url,
+            status=TRANSPORT_FAILED,
+            headers={},
+            body=failure or "the request could not be made",
+        )
 
     def _wait_for(self, attempt: int) -> float:
         """How long to wait before retrying.

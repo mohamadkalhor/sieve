@@ -69,11 +69,40 @@
   "rows_published": 67,
   "url": "https://artificialanalysis.ai/api/v2/media/speech-to-text/models/free"
  },
+ "datasets_server_huggingface_co_filter__config_image_edit_dataset_lmarena_ai_leaderboard_dataset_length_100_offset_0_split_latest_where_category_overall.json": {
+  "params": "dataset=lmarena-ai%2Fleaderboard-dataset&config=image_edit&split=latest&offset=0&length=100&where=%22category%22%3D%27overall%27",
+  "recorded": "2026-09-08",
+  "rows_kept": 30,
+  "rows_published": 53,
+  "url": "https://datasets-server.huggingface.co/filter"
+ },
+ "datasets_server_huggingface_co_filter__config_text_dataset_lmarena_ai_leaderboard_dataset_length_100_offset_0_split_latest_where_category_overall.json": {
+  "params": "dataset=lmarena-ai%2Fleaderboard-dataset&config=text&split=latest&offset=0&length=100&where=%22category%22%3D%27overall%27",
+  "recorded": "2026-09-08",
+  "rows_kept": 40,
+  "rows_published": 399,
+  "url": "https://datasets-server.huggingface.co/filter"
+ },
+ "datasets_server_huggingface_co_filter__config_text_to_video_dataset_lmarena_ai_leaderboard_dataset_length_100_offset_0_split_latest_where_category_overall.json": {
+  "params": "dataset=lmarena-ai%2Fleaderboard-dataset&config=text_to_video&split=latest&offset=0&length=100&where=%22category%22%3D%27overall%27",
+  "recorded": "2026-09-08",
+  "rows_kept": 40,
+  "rows_published": 48,
+  "url": "https://datasets-server.huggingface.co/filter"
+ },
  "fal_ai_api_models__limit_200_page_1.json": {
   "params": "limit=200&page=1",
   "recorded": "2026-09-08",
   "rows_kept": 95,
   "rows_published": 1494,
   "url": "https://fal.ai/api/models"
+ },
+ "huggingface_co_api_datasets_lmarena_ai_leaderboard_dataset.json": {
+  "note": "dataset metadata, not a row list: this is the commit sha the cache compares",
+  "params": null,
+  "recorded": "2026-09-08",
+  "rows_kept": null,
+  "rows_published": null,
+  "url": "https://huggingface.co/api/datasets/lmarena-ai/leaderboard-dataset"
  }
 }

@@ -74,6 +74,22 @@ modalities = [
   "music",
 ]
 
+# LMArena: human preference Elo, the one measurement no benchmark makes.
+# CC-BY-4.0 -- see docs/sources.md for the attribution that licence requires.
+#
+# OFF BY DEFAULT, and it should stay off in CI. It is a bulk read of somebody
+# else's dataset over ~10 requests, and it has no business running on every
+# push. The `cache` directory holds the dataset's commit sha, so a pull that
+# finds nothing changed makes one request and stops.
+#
+# `categories = true` pulls every sub-leaderboard as well: 10,517 rows for
+# text against the 399 that are the leaderboard proper.
+[sources.arena]
+enabled = false
+modalities = ["llm", "text-to-image", "image-editing", "text-to-video", "image-to-video"]
+cache = "data/cache"
+categories = false
+
 [sources.manual]
 enabled = true
 dir = "data/observations"

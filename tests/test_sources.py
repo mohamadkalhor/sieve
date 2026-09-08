@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import parse_qsl
 
 import pytest
 
@@ -414,14 +415,25 @@ def test_the_recordings_match_what_the_manifest_claims(player: FixturePlayer) ->
     is then quietly measuring something else.
     """
     manifest = json.loads((FIXTURES / "RECORDINGS.json").read_text(encoding="utf-8"))
-    assert len(manifest) == 11
+    assert len(manifest) == 15
 
     for name, entry in manifest.items():
         body = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
-        # AA answers `{data: [...]}`, fal answers `{items: [...]}`
+        # Three shapes: AA answers `{data: [...]}`, fal `{items: [...]}`, the
+        # Hugging Face datasets-server `{rows: [...]}`.
         rows = body
         if isinstance(body, dict):
-            rows = body.get("data", body.get("items", body))
+            for key in ("data", "items", "rows"):
+                if key in body:
+                    rows = body[key]
+                    break
+
+        if entry["rows_kept"] is None:
+            # not a row list at all -- the dataset-metadata recording, which is
+            # there so the cache has a commit sha to compare against
+            assert isinstance(body, dict) and body, f"{name} should still be a body"
+            continue
+
         assert len(rows) == entry["rows_kept"], f"{name} holds {len(rows)}, manifest says {entry}"
         assert entry["rows_kept"] <= entry["rows_published"]
         assert f"{fixture_slug(entry['url'], _params_of(entry))}.json" == name
@@ -436,7 +448,13 @@ def test_the_recordings_match_what_the_manifest_claims(player: FixturePlayer) ->
 
 
 def _params_of(entry: dict[str, object]) -> dict[str, str] | None:
+    """The params as the source passed them, decoded.
+
+    The manifest stores them url-encoded, and the arena's `where` clause is full
+    of encoded quotes -- comparing the encoded form against what `fixture_slug`
+    hashes produced two different names for one file.
+    """
     raw = entry.get("params")
     if not raw:
         return None
-    return dict(pair.split("=", 1) for pair in str(raw).split("&"))
+    return dict(parse_qsl(str(raw), keep_blank_values=True))

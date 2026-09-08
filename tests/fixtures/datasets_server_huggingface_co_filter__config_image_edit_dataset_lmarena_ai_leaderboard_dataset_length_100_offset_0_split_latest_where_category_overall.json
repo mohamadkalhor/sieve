@@ -1,0 +1,607 @@
+{
+ "features": [
+  {
+   "feature_idx": 0,
+   "name": "model_name",
+   "type": {
+    "dtype": "string",
+    "_type": "Value"
+   }
+  },
+  {
+   "feature_idx": 1,
+   "name": "organization",
+   "type": {
+    "dtype": "string",
+    "_type": "Value"
+   }
+  },
+  {
+   "feature_idx": 2,
+   "name": "license",
+   "type": {
+    "dtype": "string",
+    "_type": "Value"
+   }
+  },
+  {
+   "feature_idx": 3,
+   "name": "rating",
+   "type": {
+    "dtype": "float64",
+    "_type": "Value"
+   }
+  },
+  {
+   "feature_idx": 4,
+   "name": "rating_lower",
+   "type": {
+    "dtype": "float64",
+    "_type": "Value"
+   }
+  },
+  {
+   "feature_idx": 5,
+   "name": "rating_upper",
+   "type": {
+    "dtype": "float64",
+    "_type": "Value"
+   }
+  },
+  {
+   "feature_idx": 6,
+   "name": "variance",
+   "type": {
+    "dtype": "float64",
+    "_type": "Value"
+   }
+  },
+  {
+   "feature_idx": 7,
+   "name": "vote_count",
+   "type": {
+    "dtype": "int64",
+    "_type": "Value"
+   }
+  },
+  {
+   "feature_idx": 8,
+   "name": "rank",
+   "type": {
+    "dtype": "int64",
+    "_type": "Value"
+   }
+  },
+  {
+   "feature_idx": 9,
+   "name": "category",
+   "type": {
+    "dtype": "string",
+    "_type": "Value"
+   }
+  },
+  {
+   "feature_idx": 10,
+   "name": "leaderboard_publish_date",
+   "type": {
+    "dtype": "string",
+    "_type": "Value"
+   }
+  }
+ ],
+ "rows": [
+  {
+   "row_idx": 0,
+   "row": {
+    "model_name": "gpt-image-2 (medium)",
+    "organization": "openai",
+    "license": "Proprietary",
+    "rating": 1461.0229110853088,
+    "rating_lower": 1457.5045685373054,
+    "rating_upper": 1464.541253633312,
+    "variance": 3.2224045246573527,
+    "vote_count": 228827,
+    "rank": 1,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 1,
+   "row": {
+    "model_name": "mai-image-2.6",
+    "organization": "microsoft-ai",
+    "license": "Proprietary",
+    "rating": 1438.901153093694,
+    "rating_lower": 1429.3998797687345,
+    "rating_upper": 1448.4024264186532,
+    "variance": 23.4999772246086,
+    "vote_count": 5086,
+    "rank": 2,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 2,
+   "row": {
+    "model_name": "grok-imagine-image-2.0 (low)",
+    "organization": "xai",
+    "license": "Proprietary",
+    "rating": 1438.800808394399,
+    "rating_lower": 1430.318444851401,
+    "rating_upper": 1447.283171937397,
+    "variance": 18.729991556327406,
+    "vote_count": 5941,
+    "rank": 3,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 3,
+   "row": {
+    "model_name": "muse-image",
+    "organization": "meta",
+    "license": "Proprietary",
+    "rating": 1403.4707475236448,
+    "rating_lower": 1398.1711910193433,
+    "rating_upper": 1408.7703040279462,
+    "variance": 7.3111024881971876,
+    "vote_count": 76663,
+    "rank": 4,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 4,
+   "row": {
+    "model_name": "mai-image-2.5",
+    "organization": "microsoft-ai",
+    "license": "Proprietary",
+    "rating": 1400.2239219926819,
+    "rating_lower": 1396.4655661927256,
+    "rating_upper": 1403.982277792638,
+    "variance": 3.6770505629192356,
+    "vote_count": 174732,
+    "rank": 5,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 5,
+   "row": {
+    "model_name": "seedream-5.0-pro",
+    "organization": "bytedance",
+    "license": "Proprietary",
+    "rating": 1394.0849779584871,
+    "rating_lower": 1390.3431545926796,
+    "rating_upper": 1397.8268013242946,
+    "variance": 3.644772143717354,
+    "vote_count": 165349,
+    "rank": 6,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 6,
+   "row": {
+    "model_name": "chatgpt-image-latest-high-fidelity (20251216)",
+    "organization": "openai",
+    "license": "Proprietary",
+    "rating": 1390.0669329894422,
+    "rating_lower": 1387.0924930171157,
+    "rating_upper": 1393.0413729617687,
+    "variance": 2.303107637471872,
+    "vote_count": 536869,
+    "rank": 7,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 7,
+   "row": {
+    "model_name": "grok-imagine-image-quality (20260519)",
+    "organization": "xai",
+    "license": "Proprietary",
+    "rating": 1389.8105144394517,
+    "rating_lower": 1384.1666582431328,
+    "rating_upper": 1395.4543706357706,
+    "variance": 8.291931334297436,
+    "vote_count": 35601,
+    "rank": 8,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 8,
+   "row": {
+    "model_name": "gemini-3-pro-image-2k (nano-banana-pro)",
+    "organization": "google",
+    "license": "Proprietary",
+    "rating": 1389.6778510758838,
+    "rating_lower": 1386.9051903075347,
+    "rating_upper": 1392.4505118442328,
+    "variance": 2.0012313277779183,
+    "vote_count": 548733,
+    "rank": 9,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 9,
+   "row": {
+    "model_name": "gemini-3.1-flash-image (nano-banana-2) [web-search]",
+    "organization": "google",
+    "license": "Proprietary",
+    "rating": 1387.7118386950847,
+    "rating_lower": 1384.1398325939824,
+    "rating_upper": 1391.283844796187,
+    "variance": 3.3214536929505734,
+    "vote_count": 150230,
+    "rank": 10,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 10,
+   "row": {
+    "model_name": "gemini-3-pro-image-preview (nano-banana-pro)",
+    "organization": "google",
+    "license": "Proprietary",
+    "rating": 1385.450441435403,
+    "rating_lower": 1382.5713222153943,
+    "rating_upper": 1388.329560655412,
+    "variance": 2.1578592586674046,
+    "vote_count": 518487,
+    "rank": 11,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 11,
+   "row": {
+    "model_name": "reve-2.1",
+    "organization": "reve",
+    "license": "Proprietary",
+    "rating": 1375.143432741838,
+    "rating_lower": 1368.9445973757856,
+    "rating_upper": 1381.3422681078907,
+    "variance": 10.002856125496665,
+    "vote_count": 19119,
+    "rank": 12,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 12,
+   "row": {
+    "model_name": "gpt-image-1.5-high-fidelity",
+    "organization": "openai",
+    "license": "Proprietary",
+    "rating": 1370.2181481121497,
+    "rating_lower": 1367.377797092253,
+    "rating_upper": 1373.058499132046,
+    "variance": 2.1001380706637938,
+    "vote_count": 559765,
+    "rank": 13,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 13,
+   "row": {
+    "model_name": "reve-2.0",
+    "organization": "reve",
+    "license": "Proprietary",
+    "rating": 1358.1760339278044,
+    "rating_lower": 1351.584155893906,
+    "rating_upper": 1364.7679119617028,
+    "variance": 11.311550648339392,
+    "vote_count": 17504,
+    "rank": 14,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 14,
+   "row": {
+    "model_name": "uni-1.1-max",
+    "organization": "luma-ai",
+    "license": "Proprietary",
+    "rating": 1333.4227777680944,
+    "rating_lower": 1328.3793912052342,
+    "rating_upper": 1338.4661643309544,
+    "variance": 6.621377244867104,
+    "vote_count": 40918,
+    "rank": 15,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 15,
+   "row": {
+    "model_name": "grok-imagine-image",
+    "organization": "xai",
+    "license": "Proprietary",
+    "rating": 1329.3534969808286,
+    "rating_lower": 1326.6304331394153,
+    "rating_upper": 1332.0765608222418,
+    "variance": 1.930276238929607,
+    "vote_count": 613414,
+    "rank": 16,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 16,
+   "row": {
+    "model_name": "gemini-3.1-flash-lite-image (nano-banana-2-lite)",
+    "organization": "google",
+    "license": "Proprietary",
+    "rating": 1314.2650576746066,
+    "rating_lower": 1309.346009185544,
+    "rating_upper": 1319.184106163669,
+    "variance": 6.29891902196036,
+    "vote_count": 59286,
+    "rank": 17,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 17,
+   "row": {
+    "model_name": "uni-1.1",
+    "organization": "luma-ai",
+    "license": "Proprietary",
+    "rating": 1313.562555766204,
+    "rating_lower": 1309.8320736656378,
+    "rating_upper": 1317.2930378667702,
+    "variance": 3.622711410487142,
+    "vote_count": 132962,
+    "rank": 18,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 18,
+   "row": {
+    "model_name": "qwen-image-2.0-pro-2026-06-22",
+    "organization": "alibaba",
+    "license": "Proprietary",
+    "rating": 1303.6468946330924,
+    "rating_lower": 1298.830941178474,
+    "rating_upper": 1308.4628480877107,
+    "variance": 6.037656202926622,
+    "vote_count": 50824,
+    "rank": 19,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 19,
+   "row": {
+    "model_name": "hunyuan-image-3.0-instruct",
+    "organization": "tencent",
+    "license": "tencent-hunyuan-community",
+    "rating": 1302.3783974768776,
+    "rating_lower": 1298.9898802790583,
+    "rating_upper": 1305.766914674697,
+    "variance": 2.9889813573071646,
+    "vote_count": 307736,
+    "rank": 20,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 20,
+   "row": {
+    "model_name": "wan2.7-image-pro",
+    "organization": "alibaba",
+    "license": "Proprietary",
+    "rating": 1301.9181958951963,
+    "rating_lower": 1297.776833177729,
+    "rating_upper": 1306.0595586126635,
+    "variance": 4.464680205664388,
+    "vote_count": 41543,
+    "rank": 21,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 21,
+   "row": {
+    "model_name": "seedream-4.5",
+    "organization": "bytedance",
+    "license": "Proprietary",
+    "rating": 1301.3624358289146,
+    "rating_lower": 1298.9896067826044,
+    "rating_upper": 1303.735264875225,
+    "variance": 1.4656717527943812,
+    "vote_count": 1084303,
+    "rank": 22,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 22,
+   "row": {
+    "model_name": "wan2.7-image",
+    "organization": "alibaba",
+    "license": "Proprietary",
+    "rating": 1301.0339093896473,
+    "rating_lower": 1297.1218907154566,
+    "rating_upper": 1304.9459280638378,
+    "variance": 3.9838745699349425,
+    "vote_count": 42378,
+    "rank": 23,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 23,
+   "row": {
+    "model_name": "seedream-5.0-lite",
+    "organization": "bytedance",
+    "license": "Proprietary",
+    "rating": 1293.6719945960403,
+    "rating_lower": 1290.758748088942,
+    "rating_upper": 1296.5852411031385,
+    "variance": 2.209318284345758,
+    "vote_count": 365872,
+    "rank": 24,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 24,
+   "row": {
+    "model_name": "gemini-2.5-flash-image-preview (nano-banana)",
+    "organization": "google",
+    "license": "Proprietary",
+    "rating": 1293.5216736619366,
+    "rating_lower": 1291.3196627042396,
+    "rating_upper": 1295.7236846196333,
+    "variance": 1.2622424147035793,
+    "vote_count": 11159995,
+    "rank": 25,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 25,
+   "row": {
+    "model_name": "seedream-4-2k",
+    "organization": "bytedance",
+    "license": "Proprietary",
+    "rating": 1270.5940630116233,
+    "rating_lower": 1264.0253083908765,
+    "rating_upper": 1277.1628176323702,
+    "variance": 11.232331070462166,
+    "vote_count": 212658,
+    "rank": 26,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 26,
+   "row": {
+    "model_name": "flux-2-max",
+    "organization": "bfl",
+    "license": "Proprietary",
+    "rating": 1261.7980026954444,
+    "rating_lower": 1258.599827465296,
+    "rating_upper": 1264.996177925593,
+    "variance": 2.662614720125331,
+    "vote_count": 352906,
+    "rank": 27,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 27,
+   "row": {
+    "model_name": "reve-v1.1",
+    "organization": "reve",
+    "license": "Proprietary",
+    "rating": 1261.3068080791772,
+    "rating_lower": 1258.5321668747447,
+    "rating_upper": 1264.0814492836098,
+    "variance": 2.0040911988595567,
+    "vote_count": 632183,
+    "rank": 28,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 28,
+   "row": {
+    "model_name": "kling-image-o1",
+    "organization": "kling",
+    "license": "Proprietary",
+    "rating": 1251.0189301286528,
+    "rating_lower": 1247.293903741262,
+    "rating_upper": 1254.7439565160432,
+    "variance": 3.6121229549581373,
+    "vote_count": 135293,
+    "rank": 29,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 29,
+   "row": {
+    "model_name": "flux-2-pro",
+    "organization": "bfl",
+    "license": "Proprietary",
+    "rating": 1244.5851675069075,
+    "rating_lower": 1241.8094478666826,
+    "rating_upper": 1247.3608871471324,
+    "variance": 2.005649384974554,
+    "vote_count": 531498,
+    "rank": 30,
+    "category": "overall",
+    "leaderboard_publish_date": "2026-09-04"
+   },
+   "truncated_cells": []
+  }
+ ],
+ "num_rows_total": 53,
+ "num_rows_per_page": 100,
+ "partial": false
+}
