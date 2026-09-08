@@ -35,14 +35,32 @@ def slug_of(model_id: str) -> str:
     return model_id.rsplit("/", 1)[-1]
 
 
+#: Everything that separates the parts of a model name: whitespace, an
+#: underscore, and -- the one that caused the bug -- a dot. `Wan 3.0` and
+#: `wan-3-0` are one model, and until this rule was shared they became two
+#: canonical ids sitting side by side in the catalogue, because `canonical_id`
+#: folded whitespace and underscores while `normalise` also folded the dot.
+#: A fal id with a dot could then never meet an AA id with a dash.
+SEPARATORS = re.compile(r"[\s_.]+")
+
+
+def fold_separators(text: str) -> str:
+    """Lowercase, and every separator folded to a single dash.
+
+    The one place that decides what a separator is. `canonical_id` builds a
+    readable id from this; `normalise` strips the dashes out afterwards to make
+    a comparison key. Two callers, one rule.
+    """
+    return SEPARATORS.sub("-", text.strip().lower())
+
+
 def normalise(model_id: str) -> str:
     """Fold case, versions and punctuation: `Claude-Opus-4.6` -> `claudeopus46`.
 
     `claude-opus-4-6` and `claude-opus-4.6` land on the same key, which is the
     single most common shape difference between a gateway and a benchmark.
     """
-    text = model_id.strip().lower().replace(".", "-")
-    return re.sub(r"[^a-z0-9]", "", text)
+    return re.sub(r"[^a-z0-9]", "", fold_separators(model_id))
 
 
 def strip_decorations(model_id: str) -> str:

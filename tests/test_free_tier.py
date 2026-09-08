@@ -68,7 +68,7 @@ def test_the_two_music_leaderboards_do_not_overwrite_each_other(free: object) ->
     assert differing, "if every model scored the same on both, they are not two contests"
 
     # the pair the brief names, read from the recording
-    suno = "suno/suno-v5.5"
+    suno = "suno/suno-v5-5"
     assert by_field["elo:instrumental"][suno] == pytest.approx(1186)
     assert by_field["elo:with_vocals"][suno] == pytest.approx(1170)
 
@@ -198,7 +198,7 @@ def test_a_uuid_is_never_used_as_a_model_id() -> None:
         "name": "Suno V5.5",
         "model_creator": {"name": "Suno"},
     }
-    assert model_id_of(row) == "suno/suno-v5.5"
+    assert model_id_of(row) == "suno/suno-v5-5"
 
     assert model_id_of({"id": "8a999846-4c1d-4ce7-a8b7-1310a7166fd7"}) is None
     assert model_id_of({"slug": "kept", "id": "8a999846-4c1d-4ce7-a8b7-1310a7166fd7"}) == "kept"
@@ -215,3 +215,52 @@ def test_every_free_tier_model_has_a_usable_id(free: object) -> None:
         assert not uuid.search(model.id), f"{model.id} is a UUID, not an id"
         assert "," not in model.id, f"{model.id} kept the name's trailing creator"
         assert not slug.endswith(f"-{creator}"), f"{model.id} repeats its creator"
+
+
+# --------------------------------------------------------------------------- #
+# a model is one row per model PER MODALITY
+# --------------------------------------------------------------------------- #
+
+
+def test_a_model_on_two_leaderboards_keeps_both_scores() -> None:
+    """The sibling of the price-had-no-modality bug, and worse.
+
+    `observations` carried a `modality` column from the beginning but guarded
+    uniqueness with (model_id, source, field, observed_at). A model measured on
+    two leaderboards -- one model id, two modalities -- writes `elo` twice in one
+    pull with the same pull-time stamp, and the second was silently dropped.
+
+    Measured against these recordings before the fix: image-editing kept 13 of
+    its 40 models and image-to-video 14 of 40, while text-to-image and
+    text-to-video, pulled first, kept all 40.
+    """
+    from sieve.store import Store
+
+    cfg = SourceConfig(
+        name="aa_media",
+        key_env="ARTIFICIAL_ANALYSIS_API_KEY",
+        modalities=["text-to-image", "image-editing", "text-to-video", "image-to-video"],
+    )
+    pulled = AAMediaSource().pull(cfg, FixturePlayer(FIXTURES))
+
+    store = Store(":memory:")
+    store.upsert_models(pulled.models)
+    added = store.add_observations(pulled.observations)
+    assert added == len(pulled.observations), (
+        f"{len(pulled.observations) - added} observations were dropped on the way in"
+    )
+
+    scored: dict[str, set[str]] = {}
+    for observation in pulled.observations:
+        scored.setdefault(observation.modality, set()).add(observation.model_id)
+
+    for modality in ("image-editing", "image-to-video", "text-to-image", "text-to-video"):
+        held = {
+            row["model_id"]
+            for row in store.db.execute(
+                "SELECT DISTINCT model_id FROM observations WHERE modality = ?", (modality,)
+            )
+        }
+        assert held == scored[modality], (
+            f"{modality}: pulled {len(scored[modality])} models, store kept {len(held)}"
+        )

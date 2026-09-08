@@ -43,12 +43,14 @@ anthropic/claude-haiku-4-5:
 # The creator split below is real and observed: AA writes `zai`, OpenRouter
 # writes `z-ai`. The matcher happens to fold it at 0.9, and these entries make
 # it exact and survive a change to the normaliser.
-z-ai/glm-5.3:
+z-ai/glm-5-3:
   - zai/glm-5-3
+  - z-ai/glm-5.3
   - zhipu/glm-5.3
   - zhipuai/glm-5-3
-z-ai/glm-5.3-flash:
+z-ai/glm-5-3-flash:
   - zai/glm-5-3-flash
+  - z-ai/glm-5.3-flash
 
 # --- deployments named after a role rather than a model -------------------
 # Uncomment and edit for your own gateway. These are the ids that show up as

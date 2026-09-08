@@ -12,7 +12,7 @@ import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
-from sieve.catalog.match import MIN_CONFIDENCE, Match, Matcher
+from sieve.catalog.match import MIN_CONFIDENCE, Match, Matcher, fold_separators
 from sieve.contracts import Modality, ModelRef, PullResult, Reachable
 
 _SEPARATORS = re.compile(r"[\s_]+")
@@ -20,8 +20,12 @@ _SEPARATORS = re.compile(r"[\s_]+")
 
 def canonical_id(creator: str, slug: str) -> str:
     """`<creator>/<slug>`, lowercase — the id everything else refers to."""
-    clean_creator = _SEPARATORS.sub("-", creator.strip().lower()).strip("-/")
-    clean_slug = _SEPARATORS.sub("-", slug.strip().lower()).strip("-/")
+    # `fold_separators` is shared with the matcher on purpose: a dot and a dash
+    # separate a version the same way, and when only one of the two paths knew
+    # that, `alibaba/wan-3.0` and `alibaba/wan-3-0` sat in the catalogue as two
+    # different models that could never meet.
+    clean_creator = fold_separators(creator).strip("-/")
+    clean_slug = fold_separators(slug).strip("-/")
     clean_slug = clean_slug.rsplit("/", 1)[-1]
     return f"{clean_creator}/{clean_slug}" if clean_creator else clean_slug
 

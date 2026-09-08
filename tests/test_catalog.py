@@ -122,8 +122,26 @@ def test_normalise_folds_case_punctuation_and_version_style() -> None:
 
 def test_canonical_id_is_creator_slash_slug() -> None:
     assert canonical_id("Anthropic", "Claude Opus 5") == "anthropic/claude-opus-5"
-    assert canonical_id("", "glm-5.3") == "glm-5.3"
-    assert canonical_id("z-ai", "z-ai/glm-5.3") == "z-ai/glm-5.3"
+    assert canonical_id("z-ai", "z-ai/glm-5-3") == "z-ai/glm-5-3"
+
+
+def test_a_dot_and_a_dash_separate_a_version_the_same_way() -> None:
+    """One rule, or the catalogue holds the same model twice.
+
+    `canonical_id` folded whitespace and underscores while `normalise` also
+    folded the dot, so `Wan 3.0` from a published name and `wan-3-0` from a
+    published slug became two canonical ids that could never meet -- which is
+    exactly how a fal price failed to reach an AA score.
+    """
+    assert canonical_id("Alibaba", "Wan 3.0") == canonical_id("Alibaba", "wan-3-0")
+    assert canonical_id("Alibaba", "Wan 3.0") == "alibaba/wan-3-0"
+    assert canonical_id("", "glm-5.3") == "glm-5-3"
+    assert canonical_id("OpenAI", "GPT-5.6 Sol") == "openai/gpt-5-6-sol"
+
+    # and the id a canonical id produces is stable under the matcher's own key
+    from sieve.catalog.match import normalise
+
+    assert normalise(canonical_id("Alibaba", "Wan 3.0")) == normalise("alibaba/wan-3.0")
 
 
 def test_registry_merges_aliases_and_leaves_unmatched_alone() -> None:
