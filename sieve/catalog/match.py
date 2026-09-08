@@ -22,7 +22,11 @@ MIN_CONFIDENCE = 0.8
 
 #: decorations a provider adds to the same underlying model.
 _DATE = re.compile(r"[-_]?(?:20\d{6}|20\d{4}|\d{6})$")
-_TAGS = re.compile(r"(?::(?:free|nitro|beta|extended|floor|online))+$")
+# `:batch` joins the list for the same reason `:free` is on it: both name a
+# serving tier for a model the catalogue already holds, not a different
+# model. Twelve OpenRouter ids in the 2026-09-08 recording -- every
+# `<model>:batch` -- matched nothing at all without it.
+_TAGS = re.compile(r"(?::(?:free|nitro|beta|extended|floor|online|batch))+$")
 _SUFFIX = re.compile(r"[-_](?:preview|latest|beta|exp|experimental|stable|new)$")
 
 

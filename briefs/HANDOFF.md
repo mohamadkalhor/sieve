@@ -75,12 +75,9 @@ Landed and green. Left for whoever takes this on:
 
 Landed and green. Left:
 
-- **The AA fixtures are hand-built, not recorded.** This build had no
-  `ARTIFICIAL_ANALYSIS_API_KEY`, so `tests/fixtures/artificialanalysis_ai_*`
-  are written to the documented shape with invented numbers. Replace them with
-  real recordings (keys removed, ≤60 models) as soon as a key exists; the tests
-  should keep passing unchanged. `tests/fixtures/README.md` says which file is
-  which.
+- ~~The AA fixtures are hand-built, not recorded.~~ **Done, phase 2 part 1.**
+  Ten real recordings replace them. The tests did *not* keep passing unchanged,
+  and that is the interesting part — see the part 1 note below.
 - `aa_llm` stamps `observed_at` with the pull time, because the fixture
   publishes no date. Against the real API, prefer whatever date AA publishes,
   or every hourly pull adds a full set of rows rather than being deduped.
@@ -132,3 +129,70 @@ Landed and green. Left:
   passes locally; nothing has yet proved it green on a runner.
 - `docs/api.md` is written by hand rather than generated from the OpenAPI at
   build time.
+
+---
+
+# Phase 2
+
+## Part 1 · Real data replaces the invented fixtures
+
+Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact
+name `fixture_slug(url, params)` produces — the five arena files carry the
+`__include_categories_true` suffix, because that is the request that made them.
+`RECORDINGS.json` holds the URL, params, date, rows published and rows kept for
+each, and a test asserts the files still match it. The hand-built
+`artificialanalysis_ai_*` files are deleted.
+
+Phase 1's note said the tests "should keep passing unchanged" against real
+recordings. They did not, and every failure was the fixture having flattered the
+code:
+
+- **Per-category Elo never worked.** The arena endpoints return `categories` as
+  a list whose name sits in one of three columns — `format_category`,
+  `style_category`, `subject_matter_category` — and the parser looked for a
+  `name`/`category`/`slug` key. It found none and silently produced nothing.
+  Fixed, and each category now carries its own `appearances` and `ci95` rather
+  than the model's overall pair: a model can have 1,056 votes on Physics and 392
+  on Moving camera. text-to-video and image-to-video publish 29 categories each,
+  text-to-image 13.
+- **Four axes named a category that does not exist.** `elo:anime` and
+  `elo:photoreal` for text-to-video (really `cartoon_and_anime` and
+  `photorealistic`), `elo:nature` and `elo:text` for text-to-image (really
+  `nature_landscapes` and `text_typography`). An axis whose field never appears
+  is not an error anywhere, so it would have sat at coverage 0 for ever.
+- **The arena endpoints publish no price at all.** The invented fixtures had
+  one. So every media `cost` axis is unmeasured from this source, and a media
+  profile weighting cost loses that coverage honestly. A test pins that no price
+  is invented.
+- **`pareto_prune` fires.** 29 of 60 models are dominated on `coder`. Phase 1
+  reported it as implemented but never firing; that was the six-model fixture,
+  not the code. Two tests now check it, one of them re-deriving every domination
+  the pruner claims.
+- **`:batch` matched nothing.** Twelve OpenRouter ids are `<model>:batch`, and
+  the tag rule stripped `:free` and `:nitro` but not that. Added.
+
+Still open, deliberately:
+
+- **image-editing and text-to-speech publish no categories**, even though
+  `include_categories=true` is sent to all five arena endpoints. They therefore
+  cannot have category axes. Pinned by a test so it is visible if it changes.
+- **image-to-video has 29 published categories and no axes at all.** Nothing is
+  broken; nobody has decided which of the 29 are worth choosing a model on.
+- **text-to-image categories are sparse** — `fantasy_mythical` covers 17 of 40
+  models, `anime` 11, and eight others cover exactly 1. Any axis over the thin
+  ones is nearly all coverage loss, which is correct but close to useless.
+- **`:batch` shares its canonical model with the standard deployment**, so the
+  two OpenRouter prices for one model now collide on `(model, source)`. Which
+  tier's price survives is whichever is added last. It needs a price-per-tier
+  key, or `:batch` needs to stay unmatched; the current answer is neither.
+- **`median_time_to_first_answer_token`** is published by the LLM endpoint and
+  the source stores nothing for it. Only the older
+  `median_time_to_first_token_seconds` is mapped.
+- **`aa_llm` still stamps `observed_at` with the pull time.** Against the live
+  API every hourly pull will add a full set of rows. The recording carries no
+  date field to use instead, so this needs the live response to settle.
+- **The alias pass found almost nothing to add**, which is the honest result:
+  of 60 OpenRouter ids, 1 matched exactly, 13 by a rule, and the other 46 are
+  models one catalogue carries and the other does not. The two recordings are
+  trimmed independently, so their overlap is small by construction — not a
+  matching failure. `data/aliases.yaml` records the pass and its date.

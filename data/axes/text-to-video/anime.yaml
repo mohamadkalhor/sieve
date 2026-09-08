@@ -1,3 +1,5 @@
+# Field corrected against the 2026-09-08 recordings: elo:anime is not
+# published -- the video arenas publish one combined Cartoon and Anime category.
 # Generated from the categories the source publishes. Delete it if
 # Anime is not a category you choose models on.
 
@@ -6,7 +8,7 @@ modality: text-to-video
 label: "Anime"
 describes: "Elo within the Anime category only"
 fields:
-  - {source: aa_media, field: elo:anime, weight: 1.0}
+  - {source: aa_media, field: elo:cartoon_and_anime, weight: 1.0}
 missing: renormalise
 min_coverage: 0.5
 higher_is_better: true

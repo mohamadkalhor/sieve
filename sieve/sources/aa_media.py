@@ -18,7 +18,7 @@ and anything else is a warning. They never fail the pull.
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 from sieve.catalog.registry import canonical_id
 from sieve.contracts import (
@@ -104,22 +104,65 @@ def model_id_of(entry: dict[str, Any]) -> str | None:
     return canonical_id(creator_slug, slug)
 
 
-def _categories(entry: dict[str, Any]) -> dict[str, Any]:
-    """Every published per-category Elo, flattened to `<slug>: value`."""
-    out: dict[str, Any] = {}
+class Category(NamedTuple):
+    """One published per-category Elo, with its own sample size and interval."""
+
+    field: str
+    elo: float | None
+    appearances: int | None
+    ci95: float | None
+
+
+def _categories(entry: dict[str, Any]) -> list[Category]:
+    """Every published per-category Elo for one model.
+
+    The arena endpoints return `categories` as a list, and each item names its
+    category in exactly one of three columns -- `format_category`,
+    `style_category`, `subject_matter_category` -- leaving the other two null.
+    The parser used to look for a `name`/`category`/`slug` key, found none, and
+    silently produced nothing at all, which is why per-category Elo looked like
+    it worked against a hand-built fixture and vanished against the real API.
+
+    Each item also carries its *own* `appearances` and `ci95`. Those are the
+    honest ones: a model can have 1,056 votes on Physics and 392 on Moving
+    camera, so reusing the model's overall figures would overstate both.
+
+    The dict and flat forms below are kept because a `<key>: {name: elo}` shape
+    is what a `style_category` column would look like if the API ever inlined
+    it, and reading it costs nothing.
+    """
+    out: list[Category] = []
+    seen: set[str] = set()
+
+    def add(name: Any, elo: Any, appearances: Any = None, ci: Any = None) -> None:
+        field = slugify(str(name))
+        if not field or field in seen:
+            return
+        seen.add(field)
+        out.append(Category(field, as_float(elo), as_int(appearances), parse_ci95(ci)))
+
     for key in CATEGORY_KEYS:
         block = entry.get(key)
         if isinstance(block, dict):
             for name, value in block.items():
-                out[slugify(str(name))] = value
+                add(name, value)
+        elif isinstance(block, str):
+            add(block, entry.get("elo"), entry.get("appearances"), entry.get("ci95"))
         elif isinstance(block, list):
             for item in block:
                 if not isinstance(item, dict):
                     continue
-                name = item.get("name") or item.get("category") or item.get("slug")
+                name = (
+                    item.get("format_category")
+                    or item.get("style_category")
+                    or item.get("subject_matter_category")
+                    or item.get("name")
+                    or item.get("category")
+                    or item.get("slug")
+                )
                 value = item.get("elo", item.get("score", item.get("value")))
                 if name is not None:
-                    out[slugify(str(name))] = value
+                    add(name, value, item.get("appearances"), item.get("ci95"))
     return out
 
 
@@ -243,16 +286,17 @@ class AAMediaSource:
             if observation is not None:
                 out.append(observation)
 
-        for category, value in _categories(entry).items():
+        for category in _categories(entry):
             observation = make_observation(
                 model_id=model_id,
                 modality=modality,
                 source=self.name,
-                field=f"elo:{category}",
-                value=value,
+                field=f"elo:{category.field}",
+                value=category.elo,
                 unit="elo",
-                n=appearances,
-                ci95=ci95,
+                # the category's own sample size and interval, not the model's
+                n=category.appearances if category.appearances is not None else appearances,
+                ci95=category.ci95 if category.ci95 is not None else ci95,
                 observed_at=at,
                 pulled_at=at,
             )

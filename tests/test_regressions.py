@@ -68,7 +68,8 @@ def test_fixtures_pull_a_key_gated_source_without_a_key(
     assert cli.main(["--config", str(_config(tmp_path)), "pull", "aa_llm"]) == 0
     out = capsys.readouterr().out
     assert "skipped" not in out, out
-    assert "aa_llm: 6 models" in out, out
+    # the recording is trimmed to 60 of the 644 the endpoint publishes
+    assert "aa_llm: 60 models" in out, out
 
 
 # --------------------------------------------------------------------------- #

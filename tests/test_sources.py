@@ -6,6 +6,7 @@ which serves recorded payloads by URL.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -87,12 +88,14 @@ def _aa_config() -> SourceConfig:
 
 
 def test_aa_llm_maps_every_field_with_its_documented_unit(player: FixturePlayer) -> None:
+    """Against the real recording: 60 models, and every unit as documented."""
     result = AALLMSource().pull(_aa_config(), player)
 
-    assert [m.id for m in result.models][:2] == [
-        "anthropic/claude-opus-5",
-        "anthropic/claude-sonnet-5",
-    ], "canonical id is <model_creator.slug>/<slug>"
+    assert len(result.models) == 60, "the recording is trimmed to 60 of the 644 published"
+    for model in result.models:
+        creator, _, slug = model.id.partition("/")
+        assert creator and slug, f"canonical id is <creator>/<slug>, got {model.id}"
+        assert model.id == model.id.lower()
 
     units = {(o.field, o.unit) for o in result.observations}
     assert ("artificial_analysis_intelligence_index", "index_0_100") in units
@@ -101,16 +104,36 @@ def test_aa_llm_maps_every_field_with_its_documented_unit(player: FixturePlayer)
     assert ("median_output_tokens_per_second", "tokens_per_s") in units
     assert ("median_time_to_first_token_seconds", "seconds") in units
 
+    # 672 observations over 60 models on 2026-09-08. Asserted as a floor, not an
+    # equality: AA adds evaluations, and a new one must not fail this test.
     per_model = len(result.observations) / len(result.models)
-    assert per_model > 15, "every documented evaluation should land"
+    assert per_model >= 11, f"every published evaluation should land, got {per_model:.1f}"
 
+    assert len(result.prices) == 60, "the LLM endpoint prices every model it lists"
     price = result.prices[0]
     assert price.unit == "usd_per_1m_tokens" and price.output is not None
 
 
-def test_aa_llm_stores_unknown_evaluation_keys_and_says_so(player: FixturePlayer) -> None:
-    """AA ships a benchmark on the site before the API documents it."""
-    result = AALLMSource().pull(_aa_config(), player)
+def test_aa_llm_stores_unknown_evaluation_keys_and_says_so(
+    player: FixturePlayer, tmp_path: Path
+) -> None:
+    """AA ships a benchmark on the site before the API documents it.
+
+    Every one of the 17 evaluation keys in the 2026-09-08 recording is already
+    mapped, so the recording cannot exercise this path -- a real pull of it warns
+    about nothing. Rather than keep a hand-built fixture alive for one behaviour,
+    this takes the real recording and adds a single key to it. Nothing here is an
+    invented *measurement*: the number is arbitrary and the test never reads it,
+    only that an unmapped key is stored, warned about, and given the unit its
+    name implies.
+    """
+    slug = fixture_slug("https://artificialanalysis.ai/api/v2/data/llms/models")
+    body = json.loads((FIXTURES / f"{slug}.json").read_text(encoding="utf-8"))
+    body["data"][0]["evaluations"]["aa_briefcase"] = 0.5
+    body["data"][0]["evaluations"]["coding_agent_index"] = 50
+    (tmp_path / f"{slug}.json").write_text(json.dumps(body), encoding="utf-8")
+
+    result = AALLMSource().pull(_aa_config(), FixturePlayer(tmp_path))
 
     stored = {o.field for o in result.observations}
     assert "aa_briefcase" in stored, "an unknown key must still be stored"
@@ -124,6 +147,16 @@ def test_aa_llm_stores_unknown_evaluation_keys_and_says_so(player: FixturePlayer
     ), "an unknown *_index is still an index"
 
 
+def test_aa_llm_warns_about_nothing_in_the_recording(player: FixturePlayer) -> None:
+    """The companion to the test above, and the reason it needs a shaped body.
+
+    If this ever fails, AA has published an evaluation key the source does not
+    map -- which is exactly the signal the warning exists to raise.
+    """
+    result = AALLMSource().pull(_aa_config(), player)
+    assert result.warnings == [], f"unmapped keys appeared: {result.warnings}"
+
+
 def test_aa_llm_without_a_key_warns_rather_than_inventing(
     player: FixturePlayer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -135,6 +168,7 @@ def test_aa_llm_without_a_key_warns_rather_than_inventing(
 
 
 def test_aa_media_makes_one_field_per_published_category(player: FixturePlayer) -> None:
+    """Categories come back as a list whose name sits in one of three columns."""
     cfg = SourceConfig(
         name="aa_media",
         key_env="ARTIFICIAL_ANALYSIS_API_KEY",
@@ -144,6 +178,7 @@ def test_aa_media_makes_one_field_per_published_category(player: FixturePlayer) 
 
     fields = {o.field for o in result.observations}
     assert {"elo", "rank", "appearances", "ci95"} <= fields
+    # format_category, subject_matter_category and style_category respectively
     assert "elo:moving_camera" in fields
     assert "elo:physics" in fields
     assert "elo:anime" in fields
@@ -154,8 +189,53 @@ def test_aa_media_makes_one_field_per_published_category(player: FixturePlayer) 
     elo = next(o for o in result.observations if o.field == "elo")
     assert elo.unit == "elo" and elo.n is not None and elo.ci95 is not None
 
-    price = result.prices[0]
-    assert price.unit in ("usd_per_second", "usd_per_image") and price.per_unit is not None
+    # a category carries its own sample size, not the model's overall one
+    physics = next(o for o in result.observations if o.field == "elo:physics")
+    assert physics.n is not None and physics.ci95 is not None
+
+
+def test_aa_media_publishes_no_price_so_none_is_invented(player: FixturePlayer) -> None:
+    """The arena endpoints carry no pricing key of any kind.
+
+    The hand-built fixtures had one, so the media `cost` axes were written
+    against a price that does not exist. Nothing may fill that in: a media model
+    has no cost from this source, and the axis has to report the coverage loss.
+    """
+    cfg = SourceConfig(
+        name="aa_media",
+        key_env="ARTIFICIAL_ANALYSIS_API_KEY",
+        modalities=["text-to-video", "text-to-image", "image-editing", "text-to-speech"],
+    )
+    result = AAMediaSource().pull(cfg, player)
+
+    assert result.models, "the pull did happen"
+    assert result.prices == [], "no arena row publishes a price; none may be invented"
+
+
+def test_aa_media_records_which_endpoints_publish_categories(player: FixturePlayer) -> None:
+    """Two of the five arena endpoints publish no categories at all.
+
+    `include_categories=true` is sent to all five; image-editing and
+    text-to-speech answer without a `categories` list. An axis over a category
+    for those modalities would sit at coverage 0 forever, so this pins which
+    ones can carry category axes and which cannot.
+    """
+    cfg = SourceConfig(
+        name="aa_media",
+        key_env="ARTIFICIAL_ANALYSIS_API_KEY",
+        modalities=["text-to-image", "image-editing", "text-to-video", "text-to-speech"],
+    )
+    result = AAMediaSource().pull(cfg, player)
+
+    by_modality: dict[str, set[str]] = {}
+    for observation in result.observations:
+        if observation.field.startswith("elo:"):
+            by_modality.setdefault(observation.modality, set()).add(observation.field)
+
+    assert len(by_modality.get("text-to-video", set())) >= 25
+    assert len(by_modality.get("text-to-image", set())) >= 10
+    assert by_modality.get("image-editing", set()) == set()
+    assert by_modality.get("text-to-speech", set()) == set()
 
 
 @pytest.mark.parametrize(
@@ -323,3 +403,37 @@ def test_a_good_profile_round_trips_and_keeps_its_comments(tmp_path: Path) -> No
     assert "in: 30000" in text, "shape keeps the YAML spelling"
 
     assert next(iter(load_profiles(tmp_path))).weights == {"agentic_coding": 0.7, "cost": 0.3}
+
+
+def test_the_recordings_match_what_the_manifest_claims(player: FixturePlayer) -> None:
+    """The counts a reader is asked to trust, asserted rather than asserted-in-prose.
+
+    `RECORDINGS.json` says what each file came from, how many rows the endpoint
+    published on 2026-09-08 and how many were kept. A trimmed recording whose
+    manifest drifts is worse than none, because every count in the tests below
+    is then quietly measuring something else.
+    """
+    manifest = json.loads((FIXTURES / "RECORDINGS.json").read_text(encoding="utf-8"))
+    assert len(manifest) == 10
+
+    for name, entry in manifest.items():
+        body = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+        rows = body["data"] if isinstance(body, dict) and "data" in body else body
+        assert len(rows) == entry["rows_kept"], f"{name} holds {len(rows)}, manifest says {entry}"
+        assert entry["rows_kept"] <= entry["rows_published"]
+        assert f"{fixture_slug(entry['url'], _params_of(entry))}.json" == name
+
+    llms = manifest["artificialanalysis_ai_api_v2_data_llms_models.json"]
+    assert llms["rows_published"] == 644, "the figure the phase 1 report could not claim"
+
+    result = AALLMSource().pull(_aa_config(), player)
+    assert (len(result.models), len(result.observations), len(result.prices)) == (60, 672, 60), (
+        "the recorded pull's real counts"
+    )
+
+
+def _params_of(entry: dict[str, object]) -> dict[str, str] | None:
+    raw = entry.get("params")
+    if not raw:
+        return None
+    return dict(pair.split("=", 1) for pair in str(raw).split("&"))

@@ -55,12 +55,16 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
                 name="gateway",
                 kind="list",
                 models=[
-                    "anthropic/claude-opus-5",
-                    "anthropic/claude-sonnet-5",
-                    "openai/gpt-5-2",
-                    "google/gemini-3-pro",
-                    "z-ai/glm-5.3",
-                    "deepseek/deepseek-v4",
+                    # Real ids from the 2026-09-08 AA recording. The six that
+                    # used to be pinned here came from the hand-built fixture
+                    # and none of them survive in it, so nothing was reachable
+                    # and `recommend` answered with an empty list.
+                    "openai/gpt-5-6-sol-xhigh",
+                    "openai/gpt-6-astra-high",
+                    "openai/gpt-6-astra",
+                    "openai/gpt-5-6-terra",
+                    "google/gemini-3-8-flash",
+                    "meta/muse-spark-1-3-xhigh",
                 ],
             )
         },

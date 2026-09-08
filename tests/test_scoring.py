@@ -38,6 +38,7 @@ from sieve.scoring import (
     weigh,
 )
 from sieve.scoring.health import health_series
+from sieve.scoring.pareto import dominates
 from sieve.scoring.weigh import rank_order
 
 FIXTURE = Path(__file__).parent / "fixtures" / "rank_case.json"
@@ -531,3 +532,82 @@ def test_media_cost_per_task() -> None:
         model_id="a/b", source="aa_media", unit="usd_per_image", per_unit=0.03, observed_at=NOW
     )
     assert cost_per_task(per_image, Shape(images=4)) == pytest.approx(0.12)
+
+
+# --------------------------------------------------------------------------- #
+# pareto pruning, against the real field
+# --------------------------------------------------------------------------- #
+
+
+def _real_llm_rows(profile_name: str) -> tuple[dict[str, dict[str, float | None]], object]:
+    """Axis values for one profile over the recorded Artificial Analysis field."""
+    import os
+
+    os.environ.setdefault("ARTIFICIAL_ANALYSIS_API_KEY", "fixture")
+
+    from sieve.axes import compute as axes_compute
+    from sieve.axes import load as axes_load
+    from sieve.contracts import ObsTable, SourceConfig
+    from sieve.engine import add_cost_observations
+    from sieve.http import FixturePlayer
+    from sieve.profiles.load import load_profiles
+    from sieve.sources import AALLMSource
+
+    repo = Path(__file__).resolve().parents[1]
+    at = datetime(2026, 9, 8, tzinfo=UTC)
+
+    pull = AALLMSource().pull(
+        SourceConfig(name="aa_llm", key_env="ARTIFICIAL_ANALYSIS_API_KEY"),
+        FixturePlayer(repo / "tests" / "fixtures"),
+    )
+    obs = ObsTable(modality="llm")
+    for observation in pull.observations:
+        obs.add(observation)
+    for price in pull.prices:
+        obs.prices[price.model_id] = price
+
+    profile = {p.name: p for p in load_profiles(repo / "profiles")}[profile_name]
+    add_cost_observations(obs, profile, at)
+
+    pool = obs.models()
+    axes = axes_load.load_axes(repo / "data" / "axes", "llm")
+    per_axis = {
+        a.name: axes_compute.axis_values(a, obs, pool) for a in axes if a.name in profile.weights
+    }
+    rows = {m: {name: per_axis[name].get(m, (None, 0.0))[0] for name in per_axis} for m in pool}
+    return rows, profile
+
+
+def test_pareto_prune_fires_on_the_real_field() -> None:
+    """Phase 1 reported "dominated by" as implemented but never firing.
+
+    That was a property of the data, not the code: the hand-built fixture held
+    six models, and six models spread over six axes are almost all mutually
+    incomparable. On the recorded field of 60 the pruner finds real dominations,
+    which is what makes the set-aside reason worth showing at all.
+    """
+    rows, profile = _real_llm_rows("coder")
+    weighted = [a for a, w in profile.weights.items() if w > 0]  # type: ignore[attr-defined]
+
+    pruned = pareto_prune(rows, profile.weights)  # type: ignore[attr-defined]
+    assert pruned, "nothing dominated on a 60-model field means the pruner is broken"
+
+    # every claim the pruner makes has to survive being checked directly
+    for model_id, by in pruned.items():
+        assert by != model_id
+        assert dominates(rows[by], rows[model_id], weighted), (
+            f"{by} was said to dominate {model_id} and does not"
+        )
+
+
+def test_pareto_prune_never_prunes_on_an_unmeasured_axis() -> None:
+    """A model may only be pruned by one that beats it where both are measured."""
+    rows, profile = _real_llm_rows("coder")
+    weighted = [a for a, w in profile.weights.items() if w > 0]  # type: ignore[attr-defined]
+
+    for model_id, by in pareto_prune(rows, profile.weights).items():  # type: ignore[attr-defined]
+        shared = [
+            a for a in weighted if rows[by].get(a) is not None and rows[model_id].get(a) is not None
+        ]
+        assert shared, f"{model_id} pruned with no axis measured on both sides"
+        assert all(rows[by][a] >= rows[model_id][a] for a in shared)  # type: ignore[operator]

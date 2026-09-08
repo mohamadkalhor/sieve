@@ -388,8 +388,10 @@ unfinished half of the web.
 
 ## 12. Acceptance for phase 1
 
-- `sieve pull aa_llm` with a key stores ≥ 600 models; a second pull adds
-  observation rows, never overwrites; `sieve pull openrouter` needs no key.
+- ~~`sieve pull aa_llm` with a key stores ≥ 600 models~~ — **proven 2026-09-08**:
+  644 models, 7,416 observations, 644 prices against the live API. A second
+  pull adds observation rows, never overwrites; `sieve pull openrouter` needs
+  no key.
 - `sieve pull aa_media` stores five modalities with per-category Elo.
 - `sieve check` validates every axis, profile and alias file and fails on an
   unknown field or a weight set that does not sum to 1 (±0.001).

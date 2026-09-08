@@ -32,9 +32,23 @@ anthropic/claude-haiku-4-5:
 # Artificial Analysis writes versions with dashes and OpenRouter with dots.
 # The matcher folds those together on its own; these are here only where the
 # creator prefix also differs, which it cannot resolve.
+#
+# Checked on 2026-09-08 by running every OpenRouter id in the recordings
+# through the matcher against every Artificial Analysis id. Of 60 ids: 1 exact,
+# 13 resolved by a rule, and the remaining 46 are models one catalogue carries
+# and the other does not -- not misses. So this file stays short on purpose.
+# The one gap the pass found was `:batch`, which is now a tag rule in
+# sieve/catalog/match.py rather than 12 entries here.
+#
+# The creator split below is real and observed: AA writes `zai`, OpenRouter
+# writes `z-ai`. The matcher happens to fold it at 0.9, and these entries make
+# it exact and survive a change to the normaliser.
 z-ai/glm-5.3:
+  - zai/glm-5-3
   - zhipu/glm-5.3
   - zhipuai/glm-5-3
+z-ai/glm-5.3-flash:
+  - zai/glm-5-3-flash
 
 # --- deployments named after a role rather than a model -------------------
 # Uncomment and edit for your own gateway. These are the ids that show up as

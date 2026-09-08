@@ -1,0 +1,72 @@
+{
+ "artificialanalysis_ai_api_v2_data_llms_models.json": {
+  "params": null,
+  "recorded": "2026-09-08",
+  "rows_kept": 60,
+  "rows_published": 644,
+  "url": "https://artificialanalysis.ai/api/v2/data/llms/models"
+ },
+ "artificialanalysis_ai_api_v2_data_media_image_editing__include_categories_true.json": {
+  "params": "include_categories=true",
+  "recorded": "2026-09-08",
+  "rows_kept": 40,
+  "rows_published": 74,
+  "url": "https://artificialanalysis.ai/api/v2/data/media/image-editing"
+ },
+ "artificialanalysis_ai_api_v2_data_media_image_to_video__include_categories_true.json": {
+  "params": "include_categories=true",
+  "recorded": "2026-09-08",
+  "rows_kept": 40,
+  "rows_published": 75,
+  "url": "https://artificialanalysis.ai/api/v2/data/media/image-to-video"
+ },
+ "artificialanalysis_ai_api_v2_data_media_text_to_image__include_categories_true.json": {
+  "params": "include_categories=true",
+  "recorded": "2026-09-08",
+  "rows_kept": 40,
+  "rows_published": 157,
+  "url": "https://artificialanalysis.ai/api/v2/data/media/text-to-image"
+ },
+ "artificialanalysis_ai_api_v2_data_media_text_to_speech__include_categories_true.json": {
+  "params": "include_categories=true",
+  "recorded": "2026-09-08",
+  "rows_kept": 40,
+  "rows_published": 95,
+  "url": "https://artificialanalysis.ai/api/v2/data/media/text-to-speech"
+ },
+ "artificialanalysis_ai_api_v2_data_media_text_to_video__include_categories_true.json": {
+  "params": "include_categories=true",
+  "recorded": "2026-09-08",
+  "rows_kept": 40,
+  "rows_published": 81,
+  "url": "https://artificialanalysis.ai/api/v2/data/media/text-to-video"
+ },
+ "artificialanalysis_ai_api_v2_media_music_instrumental_models_free.json": {
+  "params": null,
+  "recorded": "2026-09-08",
+  "rows_kept": 18,
+  "rows_published": 18,
+  "url": "https://artificialanalysis.ai/api/v2/media/music/instrumental/models/free"
+ },
+ "artificialanalysis_ai_api_v2_media_music_with_vocals_models_free.json": {
+  "params": null,
+  "recorded": "2026-09-08",
+  "rows_kept": 15,
+  "rows_published": 15,
+  "url": "https://artificialanalysis.ai/api/v2/media/music/with-vocals/models/free"
+ },
+ "artificialanalysis_ai_api_v2_media_speech_to_speech_models_free.json": {
+  "params": null,
+  "recorded": "2026-09-08",
+  "rows_kept": 38,
+  "rows_published": 38,
+  "url": "https://artificialanalysis.ai/api/v2/media/speech-to-speech/models/free"
+ },
+ "artificialanalysis_ai_api_v2_media_speech_to_text_models_free.json": {
+  "params": null,
+  "recorded": "2026-09-08",
+  "rows_kept": 67,
+  "rows_published": 67,
+  "url": "https://artificialanalysis.ai/api/v2/media/speech-to-text/models/free"
+ }
+}
