@@ -29,6 +29,7 @@ from sieve.contracts import (
     Profile,
     Ranking,
     Reachable,
+    TargetDiff,
     TargetResult,
     TelemetryEvent,
 )
@@ -548,6 +549,58 @@ def get_health(
                 **(figures.get(model_id) or {}),  # type: ignore[arg-type]
             )
         )
+    return out
+
+
+@router.get("/diff")
+def get_diff(request: Request, _: Read = None) -> list[TargetDiff]:
+    """What every configured target holds now, per profile.
+
+    The Chains screen diffs against this rather than against the last `apply`
+    decision. A decision says what Sieve believes it wrote; a target that has
+    drifted underneath -- edited by hand, rolled back, written by something
+    else -- shows no difference at all against that belief, which is exactly
+    when a diff needs to be right.
+    """
+    from sieve import plugins
+
+    cfg = config_of(request)
+    store = store_of(request)
+    profiles = _profiles_module().load_profiles(cfg.profiles_dir)
+    chains = [c for c in (store.chain(p.name) for p in profiles) if c]
+    out: list[TargetDiff] = []
+    for name, target_cfg in sorted(cfg.targets.items()):
+        try:
+            target = plugins.load(plugins.TARGETS, target_cfg.kind)
+        except (LookupError, ImportError) as exc:
+            out.append(
+                TargetDiff(target=name, kind=target_cfg.kind, supported=False, error=str(exc))
+            )
+            continue
+        try:
+            out.append(
+                TargetDiff(
+                    target=name,
+                    kind=target_cfg.kind,
+                    current=target.current(target_cfg),
+                    planned=target.plan(target_cfg, chains),
+                )
+            )
+        except NotImplementedError as exc:
+            # a one-way target: it cannot say what the receiver holds, and an
+            # empty dict here would read as "everything is a change"
+            out.append(
+                TargetDiff(target=name, kind=target_cfg.kind, supported=False, error=str(exc))
+            )
+        except Exception as exc:
+            out.append(
+                TargetDiff(
+                    target=name,
+                    kind=target_cfg.kind,
+                    supported=False,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            )
     return out
 
 

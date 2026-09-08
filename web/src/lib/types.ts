@@ -275,6 +275,17 @@ export interface TargetConfig {
 }
 
 
+/** What one target holds *now*, against what the engine would write. The Chains screen used to diff against the last `apply` decision, which only says what Siev... */
+export interface TargetDiff {
+  target: string;
+  kind: string;
+  supported?: boolean;
+  current?: Record<string, string[]>;
+  planned?: Record<string, string[]>;
+  error?: string | null;
+}
+
+
 export interface TargetResult {
   target: string;
   written?: string[];

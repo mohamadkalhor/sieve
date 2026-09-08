@@ -12,13 +12,17 @@ import json
 from pathlib import Path
 
 from sieve.contracts import Chain, TargetConfig, TargetResult
-from sieve.targets.base import chain_rows, write_atomic
+from sieve.targets.base import chain_rows, planned_ids, write_atomic
 
 CSV_HEADER = ("profile", "position", "model_id", "local_ids")
 
 
 class FileTarget:
     name = "file"
+
+    def plan(self, cfg: TargetConfig, chains: list[Chain]) -> dict[str, list[str]]:
+        """Canonical ids: this target writes the chain as the engine computed it."""
+        return planned_ids(chains)
 
     def _dir(self, cfg: TargetConfig) -> Path:
         return Path(cfg.dir or "out")

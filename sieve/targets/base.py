@@ -38,3 +38,13 @@ def write_atomic(path: Path, text: str) -> None:
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
+
+
+def planned_ids(chains: list[Chain]) -> dict[str, list[str]]:
+    """`{profile: [canonical ids]}` -- what a target writes unless it says otherwise.
+
+    The default for `Target.plan()`. A target that routes by the gateway's own
+    local ids overrides it; comparing canonical against local would report a
+    change on every single run and teach everyone to ignore the diff.
+    """
+    return {chain.profile: [chain.primary, *chain.fallbacks] for chain in chains}

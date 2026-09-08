@@ -15,6 +15,7 @@ import type {
   Ranking,
   HealthRow,
   Reachable,
+  TargetDiff,
   TargetResult
 } from '$lib/types';
 
@@ -188,6 +189,9 @@ export const api = {
   /** What the gateway's own traffic says, per model. The Pulse screen reads this. */
   health: (window: '24h' | '7d' = '24h', reachable = true, o?: RequestOptions) =>
     request<HealthRow[]>(`/v1/health${q({ window, reachable })}`, o),
+
+  /** What every target holds now, so a diff is against reality and not a belief. */
+  diff: (o?: RequestOptions) => request<TargetDiff[]>('/v1/diff', o),
 
   sources: (o?: RequestOptions) => request<SourceRow[]>('/v1/sources', o),
 

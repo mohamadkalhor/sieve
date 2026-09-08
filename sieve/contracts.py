@@ -272,6 +272,31 @@ class Decision(_Model):
     detail: dict[str, Any] = Field(default_factory=dict)
 
 
+class TargetDiff(_Model):
+    """What one target holds *now*, against what the engine would write.
+
+    The Chains screen used to diff against the last `apply` decision, which only
+    says what Sieve believes it wrote. A target that drifts underneath -- edited
+    by hand, rolled back, or written by something else -- showed no difference at
+    all. This asks the target.
+
+    `supported` is false for a target that cannot read back, like a webhook.
+    That is not the same as "holds nothing", and the two must not look alike:
+    an empty `current` would read as "everything is a change".
+    """
+
+    target: str
+    kind: str
+    supported: bool = True
+    #: profile -> the model ids the target holds now, in order
+    current: dict[str, list[str]] = Field(default_factory=dict)
+    #: what `write()` would put there, in the same vocabulary. A target that
+    #: routes by the gateway's own local ids plans in those, so the two sides
+    #: of the comparison are the same kind of thing.
+    planned: dict[str, list[str]] = Field(default_factory=dict)
+    error: str | None = None
+
+
 class HealthRow(_Model):
     """One model's own traffic, for the Pulse screen. `GET /v1/health` serves these.
 
@@ -430,6 +455,12 @@ class Target(Protocol):
 
     def current(self, cfg: TargetConfig) -> dict[str, list[str]]: ...
 
+    # Optional. What `write()` *would* put there, in the same vocabulary
+    # `current()` reads back. A target that routes by the gateway's own local
+    # ids must implement it, or a diff compares canonical ids against local
+    # ones and reports a change on every run. The default is the chain itself.
+    def plan(self, cfg: TargetConfig, chains: list[Chain]) -> dict[str, list[str]]: ...
+
     def write(self, cfg: TargetConfig, chains: list[Chain], dry_run: bool) -> TargetResult: ...
 
 
@@ -503,6 +534,7 @@ EXPORTED: tuple[type[BaseModel], ...] = (
     Decision,
     TelemetryEvent,
     HealthRow,
+    TargetDiff,
     SourceConfig,
     InventoryConfig,
     TargetConfig,

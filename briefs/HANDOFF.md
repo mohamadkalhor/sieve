@@ -446,6 +446,65 @@ had a list of an optional until `HealthRow.series`.
   stops receiving telemetry keeps its last 30 days for ever. Part 5's scheduled
   run is the place for that.
 
+## Part 4 · Targets that write to a real gateway
+
+Three targets and the diff fix. **Nothing points at a live gateway**: the
+webhook is tested against a fake HTTP server on localhost, 9router against a
+scratch SQLite file built in `tmp_path` with its real `combos` schema, LiteLLM
+against a YAML file.
+
+- **`webhook`** POSTs one document with every profile and signs it: HMAC-SHA256
+  over `timestamp.body`, secret from an env var named in config, timestamp
+  inside the signed material so a captured request cannot be replayed later. It
+  refuses to push at all without a secret, because a receiver that accepts an
+  unsigned POST will route traffic for anyone who can reach the URL. 5xx and
+  dropped connections retry with backoff; a **4xx does not** -- the receiver
+  understood and refused, and sending it again is only load.
+- **`ninerouter`** writes one combo per profile, prefixed `sieve-`, so a combo
+  somebody made by hand is never touched. HTTP admin API when a token is
+  configured, the SQLite file when a path is given, and a refusal naming both
+  when neither is -- it will not guess which database to write. The file is
+  copied before it is written: it belongs to another program, and corrupting a
+  gateway's database is worse than failing to write.
+- **`litellm`** owns exactly one key, `router_settings.fallbacks`. `model_list`,
+  `general_settings` and everything else belong to whoever wrote them.
+
+**The diff now reads the target, not the last decision.** `GET /v1/diff` asks
+every configured target what it holds, and the Chains screen shows that instead
+of the last `apply` decision -- which only ever said what Sieve *believed* it
+wrote, so a target edited by hand or rolled back showed no difference at all.
+
+Doing that properly needed one addition to the protocol: **`Target.plan()`**.
+9router holds the gateway's own local ids and LiteLLM keys on the primary; the
+engine computes canonical ids. Comparing those directly would have reported a
+change on every single run, which teaches everyone to ignore the diff. Each
+target now says what it *would* write in the same vocabulary it reads back, and
+a test pins that `plan()` and `current()` agree exactly after a write.
+
+`sieve apply --dry-run` exists, and needs no `--yes`, since demanding
+confirmation for something that writes nothing only teaches people to type
+`--yes` without reading it.
+
+Proven end to end on a scratch database: seed a stale combo, `sieve diff` shows
+`- cheap_bulk: gw/something-old`; `apply --yes` writes it and takes a backup;
+`diff` then reads `= cheap_bulk: unchanged`; drift it again and `--dry-run`
+prints "would write" and leaves it drifted.
+
+### Left open
+
+- **The 9router HTTP path is written but never exercised against 9router.** The
+  admin endpoint shape (`PUT /admin/combos/{name}`) is inferred from the catalogue
+  and the SQLite schema, not from its documentation. The SQLite path is the one
+  proven here. **This is the live test the brief reserves for the owner.**
+- **`current()` for `litellm` is keyed by primary, not by profile**, because its
+  file format has no idea what a profile is. The diff is still real, but a
+  profile rename looks like a new entry rather than a move.
+- **The webhook has no receipt.** It reports the status it got and nothing about
+  what the receiver did with the body. `current()` raises rather than returning
+  `{}`, which the diff surfaces as "cannot be read back".
+- **No target writes concurrently.** Two `sieve apply` runs against one 9router
+  file would interleave; SQLite's own locking is all that stands there.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

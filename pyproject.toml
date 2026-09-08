@@ -33,6 +33,9 @@ list = "sieve.inventory.static_list:StaticListInventory"
 [project.entry-points."sieve.targets"]
 file = "sieve.targets.file:FileTarget"
 http = "sieve.targets.http:HttpTarget"
+webhook = "sieve.targets.webhook:WebhookTarget"
+ninerouter = "sieve.targets.ninerouter:NineRouterTarget"
+litellm = "sieve.targets.litellm:LiteLLMTarget"
 
 [dependency-groups]
 dev = [

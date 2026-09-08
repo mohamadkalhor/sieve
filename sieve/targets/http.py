@@ -8,10 +8,15 @@ records that these chains are the ones the API will serve.
 from __future__ import annotations
 
 from sieve.contracts import Chain, TargetConfig, TargetResult
+from sieve.targets.base import planned_ids
 
 
 class HttpTarget:
     name = "http"
+
+    def plan(self, cfg: TargetConfig, chains: list[Chain]) -> dict[str, list[str]]:
+        """Canonical ids: this target writes the chain as the engine computed it."""
+        return planned_ids(chains)
 
     def current(self, cfg: TargetConfig) -> dict[str, list[str]]:
         """Nothing is held here: the API serves whatever the store holds, so a

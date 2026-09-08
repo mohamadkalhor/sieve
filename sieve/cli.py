@@ -402,15 +402,28 @@ def cmd_diff(args: argparse.Namespace) -> int:
     cfg = _config(args)
     profiles = _profiles(cfg, args.profile)
     result = run(cfg, profiles=profiles, dry_run=True)
-    computed = {c.profile: [c.primary, *c.fallbacks] for c in result.chains}
+
     for name, target_cfg in cfg.targets.items():
         try:
             target = plugins.load(plugins.TARGETS, target_cfg.kind)
         except (LookupError, ImportError) as exc:
             _out(f"{name}: {exc}")
             continue
-        current = target.current(target_cfg)
         _out(f"target {name} ({target_cfg.kind})")
+        # what *this* target would write, in the vocabulary it reads back:
+        # 9router holds the gateway's local ids, so comparing canonical ones
+        # against them would report a change on every run.
+        computed = target.plan(target_cfg, result.chains)
+        try:
+            current = target.current(target_cfg)
+        except NotImplementedError as exc:
+            # a one-way target. Printing an empty diff would read as
+            # "everything changed", which is not what it said.
+            _out(f"  ? cannot be read back: {exc}")
+            continue
+        except Exception as exc:
+            _out(f"  ! {type(exc).__name__}: {exc}")
+            continue
         for profile_name, chain in sorted(computed.items()):
             was = current.get(profile_name, [])
             if was == chain:
@@ -423,19 +436,24 @@ def cmd_diff(args: argparse.Namespace) -> int:
 
 def cmd_apply(args: argparse.Namespace) -> int:
     cfg = _config(args)
-    if not args.yes:
-        _out("apply writes to your targets; pass --yes to confirm")
+    dry_run = bool(getattr(args, "dry_run", False))
+    # `--yes` is the confirmation for writing outward. A dry run writes
+    # nothing, so demanding confirmation for it only teaches people to type
+    # --yes without reading it.
+    if not args.yes and not dry_run:
+        _out("apply writes to your targets; pass --yes to confirm, or --dry-run to see it")
         return EXIT_ERROR
     profiles = _profiles(cfg, args.profile)
-    result = run(cfg, profiles=profiles, dry_run=False, actor="cli")
-    outcomes = apply_targets(cfg, result.chains, targets=args.target, dry_run=False, actor="cli")
+    result = run(cfg, profiles=profiles, dry_run=dry_run, actor="cli")
+    outcomes = apply_targets(cfg, result.chains, targets=args.target, dry_run=dry_run, actor="cli")
     failed = 0
     for outcome in outcomes:
         if outcome.error:
             failed += 1
             _out(f"{outcome.target}: {outcome.error}")
         else:
-            _out(f"{outcome.target}: wrote {', '.join(outcome.written) or '(nothing)'}")
+            verb = "would write" if dry_run else "wrote"
+            _out(f"{outcome.target}: {verb} {', '.join(outcome.written) or '(nothing)'}")
     return EXIT_ERROR if failed else EXIT_OK
 
 
@@ -547,6 +565,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--profile", nargs="*")
     p.add_argument("--target", nargs="*")
     p.add_argument("--yes", action="store_true", help="required; apply writes outward")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="say what would be written and write nothing; needs no --yes",
+    )
     p.set_defaults(func=cmd_apply)
 
     p = sub.add_parser("serve", help="run the API and the web build")

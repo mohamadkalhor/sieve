@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { api, type ApiError } from '$lib/api/client';
-  import type { Chain, Decision } from '$lib/types';
+  import type { Chain, Decision, TargetDiff } from '$lib/types';
   import ChainCard from '$lib/components/ChainCard.svelte';
   import Diff from '$lib/components/Diff.svelte';
   import Empty from '$lib/components/Empty.svelte';
@@ -9,6 +9,7 @@
 
   let chain = $state<Chain | null>(null);
   let decisions = $state<Decision[]>([]);
+  let diffs = $state<TargetDiff[]>([]);
   let error = $state<ApiError | null>(null);
   let token = $state('');
   let notice = $state('');
@@ -20,21 +21,30 @@
   $effect(() => {
     const wanted = name;
     loading = true;
-    Promise.all([api.chain(wanted), api.decisions(wanted)]).then(([c, d]) => {
+    Promise.all([api.chain(wanted), api.decisions(wanted), api.diff()]).then(([c, d, t]) => {
       if (wanted !== name) return;
       chain = c.ok ? c.value : null;
       if (!c.ok) error = c.error;
       decisions = d.ok ? d.value : [];
+      diffs = t.ok ? t.value : [];
       loading = false;
     });
   });
 
-  /** what the last apply actually wrote, so the diff is against reality */
-  const applied = $derived.by(() => {
-    const rows = decisions.filter((row) => row.kind === 'apply');
-    const last = rows[0]?.after as { primary?: string; fallbacks?: string[] } | undefined;
-    return last?.primary ? [last.primary, ...(last.fallbacks ?? [])] : [];
-  });
+  /**
+   * What each target holds *now*, read from the target itself.
+   *
+   * This used to read the last `apply` decision, which only says what Sieve
+   * believes it wrote. A target edited by hand, rolled back, or written by
+   * something else showed no difference at all against that belief — which is
+   * exactly the moment a diff has to be right.
+   */
+  const targets = $derived(
+    diffs.map((d) => ({
+      ...d,
+      before: d.current?.[name] ?? []
+    }))
+  );
 
   const computed = $derived(chain ? [chain.primary, ...(chain.fallbacks ?? [])] : []);
 
@@ -67,8 +77,20 @@
     <div>
       <ChainCard {chain} />
 
-      <h2>Against what was last applied</h2>
-      <Diff before={applied} after={computed} target="file target" />
+      <h2>Against what each target holds now</h2>
+      {#if targets.length === 0}
+        <p class="muted small">No targets configured, so there is nothing to compare against.</p>
+      {/if}
+      {#each targets as t (t.target)}
+        {#if t.supported === false}
+          <p class="muted small">
+            <strong>{t.target}</strong> ({t.kind}) cannot be read back{t.error ? `: ${t.error}` : ''}.
+            Not the same as holding nothing.
+          </p>
+        {:else}
+          <Diff before={t.before} after={computed} target={`${t.target} (${t.kind})`} />
+        {/if}
+      {/each}
 
       <h2>Apply</h2>
       <p class="muted small">
