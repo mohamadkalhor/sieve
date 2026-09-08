@@ -12,20 +12,20 @@ import { expect, test, type Page } from '@playwright/test';
  *
  * TWO ROW COUNTS, AND WHY
  *
- * The shipped fixture store cannot produce 60 ranked rows. It carries axis
- * data for exactly six LLMs (`tests/fixtures/artificialanalysis_*_llms_*.json`)
- * and the e2e inventory makes eight models reachable, so `/profiles/coder`
- * renders six rows and no profile can do better -- loosening constraints does
- * not help, because the ceiling is the axis data, not the constraints. So:
+ * The shipped fixture store used to rank six models, so a 60-row case had to
+ * be built. It ranks 59 now -- deriving cost for every priced model, not only
+ * the benchmarked ones, put the whole OpenRouter catalogue in the pool -- but
+ * that count is a property of the fixtures and will move again, so both cases
+ * stay:
  *
  *   1. `shipped data` measures the app exactly as it ships, at whatever row
  *      count the fixtures really yield. That count is asserted, not assumed,
  *      and printed with the timings.
  *   2. `60 rows` measures the same real page with the ranking response stubbed
- *      to 60 synthetic models. Only the JSON is synthetic: the Svelte build,
- *      the reactivity, the DOM, the FLIP and the input event are all real.
- *      This is the case brief D names, and it is labelled as stubbed wherever
- *      its numbers are reported.
+ *      to exactly 60 synthetic models, so the number brief D names is measured
+ *      whatever the fixtures do. Only the JSON is synthetic: the Svelte build,
+ *      the reactivity, the DOM, the FLIP and the input event are all real, and
+ *      it is labelled as stubbed wherever its numbers are reported.
  *
  * WHAT THE NUMBER IS
  *
@@ -42,15 +42,22 @@ import { expect, test, type Page } from '@playwright/test';
  *
  * WHAT THESE TESTS FOUND, so nobody has to re-derive it from the test names
  *
- * At the six rows the fixtures yield, an input costs about 3-5 ms: comfortable.
- * At 60 rows it costs about 14-15 ms at the median and 22-23 ms at p95 -- the
- * median only just fits a 16 ms frame and the tail does not. The scoring is not
- * the reason: `weigh` + `rankWithFloor` over the same 60 rows is ~0.07 ms, and
- * disabling FLIP only recovers ~2 ms. The cost is reconciling 60 keyed rows.
- * So brief D's "under 16 ms per input on a 60-row list" holds for the ranking
- * and is marginal-to-failing for the editor as a whole at that size. The bounds
- * asserted below are deliberately far looser than any of these numbers; they
- * exist to catch a regression, not to re-state the finding.
+ * The figures move with the machine, which is the point of printing rather than
+ * asserting them. On the CI runner (ubuntu-latest, Chromium, September 2026):
+ * the shipped 59 rows cost median 6.3 ms, p95 9.9 ms, max 12.3 ms; the stubbed
+ * 60 cost median 9.5 ms, p95 12.8 ms, max 14.6 ms. Every sample fits a 16 ms
+ * frame, so brief D's "under 16 ms per input on a 60-row list" holds there.
+ *
+ * On a Windows laptop under load the same stubbed 60 cost median 12.1 ms, p95
+ * 16.0 ms, max 24.8 ms -- the median fits and the tail does not. So the claim
+ * is true of the runner and marginal on a slower machine, and the honest
+ * summary is that this is close to the budget rather than far under it.
+ *
+ * Where the time goes is not in doubt: `weigh` + `rankWithFloor` over the same
+ * 60 rows is ~0.07 ms (tests/rerank.bench.test.ts), and disabling FLIP recovers
+ * only about 2 ms. The cost is reconciling 60 keyed rows. The bounds asserted
+ * below are deliberately far looser than any of these numbers; they exist to
+ * catch a regression, not to re-state a measurement that moves with the box.
  */
 
 const AXES = ['agentic_coding', 'cost', 'agentic_tools', 'reasoning', 'long_context', 'latency'];
