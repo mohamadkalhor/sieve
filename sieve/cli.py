@@ -21,7 +21,7 @@ from sieve.catalog.aliases import load_aliases
 from sieve.catalog.registry import merge_pull
 from sieve.config import Config, default_config, load_config
 from sieve.contracts import Profile
-from sieve.engine import OwnerMissingError, apply_targets, run
+from sieve.engine import COST_SOURCE, OwnerMissingError, apply_targets, run
 from sieve.http import client as http_client
 from sieve.http import fixtures_enabled
 from sieve.store import Store
@@ -228,10 +228,53 @@ def cmd_check(args: argparse.Namespace) -> int:
             )
     _out(f"profiles: {len(profiles)} loaded from {cfg.profiles_dir}")
 
+    problems += _axes_against_the_data(cfg, axes)
+
     for problem in problems:
         _out(f"  fail: {problem}")
     _out("check: green" if not problems else f"check: {len(problems)} problem(s)")
     return EXIT_OK if not problems else EXIT_ERROR
+
+
+def _axes_against_the_data(cfg: Config, axes: list[Any]) -> list[str]:
+    """An axis whose field nothing publishes is an error, not coverage 0.
+
+    Four shipped axes named a per-category Elo the API does not publish --
+    `elo:photoreal` where the real category is `elo:photorealistic`. Nothing
+    caught it: the axis was valid, the field simply never appeared, so the axis
+    reported coverage 0 for every model and quietly stopped counting. That is
+    the silent zero the rules forbid, arriving through the back door.
+
+    Only modalities the store actually holds observations for are judged. On a
+    fresh install nothing has been pulled, and an axis cannot be wrong about
+    data that is not there yet.
+    """
+    store = Store(cfg.db_path)
+    published: dict[str, set[str]] = {}
+    for row in store.db.execute("SELECT DISTINCT modality, source, field FROM observations"):
+        published.setdefault(row["modality"], set()).add(f"{row['source']}:{row['field']}")
+    if not published:
+        return []
+
+    out: list[str] = []
+    for axis in axes:
+        known = published.get(axis.modality)
+        if not known:
+            continue
+        for field in axis.fields:
+            key = f"{field.source}:{field.field}"
+            # a phase-2 field is declared before its source exists, on purpose
+            if getattr(field, "phase", 1) > 1 or field.source == COST_SOURCE:
+                continue
+            if key not in known:
+                near = sorted(k for k in known if k.split(":", 1)[0] == field.source)[:3]
+                out.append(
+                    f"axis {axis.name!r} ({axis.modality}) reads {key!r}, which "
+                    f"{field.source} has never published in this store -- it would sit at "
+                    f"coverage 0 for ever. Nearest fields it does publish: "
+                    f"{', '.join(near) or 'none'}"
+                )
+    return out
 
 
 def cmd_score(args: argparse.Namespace) -> int:
@@ -273,6 +316,16 @@ def _print_ranking(ranking: Any, *, limit: int) -> None:
         )
         if contributions:
             _out(f"       {contributions}")
+        # say when a cost is an estimate. The profile's shape is the same for
+        # every effort mode of a model, so a cost read from it cannot tell them
+        # apart, and a reader deserves to know that before acting on it.
+        if rank.cost_per_task is not None:
+            basis = (
+                "estimated from the profile shape"
+                if rank.cost_from == "shape"
+                else "from measured tokens"
+            )
+            _out(f"       cost ${rank.cost_per_task:.4f} per task, {basis}")
         if rank.flip:
             _out(f"       flip: {rank.flip}")
     for rank in ranking.ranks:

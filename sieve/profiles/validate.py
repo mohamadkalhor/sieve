@@ -149,9 +149,34 @@ def _validate_effort(profile: Profile, where: str) -> Iterator[str]:
     prefer = profile.prefer_effort
     if prefer is None:
         return
+
     allowed = {"best", "cheapest_clearing", *EFFORT_ORDER}
     if prefer not in allowed:
         yield (
             f"{where}: prefer_effort {prefer!r} is not a mode -- "
             f"use one of {', '.join(sorted(allowed))}"
         )
+        return
+
+    # Effort modes are published for language models. A media profile setting
+    # one would be silently ignored, and silence is how a setting rots.
+    if profile.modality != "llm":
+        yield (
+            f"{where}: prefer_effort is only meaningful for an llm profile, "
+            f"and this one is {profile.modality!r} -- remove it"
+        )
+        return
+
+    # `cheapest_clearing` with nothing to clear is a bug, not a setting: with no
+    # floor, the lowest mode of every family always clears, so it seats the
+    # bottom of the ladder every time and calls that a decision.
+    if prefer == "cheapest_clearing":
+        floors = profile.require.get("min_axis") or {}
+        weighted_floor = any(axis in profile.weights for axis in floors)
+        other_constraint = any(key != "min_axis" for key in profile.require)
+        if not weighted_floor and not other_constraint:
+            yield (
+                f"{where}: prefer_effort is cheapest_clearing but the profile sets no "
+                "floor to clear -- add a `require` constraint, or a `min_axis` on an "
+                "axis it weights, or the lowest mode of every family always wins"
+            )

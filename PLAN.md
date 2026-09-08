@@ -104,9 +104,24 @@ the score and the number of tokens burned to reach it. So:
   which is the single most expensive mistake this tool can make;
 - a gateway that serves `-high`, `-medium` and `-low` as separate ids must
   match each to **its own** AA row, not to the base name;
-- cost per task for a mode uses that mode's own output-token count where the
-  source publishes one, because the price per token cannot tell the modes
-  apart and the token count is the only thing that can;
+- **cost per mode is the price alone, and that is not yet enough.** The rate
+  per token is identical across modes, and **no source in our set publishes a
+  per-task output-token count**: the AA v2 API carries
+  `median_output_tokens_per_second` and time-to-first-token and nothing about
+  tokens burned per task. AA's own site does compute reasoning and answer
+  tokens per task; the API does not expose them and we do not scrape the site.
+  So today each mode is priced from **its own** AA pricing block against the
+  profile's declared shape -- nothing is copied from a base row -- and a high
+  mode's extra token burn is **unmeasured**. If those fields appear in the API,
+  this becomes a one-line axis change;
+- the honest fix is **measured, not guessed**: once telemetry carries
+  `tokens_out` per model (phase 2 part 3), derive an observed output-token
+  multiplier per model over a trailing window and use it in `cost_per_task` in
+  place of the profile shape's flat `out`. That comes from the gateway's own
+  traffic, which is the only place the truth exists;
+- until then a rank whose cost came from a flat shape rather than measured
+  tokens **says so**, the way coverage is already reported. A cost nobody can
+  tell is an estimate is worse than one that admits it;
 - a profile may then ask for the cheapest mode that clears a bar, and pick
   medium over max by itself.
 

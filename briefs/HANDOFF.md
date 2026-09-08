@@ -206,6 +206,57 @@ Proven on the CLI, same store, same data: `prefer_effort: best` seats
   GLM-5.2)` is parsed correctly, so the multi-clause bracket is covered, but the
   Opus figures themselves need a wider recording.
 
+## Part 0 · answers folded back in
+
+mhmd-cl answered the two questions the 0a report asked. Both answers are in the
+tree now; neither undid anything already pushed.
+
+**Cost per mode: keep it.** The rule's intent was "never copy a base row's
+numbers onto a mode", which was already satisfied — each mode is priced from its
+own AA pricing block. PLAN §2.1 is amended to say what is true rather than what
+was assumed: the rate per token is identical across modes, no source in our set
+publishes a per-task output-token count, so a high mode's extra token burn is
+**unmeasured**. AA's own site computes it; the v2 API does not expose it and we
+do not scrape. Three consequences landed:
+
+- `Rank.cost_from` records whether a cost came from the profile's shape or from
+  measured tokens, and `sieve score` prints `cost $0.0375 per task, estimated
+  from the profile shape`. A cost nobody can tell is an estimate is worse than
+  one that admits it.
+- Part 3's "Done when" now requires cost from telemetry: an observed
+  output-token multiplier per model, and a model with telemetry pricing
+  differently from the same model without.
+- Nothing else changed, because nothing else was wrong.
+
+**prefer_effort: a guard first, then nine seats.** `sieve check` now **fails**
+when `cheapest_clearing` is set on a profile with no floor to clear — that
+combination always seats the bottom of the ladder and calls it a decision — and
+fails when `prefer_effort` appears on a non-llm profile, since effort modes are
+an LLM thing and a silently ignored setting rots. `reasoner` takes `best`; the
+other eight LLM seats take `cheapest_clearing` with a floor on the axis that
+defines them. `coder`'s existing `min_axis` on `agentic_coding` was **raised
+from 0.5 to 0.75** as instructed: the floor now decides how far down a family's
+ladder the seat may go, so it has to be the standard a coding agent needs rather
+than the lowest tolerable one.
+
+**An axis field nothing publishes is now an error.** `sieve check` compares every
+axis field against what the store has actually seen for that modality, and fails
+with the nearest fields the source does publish. It skips a modality with no
+observations, so a fresh install is unaffected. On its first run against real
+media data it found a bug nobody was looking for: **`maturity` for
+text-to-speech weighted `appearances` 0.6, and that endpoint has never published
+it** — its rows carry `elo`, `ci95`, `rank`, `id`, `name`, `model_creator` and
+nothing else. The axis was silently judging every model on the remaining 40%. It
+now reads `ci95` alone, and says why in the file.
+
+### Left open
+
+- The eight `cheapest_clearing` floors are "a considered start, not measured
+  truth" in mhmd-cl's words. None has been checked against a live ranking to see
+  whether it seats something absurd; the trimmed recording is too small to tell.
+- `coder` at `agentic_coding: 0.75` is a real tightening. On the 60-model
+  recording it leaves a small field.
+
 ## Part 0b · fal, the price for the media field
 
 Landed. `sieve/sources/fal.py`, no key, registered as a plugin and enabled in

@@ -1,14 +1,24 @@
-# Not a measure of quality. It is how much to trust the quality number:
-# appearances on a log scale, and the confidence interval inverted so a
-# narrow one scores high.
+# Not a measure of quality. It is how much to trust the quality number.
+#
+# The other four arena endpoints publish `appearances`, and this axis was
+# written to weight it 0.6 on a log scale. The text-to-speech arena does not:
+# its rows carry `elo`, `ci95`, `rank`, `id`, `name` and `model_creator` and
+# nothing else -- checked against the 2026-09-08 recording. So 60% of this
+# axis was reading a field that never arrives, and `missing: renormalise` was
+# quietly judging every model on the remaining 40%.
+#
+# The interval alone is the honest maturity signal here: a wide ci95 is exactly
+# "not enough votes yet", measured rather than inferred. If AA starts publishing
+# appearances on this endpoint, restore the two-field version above it --
+# `sieve check` now fails on an axis field the data does not carry, so the
+# mistake cannot come back silently.
 
 name: maturity
 modality: text-to-speech
 label: "Maturity"
-describes: "how settled the score is: a model with 200 votes and a wide interval is not a safe primary"
+describes: "how settled the score is: a wide confidence interval is not a safe primary"
 fields:
-  - {source: aa_media, field: appearances, weight: 0.6, transform: log}
-  - {source: aa_media, field: ci95, weight: 0.4, transform: invert}
+  - {source: aa_media, field: ci95, weight: 1.0, transform: invert}
 missing: renormalise
 min_coverage: 0.5
 higher_is_better: true

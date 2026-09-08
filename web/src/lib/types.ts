@@ -193,6 +193,7 @@ export interface Rank {
   final: number;
   axes?: AxisScore[];
   cost_per_task?: number | null;
+  cost_from?: "shape" | "telemetry" | null;
   dominated_by?: string | null;
   excluded_by?: string | null;
   flip?: string | null;

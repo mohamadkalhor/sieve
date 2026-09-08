@@ -269,5 +269,66 @@ def test_a_mistyped_prefer_effort_is_caught_by_check() -> None:
         "prefer_effort 'higest' is not a mode" in problem for problem in validate_profile(typo)
     )
 
-    fine = typo.model_copy(update={"prefer_effort": "cheapest_clearing"})
+    # a floor is required with cheapest_clearing, so the valid case carries one
+    fine = typo.model_copy(
+        update={"prefer_effort": "cheapest_clearing", "require": {"min_axis": {"cost": 0.4}}}
+    )
     assert not any("prefer_effort" in problem for problem in validate_profile(fine))
+
+
+def test_cheapest_clearing_without_a_floor_fails_check() -> None:
+    """A setting that always seats the bottom of the ladder is a bug, not a choice."""
+    from sieve.contracts import Profile, Shape
+    from sieve.profiles.validate import validate_profile
+
+    naked = Profile(
+        name="x",
+        modality="llm",
+        purpose="t",
+        weights={"cost": 1.0},
+        prefer_effort="cheapest_clearing",
+        shape=Shape.model_validate({"in": 10, "out": 10}),
+    )
+    assert any("sets no floor to clear" in p for p in validate_profile(naked))
+
+    # any require constraint counts, not only a min_axis
+    gated = naked.model_copy(update={"require": {"tools": True}})
+    assert not any("sets no floor to clear" in p for p in validate_profile(gated))
+
+    # a min_axis on an axis the profile does not weight is not a floor it clears
+    unweighted = naked.model_copy(update={"require": {"min_axis": {"reasoning": 0.9}}})
+    assert any("sets no floor to clear" in p for p in validate_profile(unweighted))
+
+
+def test_prefer_effort_is_rejected_on_a_media_profile() -> None:
+    """Effort modes are an LLM thing; silently ignoring the setting is how it rots."""
+    from sieve.contracts import Profile
+    from sieve.profiles.validate import validate_profile
+
+    media = Profile(
+        name="y",
+        modality="text-to-image",
+        purpose="t",
+        weights={"quality": 1.0},
+        prefer_effort="best",
+    )
+    assert any("only meaningful for an llm profile" in p for p in validate_profile(media))
+
+
+def test_every_shipped_profile_passes_both_guards() -> None:
+    """The nine seats set in this commit, checked as shipped."""
+    from pathlib import Path
+
+    from sieve.profiles.load import load_profiles
+    from sieve.profiles.validate import validate_profile
+
+    repo = Path(__file__).resolve().parents[1]
+    profiles = {p.name: p for p in load_profiles(repo / "profiles")}
+
+    assert profiles["reasoner"].prefer_effort == "best"
+    cheapest = [n for n, p in profiles.items() if p.prefer_effort == "cheapest_clearing"]
+    assert len(cheapest) == 8, cheapest
+    assert all(p.prefer_effort is None for p in profiles.values() if p.modality != "llm")
+
+    for profile in profiles.values():
+        assert not [p for p in validate_profile(profile) if "prefer_effort" in p]

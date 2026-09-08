@@ -270,9 +270,18 @@ Do:
 Health is computed from what callers report. Do **not** add a log reader for
 anyone's gateway; that is a phase 3 connector.
 
+7. **Cost from measured tokens.** Once events carry `tokens_out`, derive an
+   observed output-token multiplier per model over a trailing window and use it
+   in `cost_per_task` in place of the profile shape's flat `out`. This is the
+   only honest way to price an effort mode: the rate per token is identical
+   across modes and no source publishes per-task token counts, so the gateway's
+   own traffic is the only place the difference exists. Added after part 0a.
+
 **Done when:** posting events moves a model's health and its rank; a model
 below `suspend_below_health` is suspended with a decision row naming the number;
-Pulse draws all of it from `/v1`.
+Pulse draws all of it from `/v1`; **and a model with telemetry prices
+differently from the same model without, with the ranking showing the
+difference.**
 
 ---
 

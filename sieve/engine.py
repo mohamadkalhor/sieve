@@ -323,6 +323,10 @@ def rank_profile(
                 final=score * health_value,
                 axes=axis_scores,
                 cost_per_task=costs.get(model_id),
+                # phase 2 part 3 will set this to "telemetry" for a model whose
+                # own traffic has been measured; until then every cost is the
+                # profile's declared shape, which cannot separate effort modes.
+                cost_from="shape" if model_id in costs else None,
                 dominated_by=dominated.get(model_id),
                 excluded_by=excluded.get(model_id)
                 or effort_aside.get(model_id)

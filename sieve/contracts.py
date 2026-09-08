@@ -218,6 +218,12 @@ class Rank(_Model):
     final: float
     axes: list[AxisScore] = Field(default_factory=list)
     cost_per_task: float | None = None
+    # Where that cost came from. "shape" means the profile's declared token
+    # counts -- an estimate, and the same one for every effort mode of a model,
+    # since no source publishes per-task tokens. "telemetry" means the model's
+    # own observed output tokens. A cost nobody can tell is an estimate is worse
+    # than one that admits it.
+    cost_from: Literal["shape", "telemetry"] | None = None
     dominated_by: str | None = None
     excluded_by: str | None = None
     flip: str | None = None

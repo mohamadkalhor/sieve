@@ -12,3 +12,7 @@ shape: {in: 4000, out: 6000}
 policy:
   margin: 4.0
   chain: 4
+
+# The seat you reach for having already decided the answer matters more
+# than the bill, so it takes a family's highest effort mode.
+prefer_effort: best

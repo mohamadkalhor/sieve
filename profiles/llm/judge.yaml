@@ -10,8 +10,14 @@ weights:
   reasoning: 0.3
   intelligence: 0.3
 require:
+  min_axis: {instruction: 0.75}
   structured_output: true
 shape: {in: 8000, out: 500}
 policy:
   margin: 4.0
   chain: 4
+
+# Seat the *lowest* effort mode of a family that still clears the floor
+# below. The floor is what makes this safe: without one, cheapest_clearing
+# would always seat the bottom of the ladder.
+prefer_effort: cheapest_clearing

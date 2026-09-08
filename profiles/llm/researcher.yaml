@@ -8,9 +8,15 @@ weights:
   knowledge: 0.15
   cost: 0.1
 require:
+  min_axis: {agentic_tools: 0.7}
   tools: true
   context_min: 200000
 shape: {in: 60000, out: 3000, cached: 0.3}
 policy:
   margin: 4.0
   chain: 5
+
+# Seat the *lowest* effort mode of a family that still clears the floor
+# below. The floor is what makes this safe: without one, cheapest_clearing
+# would always seat the bottom of the ladder.
+prefer_effort: cheapest_clearing

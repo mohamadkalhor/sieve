@@ -6,8 +6,14 @@ weights:
   cost: 0.3
   latency: 0.2
 require:
+  min_axis: {intelligence: 0.6}
   input_modalities: [image]
 shape: {in: 4000, out: 800}
 policy:
   margin: 4.0
   chain: 4
+
+# Seat the *lowest* effort mode of a family that still clears the floor
+# below. The floor is what makes this safe: without one, cheapest_clearing
+# would always seat the bottom of the ladder.
+prefer_effort: cheapest_clearing

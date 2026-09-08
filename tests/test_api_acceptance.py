@@ -55,16 +55,20 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
                 name="gateway",
                 kind="list",
                 models=[
-                    # Real ids from the 2026-09-08 AA recording. The six that
-                    # used to be pinned here came from the hand-built fixture
-                    # and none of them survive in it, so nothing was reachable
-                    # and `recommend` answered with an empty list.
+                    # Real ids from the 2026-09-08 AA recording, spread across
+                    # price points so that reweighting cost genuinely reorders
+                    # the list: $0.75 to $10.00 per 1M input, at coding indexes
+                    # within four points of each other.
                     "openai/gpt-5-6-sol-xhigh",
+                    "openai/gpt-5-6-sol",
                     "openai/gpt-6-astra-high",
                     "openai/gpt-6-astra",
                     "openai/gpt-5-6-terra",
-                    "google/gemini-3-8-flash",
                     "meta/muse-spark-1-3-xhigh",
+                    "meta/muse-spark-1-3",
+                    "google/gemini-3-8-flash",
+                    "google/gemini-3-8-flash-medium",
+                    "google/gemini-3-8-flash-low",
                 ],
             )
         },
