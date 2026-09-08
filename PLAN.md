@@ -155,6 +155,40 @@ Two things this rule refuses, both deliberately:
 them. It is general: any future source whose categories are coarser than ours
 uses the same path.
 
+### 2.3 Where a media price comes from, and where it does not
+
+Artificial Analysis scores media and prices nothing. Its five arena endpoints
+publish nine fields and not one of them is a price, `include_prices=true`
+included. Every media price in Sieve therefore comes from a marketplace, and a
+marketplace price is one vendor charging to run one model — never the price of
+the model. Sources are kept separate, ranking uses the cheapest known price,
+and the vendor is named wherever the number is shown.
+
+Measured 2026-09-08 against the live catalogues, over 775 scored media models
+of which 62 carried any price:
+
+| source | key | media models | price form | models it can price |
+| --- | --- | --- | --- | --- |
+| fal | no | 1,498 total, 729 with a price sentence | English prose | +88 once tiers are parsed |
+| DeepInfra | no | 116 | numeric, unit declared, in cents | +42, of which 30 fal cannot reach |
+| Eden AI | no | 106 named | numeric | +13, later |
+| AIML API | no | 691 | none published anywhere | catalogue only, never a price source |
+| models.dev | no | 7,583 | numeric | LLM data; 57 image-output models |
+| Together, Replicate, Segmind, Runware, Nebius, SiliconFlow, Hyperbolic | yes | — | — | 401 without an account, so never a default |
+
+Two rules follow.
+
+- **Several numbers in a sentence is not a reason to refuse it.** 494 of the fal
+  price sentences carry more than one amount; 78 are one price restated as
+  "for $1.00 you can run this model 12 times", and 416 are genuine tiers — 161
+  by resolution, 32 by input versus output. Tiers are recorded in full, a
+  declared default tier is used for ranking, and that choice is stated in the
+  UI. Refusing what cannot be read stays the rule; refusing what can be read is
+  a bug.
+- **`per compute second` is not `per second of generated output`.** 109
+  sentences price hardware time, which varies with the job. They are a distinct
+  unit and are never compared against output-length prices in a ranking.
+
 ## 3. Axes — the vocabulary between sources and profiles
 
 An axis is a YAML file. It names the source fields that feed it, how each is
