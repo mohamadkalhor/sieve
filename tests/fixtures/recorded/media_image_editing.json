@@ -1,0 +1,565 @@
+{
+ "data": [
+  {
+   "appearances": 11173,
+   "ci95": "-10/10",
+   "elo": 1122,
+   "id": "5d931c2e-797e-406e-8eb9-83ce18b5710c",
+   "model_creator": {
+    "id": "4756ee95-5ddf-45e8-a9d1-075d0e5b5200",
+    "name": "Microsoft AI"
+   },
+   "name": "MAI-Image-2.6",
+   "rank": 1,
+   "release_date": "2026-08",
+   "slug": "mai-image-2-6"
+  },
+  {
+   "appearances": 11046,
+   "ci95": "-10/10",
+   "elo": 1117,
+   "id": "9570e1d0-a390-48c1-a270-1317570fe3d5",
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI"
+   },
+   "name": "GPT Image 2 (high)",
+   "rank": 2,
+   "release_date": "2026-04",
+   "slug": "gpt-image-2"
+  },
+  {
+   "appearances": 5493,
+   "ci95": "-10/10",
+   "elo": 1105,
+   "id": "0a7b7bb4-caa5-4334-aff3-57ad2bdead0d",
+   "model_creator": {
+    "id": "e1694725-0192-4e54-b1b8-c97e816c6cbe",
+    "name": "Meta"
+   },
+   "name": "Muse Image",
+   "rank": 3,
+   "release_date": "2026-07",
+   "slug": "muse-image-1.0"
+  },
+  {
+   "appearances": 5442,
+   "ci95": "-9/9",
+   "elo": 1104,
+   "id": "daa01918-0450-4825-992a-eade1f981683",
+   "model_creator": {
+    "id": "4756ee95-5ddf-45e8-a9d1-075d0e5b5200",
+    "name": "Microsoft AI"
+   },
+   "name": "MAI-Image-2.6-Flash",
+   "rank": 4,
+   "release_date": "2026-09",
+   "slug": "mai-image-2-6-flash"
+  },
+  {
+   "appearances": 11089,
+   "ci95": "-10/10",
+   "elo": 1104,
+   "id": "3180162e-693d-487d-adbb-721f859f768d",
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google"
+   },
+   "name": "Nano Banana 2 (Gemini 3.1 Flash Image)",
+   "rank": 5,
+   "release_date": "2026-02",
+   "slug": "nano-banana-2"
+  },
+  {
+   "appearances": 10719,
+   "ci95": "-10/10",
+   "elo": 1095,
+   "id": "3f8a2d6b-9c4e-4f1a-b7d2-8e5a0c3d71f9",
+   "model_creator": {
+    "id": "4756ee95-5ddf-45e8-a9d1-075d0e5b5200",
+    "name": "Microsoft AI"
+   },
+   "name": "MAI-Image-2.5",
+   "rank": 6,
+   "release_date": "2026-06",
+   "slug": "mai-image-2-5"
+  },
+  {
+   "appearances": 10617,
+   "ci95": "-10/10",
+   "elo": 1092,
+   "id": "c9e4f0a2-3b7d-4c61-8e29-1f5a6d0b47c3",
+   "model_creator": {
+    "id": "2354746c-4775-4a06-b64d-0ba4137785b8",
+    "name": "ByteDance Seed"
+   },
+   "name": "Seedream 5.0 Pro",
+   "rank": 7,
+   "release_date": "2026-07",
+   "slug": "seedream-5-0-pro"
+  },
+  {
+   "appearances": 11111,
+   "ci95": "-10/10",
+   "elo": 1090,
+   "id": "503fdcd1-5895-4145-8484-1ab301320f6d",
+   "model_creator": {
+    "id": "4756ee95-5ddf-45e8-a9d1-075d0e5b5200",
+    "name": "Microsoft AI"
+   },
+   "name": "MAI-Image-2.5-Pro",
+   "rank": 8,
+   "release_date": "2026-07",
+   "slug": "mai-image-2-5-pro"
+  },
+  {
+   "appearances": 11057,
+   "ci95": "-10/10",
+   "elo": 1087,
+   "id": "6a5056eb-6854-43c4-bf18-01d185ce9e2f",
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google"
+   },
+   "name": "Nano Banana Pro (Gemini 3 Pro Image)",
+   "rank": 9,
+   "release_date": "2025-11",
+   "slug": "gemini_nano-banana-pro"
+  },
+  {
+   "appearances": 11037,
+   "ci95": "-10/10",
+   "elo": 1087,
+   "id": "a1ee4d6f-d136-434b-bb1d-066fe5f9bf6f",
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI"
+   },
+   "name": "GPT Image 1.5 (high)",
+   "rank": 10,
+   "release_date": "2025-12",
+   "slug": "openai-gpt_image-1-5"
+  },
+  {
+   "appearances": 10599,
+   "ci95": "-10/10",
+   "elo": 1079,
+   "id": "5538a039-fb86-4cd7-a207-4d692f358032",
+   "model_creator": {
+    "id": "d874d370-74d3-4fa0-ba00-5272f92f946b",
+    "name": "Alibaba"
+   },
+   "name": "Qwen-Image-3.0-Pro",
+   "rank": 11,
+   "release_date": "2026-07",
+   "slug": "qwen-image-3-0-pro"
+  },
+  {
+   "appearances": 10531,
+   "ci95": "-10/10",
+   "elo": 1075,
+   "id": "e23a6328-1441-4633-b53c-bb2c40c5a647",
+   "model_creator": {
+    "id": "4756ee95-5ddf-45e8-a9d1-075d0e5b5200",
+    "name": "Microsoft AI"
+   },
+   "name": "MAI-Image-2.5-Flash",
+   "rank": 12,
+   "release_date": "2026-06",
+   "slug": "mai-image-2-5-flash"
+  },
+  {
+   "appearances": 3619,
+   "ci95": "-11/11",
+   "elo": 1070,
+   "id": "9fe07c8f-8d20-4908-a991-65c00e5ef260",
+   "model_creator": {
+    "id": "a1e3ddcf-d3e4-44a5-9e8f-029a69850875",
+    "name": "SpaceXAI"
+   },
+   "name": "grok-imagine-image-quality",
+   "rank": 13,
+   "release_date": "2026-04",
+   "slug": "grok-imagine-image-quality"
+  },
+  {
+   "appearances": 1041,
+   "ci95": "-15/15",
+   "elo": 1065,
+   "id": "fb866a9a-980d-49c4-bedf-bca91a153d35",
+   "model_creator": {
+    "id": "cc6e981e-eb3c-4ac3-a23e-4dbe3e1ffd99",
+    "name": "Reve"
+   },
+   "name": "Reve 2.1",
+   "rank": 14,
+   "release_date": "2026-07",
+   "slug": "reve-2-1"
+  },
+  {
+   "appearances": 3062,
+   "ci95": "-12/12",
+   "elo": 1058,
+   "id": "060b066c-b7cb-483b-84bd-f89e9d5c2510",
+   "model_creator": {
+    "id": "040f2c41-5df4-4708-8c77-6a2030be2539",
+    "name": "HiDream"
+   },
+   "name": "HiDream-O1-Edit-1.5",
+   "rank": 15,
+   "release_date": "2026-08",
+   "slug": "hidream-o1-edit-1-5"
+  },
+  {
+   "appearances": 3134,
+   "ci95": "-12/12",
+   "elo": 1057,
+   "id": "a71a9c1d-a20f-4237-8e36-8a58558e2edc",
+   "model_creator": {
+    "id": "09468924-69a9-499b-8dd6-d0bb4c05285d",
+    "name": "Luma Labs"
+   },
+   "name": "Luma UNI 1 Max",
+   "rank": 16,
+   "release_date": "2026-05",
+   "slug": "luma-uni-1-max"
+  },
+  {
+   "appearances": 3180,
+   "ci95": "-12/12",
+   "elo": 1056,
+   "id": "bcc5b88d-1bb0-45e6-9940-2f8b99567b40",
+   "model_creator": {
+    "id": "a1e3ddcf-d3e4-44a5-9e8f-029a69850875",
+    "name": "SpaceXAI"
+   },
+   "name": "grok-imagine-image",
+   "rank": 17,
+   "release_date": "2026-01",
+   "slug": "grok-imagine-image"
+  },
+  {
+   "appearances": 3167,
+   "ci95": "-12/12",
+   "elo": 1053,
+   "id": "d82c66de-d55a-4b6a-af16-f5bf808431cc",
+   "model_creator": {
+    "id": "2354746c-4775-4a06-b64d-0ba4137785b8",
+    "name": "ByteDance Seed"
+   },
+   "name": "Seedream 5.0 Lite",
+   "rank": 18,
+   "release_date": "2026-02",
+   "slug": "seedream-5-0-lite"
+  },
+  {
+   "appearances": 3248,
+   "ci95": "-11/11",
+   "elo": 1040,
+   "id": "6cd594e7-1871-45e2-a33d-dc73fd4aac11",
+   "model_creator": {
+    "id": "09468924-69a9-499b-8dd6-d0bb4c05285d",
+    "name": "Luma Labs"
+   },
+   "name": "Luma UNI 1",
+   "rank": 19,
+   "release_date": "2026-05",
+   "slug": "luma-uni-1"
+  },
+  {
+   "appearances": 3208,
+   "ci95": "-12/12",
+   "elo": 1035,
+   "id": "c8a7698c-a595-476d-a56b-8b3ef4f239b7",
+   "model_creator": {
+    "id": "d874d370-74d3-4fa0-ba00-5272f92f946b",
+    "name": "Alibaba"
+   },
+   "name": "Wan 2.6 Image",
+   "rank": 20,
+   "release_date": "2025-12",
+   "slug": "wan_wan-2-6"
+  },
+  {
+   "appearances": 3142,
+   "ci95": "-12/12",
+   "elo": 1032,
+   "id": "08f19008-675e-4d70-98b2-49ad3178c1f0",
+   "model_creator": {
+    "id": "2354746c-4775-4a06-b64d-0ba4137785b8",
+    "name": "ByteDance Seed"
+   },
+   "name": "Seedream 4.5",
+   "rank": 21,
+   "release_date": "2025-12",
+   "slug": "seedream-4-5"
+  },
+  {
+   "appearances": 3575,
+   "ci95": "-11/11",
+   "elo": 1031,
+   "id": "7f1079f3-b886-4ac1-bd3e-7059da87ff28",
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google"
+   },
+   "name": "Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
+   "rank": 22,
+   "release_date": "2026-06",
+   "slug": "nano-banana-2-lite"
+  },
+  {
+   "appearances": 3183,
+   "ci95": "-11/11",
+   "elo": 1030,
+   "id": "e2f79c9a-26da-4b33-84f2-917387002b17",
+   "model_creator": {
+    "id": "e51b2853-ce5b-4967-8800-105722d65db7",
+    "name": "Newport AI"
+   },
+   "name": "DreamImage 2.0",
+   "rank": 23,
+   "release_date": "2026-07",
+   "slug": "dreamimage-2-0"
+  },
+  {
+   "appearances": 3238,
+   "ci95": "-12/12",
+   "elo": 1027,
+   "id": "2253749f-b609-4016-b639-0ce39a42375a",
+   "model_creator": {
+    "id": "d874d370-74d3-4fa0-ba00-5272f92f946b",
+    "name": "Alibaba"
+   },
+   "name": "Qwen-Image-3.0",
+   "rank": 24,
+   "release_date": "2026-07",
+   "slug": "qwen-image-3-0"
+  },
+  {
+   "appearances": 3128,
+   "ci95": "-12/12",
+   "elo": 1022,
+   "id": "d587cfaa-e0f2-495c-a012-5f1cfcdf5c09",
+   "model_creator": {
+    "id": "d874d370-74d3-4fa0-ba00-5272f92f946b",
+    "name": "Alibaba"
+   },
+   "name": "Wan 2.7 Pro",
+   "rank": 25,
+   "release_date": "2026-04",
+   "slug": "wan-2-7-pro"
+  },
+  {
+   "appearances": 2859,
+   "ci95": "-12/12",
+   "elo": 1021,
+   "id": "ba07faac-d296-472d-8249-9a0b6f78184a",
+   "model_creator": {
+    "id": "a4e5bd55-a6cd-4dcf-8d4a-1d9643cd3826",
+    "name": "Tencent"
+   },
+   "name": "HunyuanImage 3.0 Instruct (Fal)",
+   "rank": 26,
+   "release_date": "2026-01",
+   "slug": "tencent_hunyuanimage-3-0-instruct--fal"
+  },
+  {
+   "appearances": 3099,
+   "ci95": "-12/12",
+   "elo": 1015,
+   "id": "7795ac1e-7098-4dc0-9507-cfa8478cda6d",
+   "model_creator": {
+    "id": "d874d370-74d3-4fa0-ba00-5272f92f946b",
+    "name": "Alibaba"
+   },
+   "name": "Wan 2.7",
+   "rank": 27,
+   "release_date": "2026-04",
+   "slug": "wan-2-7"
+  },
+  {
+   "appearances": 3206,
+   "ci95": "-11/11",
+   "elo": 1008,
+   "id": "74606b04-5682-4ff2-85ce-56999ef61acb",
+   "model_creator": {
+    "id": "ce2e2e8b-7a22-4020-98ec-8ef71000dd42",
+    "name": "StepFun"
+   },
+   "name": "Step Image Edit 2",
+   "rank": 28,
+   "release_date": "2026-05",
+   "slug": "step-image-edit-2"
+  },
+  {
+   "appearances": 4802,
+   "ci95": "-9/9",
+   "elo": 1006,
+   "id": "f30e831b-6e7f-4c29-8035-423accbf1c5e",
+   "model_creator": {
+    "id": "62cc833b-f55a-4489-bcae-54806d4b04ff",
+    "name": "KlingAI"
+   },
+   "name": "Kling Image 3.0",
+   "rank": 29,
+   "release_date": "2026-02",
+   "slug": "kling-image-3-0"
+  },
+  {
+   "appearances": 3403,
+   "ci95": "-11/11",
+   "elo": 1000,
+   "id": "3a03722d-32c0-44f3-adde-188c51b639f1",
+   "model_creator": {
+    "id": "d427ad30-eba3-4945-857a-4eb0ead82e87",
+    "name": "Black Forest Labs"
+   },
+   "name": "FLUX.2 [klein] 9B",
+   "rank": 30,
+   "release_date": "2026-01",
+   "slug": "flux_flux-2-klein-9b"
+  },
+  {
+   "appearances": 3417,
+   "ci95": "0/0",
+   "elo": 1000,
+   "id": "df44f7b5-8035-4a99-a0bb-ff22149d0464",
+   "model_creator": {
+    "id": "d427ad30-eba3-4945-857a-4eb0ead82e87",
+    "name": "Black Forest Labs"
+   },
+   "name": "FLUX.2 [dev]",
+   "rank": 31,
+   "release_date": "2025-11",
+   "slug": "flux_flux-2--dev"
+  },
+  {
+   "appearances": 3715,
+   "ci95": "-10/10",
+   "elo": 993,
+   "id": "b9b77bf7-992a-497a-958c-ed7927dc4420",
+   "model_creator": {
+    "id": "5db3af1a-e372-4c62-98bd-f6027eeaf990",
+    "name": "Sapiens AI"
+   },
+   "name": "Agnes Image 2.0 Flash",
+   "rank": 32,
+   "release_date": "2026-05",
+   "slug": "agnes-image-2-0-flash"
+  },
+  {
+   "appearances": 3414,
+   "ci95": "-11/11",
+   "elo": 992,
+   "id": "6a398b55-7f36-4039-bbbf-2045ef8ab525",
+   "model_creator": {
+    "id": "d427ad30-eba3-4945-857a-4eb0ead82e87",
+    "name": "Black Forest Labs"
+   },
+   "name": "FLUX.2 [max]",
+   "rank": 33,
+   "release_date": "2025-12",
+   "slug": "black_forest_labs_flux-2-max"
+  },
+  {
+   "appearances": 7781,
+   "ci95": "-8/8",
+   "elo": 989,
+   "id": "e9f5c7b0-bcb3-400b-81a1-0a1401323551",
+   "model_creator": {
+    "id": "2354746c-4775-4a06-b64d-0ba4137785b8",
+    "name": "ByteDance Seed"
+   },
+   "name": "Seedream 4.0",
+   "rank": 34,
+   "release_date": "2025-09",
+   "slug": "bytedance-seed_seedream-4-0"
+  },
+  {
+   "appearances": 3631,
+   "ci95": "-9/9",
+   "elo": 986,
+   "id": "a8202647-0cab-4d53-8929-683b91583a2f",
+   "model_creator": {
+    "id": "cc6e981e-eb3c-4ac3-a23e-4dbe3e1ffd99",
+    "name": "Reve"
+   },
+   "name": "Reve V1 (December)",
+   "rank": 35,
+   "release_date": "2025-12",
+   "slug": "reve_reve-v1--december"
+  },
+  {
+   "appearances": 3167,
+   "ci95": "-12/12",
+   "elo": 981,
+   "id": "ead01c00-8518-4f8d-8033-76fcaef910fd",
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google"
+   },
+   "name": "Nano Banana (Gemini 2.5 Flash Image)",
+   "rank": 36,
+   "release_date": "2025-08",
+   "slug": "google_gemini-2-5-flash"
+  },
+  {
+   "appearances": 4365,
+   "ci95": "-9/9",
+   "elo": 979,
+   "id": "878746c7-f8e0-48c0-941e-d8262608ca1a",
+   "model_creator": {
+    "id": "d874d370-74d3-4fa0-ba00-5272f92f946b",
+    "name": "Alibaba"
+   },
+   "name": "Qwen Image Edit Plus 2511",
+   "rank": 37,
+   "release_date": "2025-11",
+   "slug": "qwen_qwen-image-edit-2511"
+  },
+  {
+   "appearances": 6739,
+   "ci95": "-8/8",
+   "elo": 975,
+   "id": "18874791-11a3-4cb7-bc0e-6ca10138eec7",
+   "model_creator": {
+    "id": "d427ad30-eba3-4945-857a-4eb0ead82e87",
+    "name": "Black Forest Labs"
+   },
+   "name": "FLUX.2 [pro]",
+   "rank": 38,
+   "release_date": "2025-11",
+   "slug": "flux_flux-2--pro"
+  },
+  {
+   "appearances": 3270,
+   "ci95": "-10/10",
+   "elo": 968,
+   "id": "16e22800-1485-4b5f-b28c-bf802ca160ac",
+   "model_creator": {
+    "id": "d874d370-74d3-4fa0-ba00-5272f92f946b",
+    "name": "Alibaba"
+   },
+   "name": "Qwen Image 2.0 Pro (2026-04-22)",
+   "rank": 39,
+   "release_date": "2026-04",
+   "slug": "qwen-image-2-0-pro-alibaba-cloud-may-2026"
+  },
+  {
+   "appearances": 3049,
+   "ci95": "-12/12",
+   "elo": 965,
+   "id": "9284721d-5dc9-4eec-ab5a-235aa6fdcc9f",
+   "model_creator": {
+    "id": "a98e0396-4ef1-4a39-bb12-b004c7590bee",
+    "name": "Pruna AI"
+   },
+   "name": "P-Image-Edit",
+   "rank": 40,
+   "release_date": "2025-11",
+   "slug": "pruna_p-image-edit"
+  }
+ ],
+ "status": 200
+}

@@ -316,12 +316,16 @@ targets `file`, `http`; API + tokens + SSE; MCP server; CLI; web screens
 Field, Profiles, Rankings, Chains, Sources; tests, CI, docs skeleton, deploy
 units.
 
-**Phase 2** — telemetry ingest + health; targets `webhook`, `ninerouter`,
-`litellm`; sources `arena`, `livebench`, `epoch`, AA music/STT free tier;
-Pulse screen; scheduled pull + evaluate timer; auto_apply.
+**Phase 2 — the loop closes** (brief: `briefs/PHASE-2.md`) — real recorded
+fixtures replacing the invented ones; the AA music, speech-to-text and
+speech-to-speech free endpoints, against their measured shapes; telemetry
+ingest, health and the Pulse screen; targets `webhook`, `ninerouter`,
+`litellm`, and a Chains diff that reads each target's `current()`; a scheduled
+pull-evaluate-decide-apply run with `auto_apply`; the unfinished half of the
+web.
 
-**Phase 3** — motion polish, docs site, `pip install sieve` + Docker image,
-v0.1.0 release.
+**Phase 3** — sources `arena`, `livebench`, `epoch`; motion polish; docs site;
+`pip install sieve` + Docker image; v0.1.0 release.
 
 ## 12. Acceptance for phase 1
 

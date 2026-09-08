@@ -1,0 +1,2289 @@
+{
+ "data": [
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 76.2,
+    "artificial_analysis_intelligence_index": 47.8,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.895,
+    "hle": 0.371,
+    "ifbench": null,
+    "lcr": 0.706666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.535,
+    "tau2": null,
+    "tau_banking": 0.371134020618557,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.891385767790262
+   },
+   "id": "21a0a2f6-bc72-40d2-80db-ea4e66b02b90",
+   "median_output_tokens_per_second": 0,
+   "median_time_to_first_answer_token": 0,
+   "median_time_to_first_token_seconds": 0,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-6 Astra (Non-reasoning)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 20,
+    "price_1m_input_tokens": 10,
+    "price_1m_output_tokens": 50
+   },
+   "release_date": "2026-09-03",
+   "slug": "gpt-6-astra-non-reasoning"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 77.1,
+    "artificial_analysis_intelligence_index": 53.4,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.949,
+    "hle": 0.531,
+    "ifbench": null,
+    "lcr": 0.8,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.554,
+    "tau2": null,
+    "tau_banking": 0.4,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.898876404494382
+   },
+   "id": "e05a4828-0536-4876-870d-a235023f992b",
+   "median_output_tokens_per_second": 57.336,
+   "median_time_to_first_answer_token": 24.553,
+   "median_time_to_first_token_seconds": 24.553,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-6 Astra (high)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 20,
+    "price_1m_input_tokens": 10,
+    "price_1m_output_tokens": 50
+   },
+   "release_date": "2026-09-03",
+   "slug": "gpt-6-astra-high"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 75.7,
+    "artificial_analysis_intelligence_index": 49.3,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.931,
+    "hle": 0.492,
+    "ifbench": null,
+    "lcr": 0.8,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.541,
+    "tau2": null,
+    "tau_banking": 0.319587628865979,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.880149812734082
+   },
+   "id": "a3f8100d-e38f-408b-b0fa-0085dae18dc1",
+   "median_output_tokens_per_second": 58.606,
+   "median_time_to_first_answer_token": 1.796,
+   "median_time_to_first_token_seconds": 1.796,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-6 Astra (low)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 20,
+    "price_1m_input_tokens": 10,
+    "price_1m_output_tokens": 50
+   },
+   "release_date": "2026-09-03",
+   "slug": "gpt-6-astra-low"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 76.9,
+    "artificial_analysis_intelligence_index": 54.7,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.961,
+    "hle": 0.547,
+    "ifbench": null,
+    "lcr": 0.806666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.565,
+    "tau2": null,
+    "tau_banking": 0.414432989690722,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.883895131086142
+   },
+   "id": "2f339a97-9a0d-499a-9cb5-e0db665bfa25",
+   "median_output_tokens_per_second": 63.444,
+   "median_time_to_first_answer_token": 198.54,
+   "median_time_to_first_token_seconds": 198.54,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-6 Astra (max)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 20,
+    "price_1m_input_tokens": 10,
+    "price_1m_output_tokens": 50
+   },
+   "release_date": "2026-09-03",
+   "slug": "gpt-6-astra"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 76.7,
+    "artificial_analysis_intelligence_index": 52.2,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.939,
+    "hle": 0.527,
+    "ifbench": null,
+    "lcr": 0.796666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.542,
+    "tau2": null,
+    "tau_banking": 0.354639175257732,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.895131086142322
+   },
+   "id": "e97a4ef5-e817-480e-9595-12f81dc4974f",
+   "median_output_tokens_per_second": 57.911,
+   "median_time_to_first_answer_token": 4.178,
+   "median_time_to_first_token_seconds": 4.178,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-6 Astra (medium)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 20,
+    "price_1m_input_tokens": 10,
+    "price_1m_output_tokens": 50
+   },
+   "release_date": "2026-09-03",
+   "slug": "gpt-6-astra-medium"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 75.9,
+    "artificial_analysis_intelligence_index": 54.3,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.963,
+    "hle": 0.546,
+    "ifbench": null,
+    "lcr": 0.8,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.557,
+    "tau2": null,
+    "tau_banking": 0.430927835051546,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.891385767790262
+   },
+   "id": "1f541ef3-913f-4eb2-9d07-0e93c7a9a5e3",
+   "median_output_tokens_per_second": 57.461,
+   "median_time_to_first_answer_token": 68.458,
+   "median_time_to_first_token_seconds": 68.458,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-6 Astra (xhigh)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 20,
+    "price_1m_input_tokens": 10,
+    "price_1m_output_tokens": 50
+   },
+   "release_date": "2026-09-03",
+   "slug": "gpt-6-astra-xhigh"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 71.5,
+    "artificial_analysis_intelligence_index": 46.2,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.912,
+    "hle": 0.399,
+    "ifbench": null,
+    "lcr": 0.8,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.516,
+    "tau2": null,
+    "tau_banking": 0.472164948453608,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.842696629213483
+   },
+   "id": "19496b81-9f41-4214-a77a-1df803b3c5ae",
+   "median_output_tokens_per_second": 58.715,
+   "median_time_to_first_answer_token": 35.28,
+   "median_time_to_first_token_seconds": 1.217,
+   "model_creator": {
+    "id": "67437eb6-7dc1-4e93-befd-22c8b8ec2065",
+    "name": "Z AI",
+    "slug": "zai"
+   },
+   "name": "GLM-5.3-Flash",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.237,
+    "price_1m_input_tokens": 0.15,
+    "price_1m_output_tokens": 0.5
+   },
+   "release_date": "2026-08-26",
+   "slug": "glm-5-3-flash"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 76.3,
+    "artificial_analysis_intelligence_index": 47.1,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.953,
+    "hle": 0.478,
+    "ifbench": null,
+    "lcr": 0.813333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.566,
+    "tau2": null,
+    "tau_banking": 0.449484536082474,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.876404494382023
+   },
+   "id": "8a999846-4c1d-4ce7-a8b7-1310a7166fd7",
+   "median_output_tokens_per_second": 355.803,
+   "median_time_to_first_answer_token": 9.297,
+   "median_time_to_first_token_seconds": 9.297,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemini 3.8 Flash (high)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 1.5,
+    "price_1m_input_tokens": 0.75,
+    "price_1m_output_tokens": 3.75
+   },
+   "release_date": "2026-09-02",
+   "slug": "gemini-3-8-flash"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 73.5,
+    "artificial_analysis_intelligence_index": 41,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.92,
+    "hle": 0.371,
+    "ifbench": null,
+    "lcr": 0.806666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.55,
+    "tau2": null,
+    "tau_banking": 0.331958762886598,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.831460674157303
+   },
+   "id": "f6db039b-0f3b-485c-9d7f-982988e44f26",
+   "median_output_tokens_per_second": 288.457,
+   "median_time_to_first_answer_token": 0.688,
+   "median_time_to_first_token_seconds": 0.688,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemini 3.8 Flash (low)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 1.5,
+    "price_1m_input_tokens": 0.75,
+    "price_1m_output_tokens": 3.75
+   },
+   "release_date": "2026-09-02",
+   "slug": "gemini-3-8-flash-low"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 74.1,
+    "artificial_analysis_intelligence_index": 46.8,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.935,
+    "hle": 0.421,
+    "ifbench": null,
+    "lcr": 0.84,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.551,
+    "tau2": null,
+    "tau_banking": 0.457731958762887,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.838951310861423
+   },
+   "id": "744fa3c1-42a7-4995-b138-fb6be11f463c",
+   "median_output_tokens_per_second": 391.997,
+   "median_time_to_first_answer_token": 5.045,
+   "median_time_to_first_token_seconds": 5.045,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemini 3.8 Flash (medium)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 1.5,
+    "price_1m_input_tokens": 0.75,
+    "price_1m_output_tokens": 3.75
+   },
+   "release_date": "2026-09-02",
+   "slug": "gemini-3-8-flash-medium"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 73.1,
+    "artificial_analysis_intelligence_index": 45.6,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.923,
+    "hle": 0.38,
+    "ifbench": null,
+    "lcr": 0.796666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.506,
+    "tau2": null,
+    "tau_banking": 0.45360824742268,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.861423220973783
+   },
+   "id": "9ac3908c-9eb2-44db-8c01-3ec7da6fc2ae",
+   "median_output_tokens_per_second": 76.399,
+   "median_time_to_first_answer_token": 27.504,
+   "median_time_to_first_token_seconds": 1.326,
+   "model_creator": {
+    "id": "d874d370-74d3-4fa0-ba00-5272f92f946b",
+    "name": "Alibaba",
+    "slug": "alibaba"
+   },
+   "name": "Qwen3.8-Flash-Next",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.23,
+    "price_1m_input_tokens": 0.15,
+    "price_1m_output_tokens": 0.47
+   },
+   "release_date": "2026-08-26",
+   "slug": "qwen3-8-flash-next"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 61.5,
+    "artificial_analysis_intelligence_index": 37.8,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.873,
+    "hle": 0.32,
+    "ifbench": null,
+    "lcr": 0.8,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.429,
+    "tau2": null,
+    "tau_banking": 0.342268041237113,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.719101123595506
+   },
+   "id": "bb3d7e75-8e22-4082-b9d6-1db0803e042f",
+   "median_output_tokens_per_second": 0,
+   "median_time_to_first_answer_token": 0,
+   "median_time_to_first_token_seconds": 0,
+   "model_creator": {
+    "id": "8b8b84fb-4b24-45be-b9e2-74ed50d00ff7",
+    "name": "MBZUAI Institute of Foundation Models",
+    "slug": "mbzuai"
+   },
+   "name": "K2 Horizon 375B A23B",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0,
+    "price_1m_input_tokens": 0,
+    "price_1m_output_tokens": 0
+   },
+   "release_date": "2026-09-03",
+   "slug": "k2-horizon-375b-a23b"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 61.2,
+    "artificial_analysis_intelligence_index": 34.2,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.732,
+    "hle": 0.187,
+    "ifbench": null,
+    "lcr": 0.763333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.481,
+    "tau2": null,
+    "tau_banking": 0.28659793814433,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.692883895131086
+   },
+   "id": "f9739750-6d42-450f-ba1e-2f76c869b4fe",
+   "median_output_tokens_per_second": 156.079,
+   "median_time_to_first_answer_token": 13.207,
+   "median_time_to_first_token_seconds": 0.393,
+   "model_creator": {
+    "id": "7d59f244-cf07-4d56-8f28-e1f1379f31c8",
+    "name": "Multiverse Computing",
+    "slug": "multiversecomputing"
+   },
+   "name": "Quasar 438B (max, based on GLM-5.2)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.9,
+    "price_1m_input_tokens": 0.6,
+    "price_1m_output_tokens": 1.8
+   },
+   "release_date": "2026-08-10",
+   "slug": "quasar-438b"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 14.5,
+    "artificial_analysis_intelligence_index": 15,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.702,
+    "hle": 0.089,
+    "ifbench": null,
+    "lcr": 0.593333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.263,
+    "tau2": null,
+    "tau_banking": 0.208247422680412,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.0861423220973783
+   },
+   "id": "641a073a-41c9-4773-9b02-d965c16607c5",
+   "median_output_tokens_per_second": 0,
+   "median_time_to_first_answer_token": 0,
+   "median_time_to_first_token_seconds": 0,
+   "model_creator": {
+    "id": "7399e4ac-f64d-4be6-b649-2fc20756839f",
+    "name": "OpenBMB",
+    "slug": "openbmb"
+   },
+   "name": "MiniCPM5-2B",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0,
+    "price_1m_input_tokens": 0,
+    "price_1m_output_tokens": 0
+   },
+   "release_date": "2026-09-07",
+   "slug": "minicpm5-2b"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": 0.893333333333333,
+    "artificial_analysis_coding_index": 20.7,
+    "artificial_analysis_intelligence_index": 10.8,
+    "artificial_analysis_math_index": 89.3,
+    "gpqa": 0.688,
+    "hle": 0.11,
+    "ifbench": 0.651020408163265,
+    "lcr": 0.346666666666667,
+    "livecodebench": 0.777,
+    "math_500": null,
+    "mmlu_pro": 0.748,
+    "scicode": 0.389,
+    "tau2": 0.60233918128655,
+    "tau_banking": 0.0701030927835052,
+    "terminalbench_hard": 0.106060606060606,
+    "terminalbench_v2_1": 0.138576779026217
+   },
+   "id": "36f73aaf-d38a-4b56-a2b3-d04d17186910",
+   "median_output_tokens_per_second": 236.288,
+   "median_time_to_first_answer_token": 8.915,
+   "median_time_to_first_token_seconds": 0.451,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "gpt-oss-20b (high)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.092,
+    "price_1m_input_tokens": 0.06,
+    "price_1m_output_tokens": 0.19
+   },
+   "release_date": "2025-08-05",
+   "slug": "gpt-oss-20b"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": 0.623333333333333,
+    "artificial_analysis_coding_index": null,
+    "artificial_analysis_intelligence_index": 8.4,
+    "artificial_analysis_math_index": 62.3,
+    "gpqa": 0.611,
+    "hle": 0.053,
+    "ifbench": 0.578231292517007,
+    "lcr": 0.31,
+    "livecodebench": 0.652,
+    "math_500": null,
+    "mmlu_pro": 0.718,
+    "scicode": null,
+    "tau2": 0.502923976608187,
+    "tau_banking": null,
+    "terminalbench_hard": 0.0454545454545455,
+    "terminalbench_v2_1": null
+   },
+   "id": "16149b9c-a1e9-4669-a5cb-ff3c00d78f89",
+   "median_output_tokens_per_second": 254.865,
+   "median_time_to_first_answer_token": 8.29,
+   "median_time_to_first_token_seconds": 0.443,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "gpt-oss-20b (low)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.103,
+    "price_1m_input_tokens": 0.07,
+    "price_1m_output_tokens": 0.2
+   },
+   "release_date": "2025-08-05",
+   "slug": "gpt-oss-20b-low"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 64.7,
+    "artificial_analysis_intelligence_index": 37.2,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.872,
+    "hle": 0.333,
+    "ifbench": 0.621768707482993,
+    "lcr": 0.74,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": 0.728070175438596,
+    "tau_banking": 0.255670103092783,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.722846441947566
+   },
+   "id": "26e0f83a-ca98-4f34-94ac-7c5e251ee410",
+   "median_output_tokens_per_second": 103.379,
+   "median_time_to_first_answer_token": 1.765,
+   "median_time_to_first_token_seconds": 1.765,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Terra (medium)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 4.5,
+    "price_1m_input_tokens": 2,
+    "price_1m_output_tokens": 12
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-terra-medium"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": 0.934416666666667,
+    "artificial_analysis_coding_index": 30.4,
+    "artificial_analysis_intelligence_index": 15.6,
+    "artificial_analysis_math_index": 93.4,
+    "gpqa": 0.782,
+    "hle": 0.196,
+    "ifbench": 0.689795918367347,
+    "lcr": 0.52,
+    "livecodebench": 0.878,
+    "math_500": null,
+    "mmlu_pro": 0.808,
+    "scicode": 0.34,
+    "tau2": 0.657894736842105,
+    "tau_banking": 0.127835051546392,
+    "terminalbench_hard": 0.234848484848485,
+    "terminalbench_v2_1": 0.262172284644195
+   },
+   "id": "f0083258-8646-45b8-8082-7aaf6c2ea82a",
+   "median_output_tokens_per_second": 216.658,
+   "median_time_to_first_answer_token": 9.683,
+   "median_time_to_first_token_seconds": 0.452,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "gpt-oss-120b (high)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.261,
+    "price_1m_input_tokens": 0.15,
+    "price_1m_output_tokens": 0.595
+   },
+   "release_date": "2025-08-05",
+   "slug": "gpt-oss-120b"
+  },
+  {
+   "evaluations": {
+    "aime": 0.903333333333333,
+    "aime_25": 0.883333333333333,
+    "artificial_analysis_coding_index": null,
+    "artificial_analysis_intelligence_index": 23.7,
+    "artificial_analysis_math_index": 88.3,
+    "gpqa": 0.827,
+    "hle": 0.201,
+    "ifbench": 0.714285714285714,
+    "lcr": 0.746666666666667,
+    "livecodebench": 0.808,
+    "math_500": 0.992,
+    "mmlu_pro": 0.853,
+    "scicode": null,
+    "tau2": 0.807017543859649,
+    "tau_banking": null,
+    "terminalbench_hard": 0.371212121212121,
+    "terminalbench_v2_1": null
+   },
+   "id": "16c5b637-8bce-4252-81f2-1b87a36a4e4c",
+   "median_output_tokens_per_second": 150.686,
+   "median_time_to_first_answer_token": 4.29,
+   "median_time_to_first_token_seconds": 4.29,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "o3",
+   "pricing": {
+    "price_1m_blended_3_to_1": 3.5,
+    "price_1m_input_tokens": 2,
+    "price_1m_output_tokens": 8
+   },
+   "release_date": "2025-04-16",
+   "slug": "o3"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 69.7,
+    "artificial_analysis_intelligence_index": 40.8,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.898,
+    "hle": 0.394,
+    "ifbench": 0.66530612244898,
+    "lcr": 0.78,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.564,
+    "tau2": 0.760233918128655,
+    "tau_banking": 0.290721649484536,
+    "terminalbench_hard": 0.606060606060606,
+    "terminalbench_v2_1": 0.767790262172285
+   },
+   "id": "0904b596-8932-43bd-9b21-324f128e1723",
+   "median_output_tokens_per_second": 73.65,
+   "median_time_to_first_answer_token": 2.478,
+   "median_time_to_first_token_seconds": 2.478,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Sol (low)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 8,
+    "price_1m_input_tokens": 4,
+    "price_1m_output_tokens": 20
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-sol-low"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 44.2,
+    "artificial_analysis_intelligence_index": 25.8,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.835,
+    "hle": 0.198,
+    "ifbench": null,
+    "lcr": 0.7,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": null,
+    "tau_banking": 0.127835051546392,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.434456928838951
+   },
+   "id": "050c61cd-cddc-463a-a30a-a82aaa37be59",
+   "median_output_tokens_per_second": 103.978,
+   "median_time_to_first_answer_token": 1.392,
+   "median_time_to_first_token_seconds": 1.392,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Luna (low)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.45,
+    "price_1m_input_tokens": 0.2,
+    "price_1m_output_tokens": 1.2
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-luna-low"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": 0.666666666666667,
+    "artificial_analysis_coding_index": 21.2,
+    "artificial_analysis_intelligence_index": 8.9,
+    "artificial_analysis_math_index": 66.7,
+    "gpqa": 0.672,
+    "hle": 0.059,
+    "ifbench": 0.582993197278912,
+    "lcr": 0.46,
+    "livecodebench": 0.707,
+    "math_500": null,
+    "mmlu_pro": 0.775,
+    "scicode": null,
+    "tau2": 0.450292397660819,
+    "tau_banking": 0.0288659793814433,
+    "terminalbench_hard": 0.053030303030303,
+    "terminalbench_v2_1": 0.138576779026217
+   },
+   "id": "c99f3bde-7c08-4de8-bd5c-8ee9123ebffa",
+   "median_output_tokens_per_second": 239.518,
+   "median_time_to_first_answer_token": 8.798,
+   "median_time_to_first_token_seconds": 0.448,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "gpt-oss-120b (low)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.249,
+    "price_1m_input_tokens": 0.15,
+    "price_1m_output_tokens": 0.545
+   },
+   "release_date": "2025-08-05",
+   "slug": "gpt-oss-120b-low"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 76.7,
+    "artificial_analysis_intelligence_index": 46.8,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.925,
+    "hle": 0.429,
+    "ifbench": 0.712244897959184,
+    "lcr": 0.83,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.55,
+    "tau2": 0.862573099415205,
+    "tau_banking": 0.402061855670103,
+    "terminalbench_hard": 0.575757575757576,
+    "terminalbench_v2_1": 0.880149812734082
+   },
+   "id": "bcf8db0a-3bb6-4d82-9516-0f57370c85a6",
+   "median_output_tokens_per_second": 121.215,
+   "median_time_to_first_answer_token": 150.885,
+   "median_time_to_first_token_seconds": 150.885,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Terra (max)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 4.5,
+    "price_1m_input_tokens": 2,
+    "price_1m_output_tokens": 12
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-terra"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": null,
+    "artificial_analysis_intelligence_index": 1,
+    "artificial_analysis_math_index": null,
+    "gpqa": null,
+    "hle": null,
+    "ifbench": null,
+    "lcr": null,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": null,
+    "tau_banking": null,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": null
+   },
+   "id": "4c111fbc-d13a-42b4-858c-1dc17fe3c1d1",
+   "median_output_tokens_per_second": 0,
+   "median_time_to_first_answer_token": 0,
+   "median_time_to_first_token_seconds": 0,
+   "model_creator": {
+    "id": "a1e3ddcf-d3e4-44a5-9e8f-029a69850875",
+    "name": "SpaceXAI",
+    "slug": "xai"
+   },
+   "name": "Grok-1",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0,
+    "price_1m_input_tokens": 0,
+    "price_1m_output_tokens": 0
+   },
+   "release_date": "2024-03-17",
+   "slug": "grok-1"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 77.4,
+    "artificial_analysis_intelligence_index": 51.3,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.941,
+    "hle": 0.495,
+    "ifbench": 0.726530612244898,
+    "lcr": 0.84,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.571,
+    "tau2": 0.850877192982456,
+    "tau_banking": 0.443298969072165,
+    "terminalbench_hard": 0.659090909090909,
+    "terminalbench_v2_1": 0.880149812734082
+   },
+   "id": "d93edfe8-bf35-49ad-b56e-b18116142a1c",
+   "median_output_tokens_per_second": 73.438,
+   "median_time_to_first_answer_token": 46.074,
+   "median_time_to_first_token_seconds": 46.074,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Sol (max)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 8,
+    "price_1m_input_tokens": 4,
+    "price_1m_output_tokens": 20
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-sol"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 71.4,
+    "artificial_analysis_intelligence_index": 43.4,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.911,
+    "hle": 0.395,
+    "ifbench": null,
+    "lcr": 0.836666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.536,
+    "tau2": null,
+    "tau_banking": 0.311340206185567,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.808988764044944
+   },
+   "id": "426d24c8-49ae-482a-b4a8-20f1c53f21c1",
+   "median_output_tokens_per_second": 116.734,
+   "median_time_to_first_answer_token": 98.837,
+   "median_time_to_first_token_seconds": 98.837,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Luna (max)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.45,
+    "price_1m_input_tokens": 0.2,
+    "price_1m_output_tokens": 1.2
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-luna"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 65.1,
+    "artificial_analysis_intelligence_index": 32.9,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.79,
+    "hle": 0.167,
+    "ifbench": null,
+    "lcr": 0.623333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": null,
+    "tau_banking": 0.195876288659794,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.741573033707865
+   },
+   "id": "7c4d1e30-6ecb-46cf-880c-41446d7b51f1",
+   "median_output_tokens_per_second": 68.553,
+   "median_time_to_first_answer_token": 0.891,
+   "median_time_to_first_token_seconds": 0.891,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Sol (Non-reasoning)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 8,
+    "price_1m_input_tokens": 4,
+    "price_1m_output_tokens": 20
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-sol-non-reasoning"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 52.3,
+    "artificial_analysis_intelligence_index": 26.3,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.746,
+    "hle": 0.114,
+    "ifbench": null,
+    "lcr": 0.586666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": null,
+    "tau_banking": 0.156701030927835,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.561797752808989
+   },
+   "id": "9b97a35e-6ac7-44d9-91c6-422fa678963e",
+   "median_output_tokens_per_second": 92.043,
+   "median_time_to_first_answer_token": 0.762,
+   "median_time_to_first_token_seconds": 0.762,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Terra (Non-reasoning)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 4.5,
+    "price_1m_input_tokens": 2,
+    "price_1m_output_tokens": 12
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-terra-non-reasoning"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 39.3,
+    "artificial_analysis_intelligence_index": 19.3,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.645,
+    "hle": 0.072,
+    "ifbench": null,
+    "lcr": 0.426666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": null,
+    "tau_banking": 0.0969072164948454,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.389513108614232
+   },
+   "id": "dc64f856-3ded-497d-9527-d41d31267ed5",
+   "median_output_tokens_per_second": 114.97,
+   "median_time_to_first_answer_token": 0.709,
+   "median_time_to_first_token_seconds": 0.709,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Luna (Non-reasoning)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.45,
+    "price_1m_input_tokens": 0.2,
+    "price_1m_output_tokens": 1.2
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-luna-non-reasoning"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 76.3,
+    "artificial_analysis_intelligence_index": 46,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.926,
+    "hle": 0.422,
+    "ifbench": 0.695918367346939,
+    "lcr": 0.803333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.574,
+    "tau2": 0.809941520467836,
+    "tau_banking": 0.364948453608247,
+    "terminalbench_hard": 0.628787878787879,
+    "terminalbench_v2_1": 0.861423220973783
+   },
+   "id": "6f174934-5b7d-4333-86cb-f5ebf4a862e3",
+   "median_output_tokens_per_second": 76.983,
+   "median_time_to_first_answer_token": 3.778,
+   "median_time_to_first_token_seconds": 3.778,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Sol (medium)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 8,
+    "price_1m_input_tokens": 4,
+    "price_1m_output_tokens": 20
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-sol-medium"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": null,
+    "artificial_analysis_intelligence_index": null,
+    "artificial_analysis_math_index": null,
+    "gpqa": null,
+    "hle": null,
+    "ifbench": null,
+    "lcr": null,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": null,
+    "tau_banking": null,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": null
+   },
+   "id": "e3396f8f-7994-4df5-bdab-43745681ef0a",
+   "median_output_tokens_per_second": 0,
+   "median_time_to_first_answer_token": 0,
+   "median_time_to_first_token_seconds": 0,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.5 Pro (xhigh)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0,
+    "price_1m_input_tokens": 0,
+    "price_1m_output_tokens": 0
+   },
+   "release_date": "2026-04-23",
+   "slug": "gpt-5-5-pro"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 78.3,
+    "artificial_analysis_intelligence_index": 49.8,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.931,
+    "hle": 0.473,
+    "ifbench": 0.710204081632653,
+    "lcr": 0.823333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.571,
+    "tau2": 0.847953216374269,
+    "tau_banking": 0.381443298969072,
+    "terminalbench_hard": 0.613636363636364,
+    "terminalbench_v2_1": 0.895131086142322
+   },
+   "id": "d998db47-9b67-4727-a2bb-2e1261020ac0",
+   "median_output_tokens_per_second": 79.882,
+   "median_time_to_first_answer_token": 22.57,
+   "median_time_to_first_token_seconds": 22.57,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Sol (xhigh)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 8,
+    "price_1m_input_tokens": 4,
+    "price_1m_output_tokens": 20
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-sol-xhigh"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 58.1,
+    "artificial_analysis_intelligence_index": 32.4,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.843,
+    "hle": 0.292,
+    "ifbench": 0.596598639455782,
+    "lcr": 0.713333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": 0.605263157894737,
+    "tau_banking": 0.187628865979381,
+    "terminalbench_hard": 0.439393939393939,
+    "terminalbench_v2_1": 0.625468164794007
+   },
+   "id": "cc4a20cd-09fe-4962-a430-119c815e85fa",
+   "median_output_tokens_per_second": 94.222,
+   "median_time_to_first_answer_token": 1.473,
+   "median_time_to_first_token_seconds": 1.473,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Terra (low)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 4.5,
+    "price_1m_input_tokens": 2,
+    "price_1m_output_tokens": 12
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-terra-low"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 39.4,
+    "artificial_analysis_intelligence_index": 21.6,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.823,
+    "hle": 0.199,
+    "ifbench": null,
+    "lcr": 0.7,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": null,
+    "tau_banking": 0.117525773195876,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.348314606741573
+   },
+   "id": "c4169d75-9d24-4794-a9c3-69e1fe364de5",
+   "median_output_tokens_per_second": 128.31,
+   "median_time_to_first_answer_token": 16.481,
+   "median_time_to_first_token_seconds": 0.894,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.5 Instant (June 2026)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 11.25,
+    "price_1m_input_tokens": 5,
+    "price_1m_output_tokens": 30
+   },
+   "release_date": "2026-06-25",
+   "slug": "gpt-5-5-instant-06-26"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 63.3,
+    "artificial_analysis_intelligence_index": 37.4,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.892,
+    "hle": 0.334,
+    "ifbench": null,
+    "lcr": 0.803333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": null,
+    "tau_banking": 0.251546391752577,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.696629213483146
+   },
+   "id": "aa55297e-8fbf-4372-b4ab-9b068dc6396c",
+   "median_output_tokens_per_second": 104.354,
+   "median_time_to_first_answer_token": 16.92,
+   "median_time_to_first_token_seconds": 16.92,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Luna (high)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.45,
+    "price_1m_input_tokens": 0.2,
+    "price_1m_output_tokens": 1.2
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-luna-high"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 70.6,
+    "artificial_analysis_intelligence_index": 44.4,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.908,
+    "hle": 0.419,
+    "ifbench": 0.662585034013605,
+    "lcr": 0.79,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.523,
+    "tau2": 0.804093567251462,
+    "tau_banking": 0.296907216494845,
+    "terminalbench_hard": 0.628787878787879,
+    "terminalbench_v2_1": 0.801498127340824
+   },
+   "id": "9e30696f-16fa-4b4f-ba53-161895a85fed",
+   "median_output_tokens_per_second": 106.398,
+   "median_time_to_first_answer_token": 11.537,
+   "median_time_to_first_token_seconds": 11.537,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Terra (xhigh)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 4.5,
+    "price_1m_input_tokens": 2,
+    "price_1m_output_tokens": 12
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-terra-xhigh"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 77.2,
+    "artificial_analysis_intelligence_index": 48.3,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.928,
+    "hle": 0.46,
+    "ifbench": 0.691836734693878,
+    "lcr": 0.816666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.578,
+    "tau2": 0.833333333333333,
+    "tau_banking": 0.36701030927835,
+    "terminalbench_hard": 0.621212121212121,
+    "terminalbench_v2_1": 0.872659176029963
+   },
+   "id": "8afc250d-b538-45a2-812a-4605f4ffd87e",
+   "median_output_tokens_per_second": 76.226,
+   "median_time_to_first_answer_token": 11.58,
+   "median_time_to_first_token_seconds": 11.58,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Sol (high)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 8,
+    "price_1m_input_tokens": 4,
+    "price_1m_output_tokens": 20
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-sol-high"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 68.6,
+    "artificial_analysis_intelligence_index": 41.6,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.895,
+    "hle": 0.37,
+    "ifbench": null,
+    "lcr": 0.816666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.505,
+    "tau2": null,
+    "tau_banking": 0.28659793814433,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.779026217228464
+   },
+   "id": "87110ff0-1f79-41b4-9976-eda250597317",
+   "median_output_tokens_per_second": 121.75,
+   "median_time_to_first_answer_token": 34.069,
+   "median_time_to_first_token_seconds": 34.069,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Luna (xhigh)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.45,
+    "price_1m_input_tokens": 0.2,
+    "price_1m_output_tokens": 1.2
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-luna-xhigh"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 67.1,
+    "artificial_analysis_intelligence_index": 41.3,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.896,
+    "hle": 0.385,
+    "ifbench": 0.64421768707483,
+    "lcr": 0.776666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.524,
+    "tau2": 0.783625730994152,
+    "tau_banking": 0.28659793814433,
+    "terminalbench_hard": 0.575757575757576,
+    "terminalbench_v2_1": 0.756554307116105
+   },
+   "id": "81972fba-1219-477e-bbfb-18c656a63ff7",
+   "median_output_tokens_per_second": 100.115,
+   "median_time_to_first_answer_token": 2.641,
+   "median_time_to_first_token_seconds": 2.641,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Terra (high)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 4.5,
+    "price_1m_input_tokens": 2,
+    "price_1m_output_tokens": 12
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-terra-high"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": null,
+    "artificial_analysis_intelligence_index": 36.9,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.915,
+    "hle": 0.425,
+    "ifbench": 0.753741496598639,
+    "lcr": 0.833333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": 0.859649122807018,
+    "tau_banking": null,
+    "terminalbench_hard": 0.53030303030303,
+    "terminalbench_v2_1": null
+   },
+   "id": "59b5b14b-5365-4ee7-824a-18a8e6309644",
+   "median_output_tokens_per_second": 143.103,
+   "median_time_to_first_answer_token": 31.124,
+   "median_time_to_first_token_seconds": 31.124,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.3 Codex (xhigh)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 4.813,
+    "price_1m_input_tokens": 1.75,
+    "price_1m_output_tokens": 14
+   },
+   "release_date": "2026-02-05",
+   "slug": "gpt-5-3-codex"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 50.7,
+    "artificial_analysis_intelligence_index": 30.2,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.859,
+    "hle": 0.258,
+    "ifbench": null,
+    "lcr": 0.75,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.468,
+    "tau2": null,
+    "tau_banking": 0.177319587628866,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.531835205992509
+   },
+   "id": "58b812bf-8498-46db-b834-f43ccc614b61",
+   "median_output_tokens_per_second": 103.789,
+   "median_time_to_first_answer_token": 2.221,
+   "median_time_to_first_token_seconds": 2.221,
+   "model_creator": {
+    "id": "e67e56e3-15cd-43db-b679-da4660a69f41",
+    "name": "OpenAI",
+    "slug": "openai"
+   },
+   "name": "GPT-5.6 Luna (medium)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.45,
+    "price_1m_input_tokens": 0.2,
+    "price_1m_output_tokens": 1.2
+   },
+   "release_date": "2026-07-09",
+   "slug": "gpt-5-6-luna-medium"
+  },
+  {
+   "evaluations": {
+    "aime": 0.3,
+    "aime_25": 0.0766666666666667,
+    "artificial_analysis_coding_index": 11.9,
+    "artificial_analysis_intelligence_index": 3.7,
+    "artificial_analysis_math_index": 7.7,
+    "gpqa": 0.498,
+    "hle": 0.036,
+    "ifbench": 0.470748299319728,
+    "lcr": 0.156666666666667,
+    "livecodebench": 0.288,
+    "math_500": 0.772666666666667,
+    "mmlu_pro": 0.713,
+    "scicode": null,
+    "tau2": 0.266081871345029,
+    "tau_banking": null,
+    "terminalbench_hard": 0.0303030303030303,
+    "terminalbench_v2_1": 0.048689138576779
+   },
+   "id": "976cc8ad-7904-4056-83c5-960181f47d5f",
+   "median_output_tokens_per_second": 96.045,
+   "median_time_to_first_answer_token": 0.621,
+   "median_time_to_first_token_seconds": 0.621,
+   "model_creator": {
+    "id": "e1694725-0192-4e54-b1b8-c97e816c6cbe",
+    "name": "Meta",
+    "slug": "meta"
+   },
+   "name": "Llama 3.3 Instruct 70B",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.671,
+    "price_1m_input_tokens": 0.655,
+    "price_1m_output_tokens": 0.72
+   },
+   "release_date": "2024-12-06",
+   "slug": "llama-3-3-instruct-70b"
+  },
+  {
+   "evaluations": {
+    "aime": 0.213333333333333,
+    "aime_25": 0.03,
+    "artificial_analysis_coding_index": null,
+    "artificial_analysis_intelligence_index": 2.9,
+    "artificial_analysis_math_index": 3,
+    "gpqa": 0.515,
+    "hle": 0.04,
+    "ifbench": 0.390476190476191,
+    "lcr": 0.253333333333333,
+    "livecodebench": 0.305,
+    "math_500": 0.703333333333333,
+    "mmlu_pro": 0.732,
+    "scicode": null,
+    "tau2": 0.190058479532164,
+    "tau_banking": null,
+    "terminalbench_hard": 0.0681818181818182,
+    "terminalbench_v2_1": null
+   },
+   "id": "45c87531-2d57-48e0-8012-202cd636189e",
+   "median_output_tokens_per_second": 0,
+   "median_time_to_first_answer_token": 0,
+   "median_time_to_first_token_seconds": 0,
+   "model_creator": {
+    "id": "e1694725-0192-4e54-b1b8-c97e816c6cbe",
+    "name": "Meta",
+    "slug": "meta"
+   },
+   "name": "Llama 3.1 Instruct 405B",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0,
+    "price_1m_input_tokens": 0,
+    "price_1m_output_tokens": 0
+   },
+   "release_date": "2024-07-23",
+   "slug": "llama-3-1-instruct-405b"
+  },
+  {
+   "evaluations": {
+    "aime": 0.05,
+    "aime_25": null,
+    "artificial_analysis_coding_index": null,
+    "artificial_analysis_intelligence_index": 1,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.432,
+    "hle": 0.045,
+    "ifbench": null,
+    "lcr": null,
+    "livecodebench": 0.214,
+    "math_500": 0.629333333333333,
+    "mmlu_pro": 0.671,
+    "scicode": null,
+    "tau2": null,
+    "tau_banking": null,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": null
+   },
+   "id": "9ca71ac4-41c8-42c0-87dd-5704a9e5b94d",
+   "median_output_tokens_per_second": 0,
+   "median_time_to_first_answer_token": 0,
+   "median_time_to_first_token_seconds": 0,
+   "model_creator": {
+    "id": "e1694725-0192-4e54-b1b8-c97e816c6cbe",
+    "name": "Meta",
+    "slug": "meta"
+   },
+   "name": "Llama 3.2 Instruct 90B (Vision)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0,
+    "price_1m_input_tokens": 0,
+    "price_1m_output_tokens": 0
+   },
+   "release_date": "2024-09-25",
+   "slug": "llama-3-2-instruct-90b-vision"
+  },
+  {
+   "evaluations": {
+    "aime": 0.0933333333333333,
+    "aime_25": 0.0166666666666667,
+    "artificial_analysis_coding_index": null,
+    "artificial_analysis_intelligence_index": 1,
+    "artificial_analysis_math_index": 1.7,
+    "gpqa": 0.221,
+    "hle": 0.055,
+    "ifbench": 0.304081632653061,
+    "lcr": 0.126666666666667,
+    "livecodebench": 0.11,
+    "math_500": 0.516,
+    "mmlu_pro": 0.464,
+    "scicode": null,
+    "tau2": 0.146198830409357,
+    "tau_banking": null,
+    "terminalbench_hard": 0.00757575757575758,
+    "terminalbench_v2_1": null
+   },
+   "id": "5fb47ff6-a30e-4c2c-96f2-55e95a13390f",
+   "median_output_tokens_per_second": 16.815,
+   "median_time_to_first_answer_token": 0.795,
+   "median_time_to_first_token_seconds": 0.795,
+   "model_creator": {
+    "id": "e1694725-0192-4e54-b1b8-c97e816c6cbe",
+    "name": "Meta",
+    "slug": "meta"
+   },
+   "name": "Llama 3.2 Instruct 11B (Vision)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.345,
+    "price_1m_input_tokens": 0.345,
+    "price_1m_output_tokens": 0.345
+   },
+   "release_date": "2024-09-25",
+   "slug": "llama-3-2-instruct-11b-vision"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 72.2,
+    "artificial_analysis_intelligence_index": 46.8,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.904,
+    "hle": 0.455,
+    "ifbench": null,
+    "lcr": 0.79,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.574,
+    "tau2": null,
+    "tau_banking": 0.348453608247423,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.801498127340824
+   },
+   "id": "04ee6719-0327-463b-a1a1-70a6a78254f9",
+   "median_output_tokens_per_second": 261.994,
+   "median_time_to_first_answer_token": 15.497,
+   "median_time_to_first_token_seconds": 7.863,
+   "model_creator": {
+    "id": "e1694725-0192-4e54-b1b8-c97e816c6cbe",
+    "name": "Meta",
+    "slug": "meta"
+   },
+   "name": "Muse Spark 1.2 (xhigh)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 2,
+    "price_1m_input_tokens": 1.25,
+    "price_1m_output_tokens": 4.25
+   },
+   "release_date": "2026-08-05",
+   "slug": "muse-spark-1-2"
+  },
+  {
+   "evaluations": {
+    "aime": 0.283333333333333,
+    "aime_25": 0.14,
+    "artificial_analysis_coding_index": 8.2,
+    "artificial_analysis_intelligence_index": 4.6,
+    "artificial_analysis_math_index": 14,
+    "gpqa": 0.587,
+    "hle": 0.038,
+    "ifbench": 0.395238095238095,
+    "lcr": 0.277,
+    "livecodebench": 0.299,
+    "math_500": 0.844,
+    "mmlu_pro": 0.752,
+    "scicode": null,
+    "tau2": 0.154970760233918,
+    "tau_banking": 0.0329896907216495,
+    "terminalbench_hard": 0.0151515151515152,
+    "terminalbench_v2_1": 0.0374531835205993
+   },
+   "id": "adf9a85e-abc3-4f28-937b-db6655cc5238",
+   "median_output_tokens_per_second": 79.768,
+   "median_time_to_first_answer_token": 0.594,
+   "median_time_to_first_token_seconds": 0.594,
+   "model_creator": {
+    "id": "e1694725-0192-4e54-b1b8-c97e816c6cbe",
+    "name": "Meta",
+    "slug": "meta"
+   },
+   "name": "Llama 4 Scout",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.313,
+    "price_1m_input_tokens": 0.19,
+    "price_1m_output_tokens": 0.68
+   },
+   "release_date": "2025-04-05",
+   "slug": "llama-4-scout"
+  },
+  {
+   "evaluations": {
+    "aime": 0.39,
+    "aime_25": 0.193333333333333,
+    "artificial_analysis_coding_index": 16.3,
+    "artificial_analysis_intelligence_index": 10.3,
+    "artificial_analysis_math_index": 19.3,
+    "gpqa": 0.671,
+    "hle": 0.049,
+    "ifbench": 0.429931972789116,
+    "lcr": 0.5,
+    "livecodebench": 0.397,
+    "math_500": 0.888666666666667,
+    "mmlu_pro": 0.809,
+    "scicode": 0.317,
+    "tau2": 0.178362573099415,
+    "tau_banking": 0.0371134020618557,
+    "terminalbench_hard": 0.0681818181818182,
+    "terminalbench_v2_1": 0.0786516853932584
+   },
+   "id": "922c69c7-9037-43c6-8bcf-a1c555e7f3eb",
+   "median_output_tokens_per_second": 95.012,
+   "median_time_to_first_answer_token": 0.577,
+   "median_time_to_first_token_seconds": 0.577,
+   "model_creator": {
+    "id": "e1694725-0192-4e54-b1b8-c97e816c6cbe",
+    "name": "Meta",
+    "slug": "meta"
+   },
+   "name": "Llama 4 Maverick",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.422,
+    "price_1m_input_tokens": 0.26,
+    "price_1m_output_tokens": 0.91
+   },
+   "release_date": "2025-04-05",
+   "slug": "llama-4-maverick"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 49,
+    "artificial_analysis_intelligence_index": 24.4,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.835,
+    "hle": 0.22,
+    "ifbench": null,
+    "lcr": 0.833333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.449,
+    "tau2": null,
+    "tau_banking": 0.235051546391753,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.51685393258427
+   },
+   "id": "583f98fb-c4b8-4df3-8d40-60ac0ed69882",
+   "median_output_tokens_per_second": 103.417,
+   "median_time_to_first_answer_token": 19.736,
+   "median_time_to_first_token_seconds": 0.397,
+   "model_creator": {
+    "id": "e1694725-0192-4e54-b1b8-c97e816c6cbe",
+    "name": "Meta",
+    "slug": "meta"
+   },
+   "name": "Muse Glimmer (high)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.637,
+    "price_1m_input_tokens": 0.35,
+    "price_1m_output_tokens": 1.5
+   },
+   "release_date": "2026-08-10",
+   "slug": "muse-glimmer"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 76.3,
+    "artificial_analysis_intelligence_index": 53,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.938,
+    "hle": 0.491,
+    "ifbench": null,
+    "lcr": 0.843333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.583,
+    "tau2": null,
+    "tau_banking": 0.523711340206186,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.857677902621723
+   },
+   "id": "58a40aba-a44f-457f-9cca-75b43d4e6934",
+   "median_output_tokens_per_second": 221.023,
+   "median_time_to_first_answer_token": 30.319,
+   "median_time_to_first_token_seconds": 21.27,
+   "model_creator": {
+    "id": "e1694725-0192-4e54-b1b8-c97e816c6cbe",
+    "name": "Meta",
+    "slug": "meta"
+   },
+   "name": "Muse Spark 1.3 (max)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 2,
+    "price_1m_input_tokens": 1.25,
+    "price_1m_output_tokens": 4.25
+   },
+   "release_date": "2026-09-02",
+   "slug": "muse-spark-1-3"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 76.5,
+    "artificial_analysis_intelligence_index": 51.6,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.941,
+    "hle": 0.475,
+    "ifbench": null,
+    "lcr": 0.83,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.597,
+    "tau2": null,
+    "tau_banking": 0.472164948453608,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.853932584269663
+   },
+   "id": "d5170215-69be-4129-849b-26d8d8825bfc",
+   "median_output_tokens_per_second": 187.392,
+   "median_time_to_first_answer_token": 36.45,
+   "median_time_to_first_token_seconds": 25.777,
+   "model_creator": {
+    "id": "e1694725-0192-4e54-b1b8-c97e816c6cbe",
+    "name": "Meta",
+    "slug": "meta"
+   },
+   "name": "Muse Spark 1.3 (xhigh)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 2,
+    "price_1m_input_tokens": 1.25,
+    "price_1m_output_tokens": 4.25
+   },
+   "release_date": "2026-09-02",
+   "slug": "muse-spark-1-3-xhigh"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 39.3,
+    "artificial_analysis_intelligence_index": 19.2,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.792,
+    "hle": 0.193,
+    "ifbench": 0.724489795918367,
+    "lcr": 0.656666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": 0.435672514619883,
+    "tau_banking": 0.119587628865979,
+    "terminalbench_hard": 0.1364,
+    "terminalbench_v2_1": 0.389513108614232
+   },
+   "id": "6e1b44ff-c227-496b-aef4-19b70cd18c76",
+   "median_output_tokens_per_second": 0,
+   "median_time_to_first_answer_token": 0,
+   "median_time_to_first_token_seconds": 0,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemma 4 26B A4B (Reasoning)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.179,
+    "price_1m_input_tokens": 0.115,
+    "price_1m_output_tokens": 0.37
+   },
+   "release_date": "2026-04-02",
+   "slug": "gemma-4-26b-a4b"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 31,
+    "artificial_analysis_intelligence_index": 15.6,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.753,
+    "hle": 0.157,
+    "ifbench": 0.735374149659864,
+    "lcr": 0.636666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": 0.362573099415205,
+    "tau_banking": null,
+    "terminalbench_hard": 0.181818181818182,
+    "terminalbench_v2_1": 0.273408239700375
+   },
+   "id": "feb02d3b-ff8d-4ed4-b165-13f8d4a7192c",
+   "median_output_tokens_per_second": 128.612,
+   "median_time_to_first_answer_token": 16.875,
+   "median_time_to_first_token_seconds": 1.325,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemma 4 12B (Reasoning)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.15,
+    "price_1m_input_tokens": 0.1,
+    "price_1m_output_tokens": 0.3
+   },
+   "release_date": "2026-06-03",
+   "slug": "gemma-4-12b"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 43.4,
+    "artificial_analysis_intelligence_index": 22.2,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.857,
+    "hle": 0.236,
+    "ifbench": 0.75578231292517,
+    "lcr": 0.696666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.455,
+    "tau2": 0.599415204678363,
+    "tau_banking": 0.148453608247423,
+    "terminalbench_hard": 0.363636363636364,
+    "terminalbench_v2_1": 0.434456928838951
+   },
+   "id": "cd26a386-4873-46ff-b853-d239050025a2",
+   "median_output_tokens_per_second": 35.05,
+   "median_time_to_first_answer_token": 50.479,
+   "median_time_to_first_token_seconds": 0.949,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemma 4 31B (Reasoning)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0,
+    "price_1m_input_tokens": 0,
+    "price_1m_output_tokens": 0
+   },
+   "release_date": "2026-04-02",
+   "slug": "gemma-4-31b"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": null,
+    "artificial_analysis_intelligence_index": 38,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.921,
+    "hle": 0.413,
+    "ifbench": 0.745578231292517,
+    "lcr": 0.743333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": 0.956140350877193,
+    "tau_banking": null,
+    "terminalbench_hard": 0.393939393939394,
+    "terminalbench_v2_1": null
+   },
+   "id": "5016ea75-7b0e-4737-a7e6-1062c6d90fd4",
+   "median_output_tokens_per_second": 230.723,
+   "median_time_to_first_answer_token": 8.909,
+   "median_time_to_first_token_seconds": 8.909,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemini 3.5 Flash (medium)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 3.375,
+    "price_1m_input_tokens": 1.5,
+    "price_1m_output_tokens": 9
+   },
+   "release_date": "2026-05-19",
+   "slug": "gemini-3-5-flash-medium"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": null,
+    "artificial_analysis_intelligence_index": 13.9,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.714,
+    "hle": 0.115,
+    "ifbench": 0.454421768707483,
+    "lcr": 0.423333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": 0.403508771929825,
+    "tau_banking": null,
+    "terminalbench_hard": 0.25,
+    "terminalbench_v2_1": null
+   },
+   "id": "70882ec6-914c-41f0-9754-5e8f75005f77",
+   "median_output_tokens_per_second": 85.361,
+   "median_time_to_first_answer_token": 0.636,
+   "median_time_to_first_token_seconds": 0.636,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemma 4 26B A4B (Non-reasoning)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.198,
+    "price_1m_input_tokens": 0.13,
+    "price_1m_output_tokens": 0.4
+   },
+   "release_date": "2026-04-02",
+   "slug": "gemma-4-26b-a4b-non-reasoning"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 7.2,
+    "artificial_analysis_intelligence_index": 4,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.433,
+    "hle": 0.048,
+    "ifbench": 0.380272108843537,
+    "lcr": 0.163333333333333,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": 0.207602339181287,
+    "tau_banking": null,
+    "terminalbench_hard": 0.0303030303030303,
+    "terminalbench_v2_1": 0.00374531835205993
+   },
+   "id": "b07aef0a-b192-46a1-b1c9-40b06d1b9061",
+   "median_output_tokens_per_second": 0,
+   "median_time_to_first_answer_token": 0,
+   "median_time_to_first_token_seconds": 0,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemma 4 E2B (Reasoning)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0,
+    "price_1m_input_tokens": 0,
+    "price_1m_output_tokens": 0
+   },
+   "release_date": "2026-04-02",
+   "slug": "gemma-4-e2b"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 33.2,
+    "artificial_analysis_intelligence_index": 15.2,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.763,
+    "hle": 0.118,
+    "ifbench": 0.53469387755102,
+    "lcr": 0.466666666666667,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": 0.654970760233918,
+    "tau_banking": 0.088659793814433,
+    "terminalbench_hard": 0.303030303030303,
+    "terminalbench_v2_1": 0.292134831460674
+   },
+   "id": "d0aa27aa-4705-4184-9a1d-483b78c9331c",
+   "median_output_tokens_per_second": 65.645,
+   "median_time_to_first_answer_token": 0.59,
+   "median_time_to_first_token_seconds": 0.59,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemma 4 31B (Non-reasoning)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.205,
+    "price_1m_input_tokens": 0.14,
+    "price_1m_output_tokens": 0.4
+   },
+   "release_date": "2026-04-02",
+   "slug": "gemma-4-31b-non-reasoning"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": 69.2,
+    "artificial_analysis_intelligence_index": 40.3,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.928,
+    "hle": 0.408,
+    "ifbench": null,
+    "lcr": 0.8,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": 0.534,
+    "tau2": null,
+    "tau_banking": 0.298969072164948,
+    "terminalbench_hard": null,
+    "terminalbench_v2_1": 0.775280898876405
+   },
+   "id": "78332c88-fe60-42c8-af9d-3617e44cf1f5",
+   "median_output_tokens_per_second": 188.462,
+   "median_time_to_first_answer_token": 10.72,
+   "median_time_to_first_token_seconds": 10.72,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemini 3.6 Flash (high)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 1.5,
+    "price_1m_input_tokens": 0.75,
+    "price_1m_output_tokens": 3.75
+   },
+   "release_date": "2026-07-21",
+   "slug": "gemini-3-6-flash"
+  },
+  {
+   "evaluations": {
+    "aime": null,
+    "aime_25": null,
+    "artificial_analysis_coding_index": null,
+    "artificial_analysis_intelligence_index": 3.3,
+    "artificial_analysis_math_index": null,
+    "gpqa": 0.549,
+    "hle": 0.048,
+    "ifbench": 0.405442176870748,
+    "lcr": 0.24,
+    "livecodebench": null,
+    "math_500": null,
+    "mmlu_pro": null,
+    "scicode": null,
+    "tau2": 0.260233918128655,
+    "tau_banking": null,
+    "terminalbench_hard": 0.0757575757575758,
+    "terminalbench_v2_1": null
+   },
+   "id": "5303601c-8133-4f52-bc4e-5241ee6b3c10",
+   "median_output_tokens_per_second": 38.85,
+   "median_time_to_first_answer_token": 0.299,
+   "median_time_to_first_token_seconds": 0.299,
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google",
+    "slug": "google"
+   },
+   "name": "Gemma 4 E4B (Non-reasoning)",
+   "pricing": {
+    "price_1m_blended_3_to_1": 0.04,
+    "price_1m_input_tokens": 0.02,
+    "price_1m_output_tokens": 0.1
+   },
+   "release_date": "2026-04-03",
+   "slug": "gemma-4-e4b-non-reasoning"
+  }
+ ],
+ "prompt_options": {
+  "parallel_queries": 1,
+  "prompt_length": 1000
+ },
+ "status": 200
+}

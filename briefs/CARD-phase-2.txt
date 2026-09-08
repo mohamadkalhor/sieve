@@ -1,0 +1,59 @@
+1xnegar-cl opus
+
+SIEVE phase 2 — the loop closes. No fan-out this time: one worker, parts in order.
+
+Repo: https://github.com/mohamadkalhor/sieve   (branch main; pull first)
+
+READ, all of it, before writing code:
+  1. briefs/PHASE-2.md   — the seven parts, in order, each with "Done when"
+  2. briefs/HANDOFF.md   — what you left last time, per letter
+  3. CONTRACTS.md        — unchanged except where PHASE-2 part 2 says to change it
+  4. PLAN.md §11         — amended: new sources moved to phase 3
+
+WHY THIS PHASE
+Phase 1 answers "which model". Phase 2 makes it keep answering unattended and
+lets an agent act on the answer: measurement in, decision out, on a schedule,
+outcome reported back. Data sources that only add rows (Arena, LiveBench,
+Epoch) are phase 3 and are not your job unless quota is left over.
+
+FIRST, TWO THINGS THAT CHANGED UNDER YOU
+- Acceptance line 1c is PROVEN. Phase 1's code was run on the owner's server
+  against the live API with a real key: aa_llm 644 models / 7,416 observations
+  / 644 prices; aa_media 482 models across all five arena endpoints;
+  openrouter 428 models; check green on 35 axes and 17 profiles; score --profile
+  coder ranked real models with contributions and a flip line. Strike 1c.
+- tests/fixtures/recorded/ now holds real trimmed responses from ten endpoints,
+  with a MANIFEST naming the URL behind each. They replace the hand-built AA
+  fixtures you had to invent. That is part 1.
+
+THE PARTS  (full text in briefs/PHASE-2.md — do not work from this summary)
+  1  Real data replaces the invented fixtures; alias pass; settle pareto_prune
+  2  The AA free-tier media endpoints — five defects measured against the live
+     API, including music colliding with itself and an unknown WER direction
+  3  Telemetry ingest, health wired into the ranking, suspend, Pulse screen
+  4  Targets webhook / ninerouter / litellm, and a Chains diff that reads
+     current() instead of the last apply
+  5  The scheduled run: pull -> evaluate -> decide -> apply where auto_apply
+  6  Finish the web: policy and constraint editing, clone, Lenis, the scatter
+  7  Only with quota left: Arena, then LiveBench, then Epoch
+
+Commit and push after EVERY part, and add a note under that part's heading in
+briefs/HANDOFF.md saying what you left. Stop at a part boundary if quota runs
+out, write QUOTA REACHED plus the next step in HANDOFF, report, stop.
+
+RULES THAT DO NOT BEND
+- No secret, hostname, person or product name in the tree. Keys from env only.
+- NO TARGET MAY POINT AT A LIVE GATEWAY during this build. Fakes and scratch
+  SQLite files only. The live 9router test is run by the owner on his own box
+  after review — implementing it is yours, pointing it at anything real is not.
+- The web reads only /v1. types.ts is generated, never hand-edited.
+- Missing benchmark = declared penalty and coverage loss, never a silent zero.
+- Every profile change, switch, hold, suspend and apply is a decision row with
+  an actor.
+- A number you did not measure does not go in the report as a pass. The phase 1
+  report was trusted because it quoted real output and refused one line.
+
+REPORT to the card and `relay say --as negar-cl`: commit hash and count, every
+"Done when" pass/partial/fail with the command and its output as proof, what is
+unfinished verbatim per part, decisions you took where the brief left a choice,
+and any CONTRACTS.md change as a diff.

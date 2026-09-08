@@ -1,0 +1,155 @@
+{
+ "data": [
+  {
+   "ci_95": 7,
+   "elo": 1170,
+   "id": "2f4c8108-bcaa-49fd-a1fb-306b928f787d",
+   "model_creator": {
+    "id": "30bf1911-2cd9-4bce-a179-009b174196fc",
+    "name": "Suno"
+   },
+   "name": "Suno V5.5"
+  },
+  {
+   "ci_95": 14,
+   "elo": 1159,
+   "id": "9f962b4f-4f2c-402e-a1b9-48c274cf6d8d",
+   "model_creator": {
+    "id": "129097a7-4b31-4f07-9482-91fb1814f1d0",
+    "name": "Mureka"
+   },
+   "name": "Mureka V9"
+  },
+  {
+   "ci_95": 6,
+   "elo": 1140,
+   "id": "433d2465-b7b9-452f-bb3a-c7729a0cd230",
+   "model_creator": {
+    "id": "129097a7-4b31-4f07-9482-91fb1814f1d0",
+    "name": "Mureka"
+   },
+   "name": "Mureka V8"
+  },
+  {
+   "ci_95": 6,
+   "elo": 1097,
+   "id": "57ebe97f-f111-44bd-b222-cef1ae030138",
+   "model_creator": {
+    "id": "30bf1911-2cd9-4bce-a179-009b174196fc",
+    "name": "Suno"
+   },
+   "name": "Suno V5"
+  },
+  {
+   "ci_95": 6,
+   "elo": 1092,
+   "id": "50494c8c-2099-41a3-a988-e0961b77f0ec",
+   "model_creator": {
+    "id": "a31a9071-6144-4dbb-92dc-2e02d653ecea",
+    "name": "MiniMax"
+   },
+   "name": "MiniMax Music 2.5+"
+  },
+  {
+   "ci_95": 6,
+   "elo": 1091,
+   "id": "2fbed20c-1a4e-4049-8b23-ec6b21208790",
+   "model_creator": {
+    "id": "a31a9071-6144-4dbb-92dc-2e02d653ecea",
+    "name": "MiniMax"
+   },
+   "name": "MiniMax Music 2.6"
+  },
+  {
+   "ci_95": 6,
+   "elo": 1089,
+   "id": "1d06bf78-0a16-4fdf-8029-663a694e3470",
+   "model_creator": {
+    "id": "30bf1911-2cd9-4bce-a179-009b174196fc",
+    "name": "Suno"
+   },
+   "name": "Suno V4.5"
+  },
+  {
+   "ci_95": 6,
+   "elo": 1082,
+   "id": "82bc3b6a-ff83-416d-b32f-7bd6824ff376",
+   "model_creator": {
+    "id": "faddc6d9-2c14-445f-9b28-56726f59c793",
+    "name": "Google"
+   },
+   "name": "Lyria 3 Pro"
+  },
+  {
+   "ci_95": 9,
+   "elo": 1070,
+   "id": "cf05d8dd-1699-4c8e-b240-b04a24a7f7a5",
+   "model_creator": {
+    "id": "8d057760-0a8b-460a-9625-6dd261bb325c",
+    "name": "ElevenLabs"
+   },
+   "name": "Eleven Music v2"
+  },
+  {
+   "ci_95": 6,
+   "elo": 1058,
+   "id": "dc4622f5-9de6-449e-903f-781a7222311b",
+   "model_creator": {
+    "id": "4c7aaf69-80e6-4b43-92b4-58ea2a1fe9e4",
+    "name": "Producer.ai"
+   },
+   "name": "FUZZ-2.0"
+  },
+  {
+   "ci_95": 7,
+   "elo": 1023,
+   "id": "b5b7f9d3-85d4-47dc-9213-fe09c1ea5da1",
+   "model_creator": {
+    "id": "8d057760-0a8b-460a-9625-6dd261bb325c",
+    "name": "ElevenLabs"
+   },
+   "name": "Eleven Music"
+  },
+  {
+   "ci_95": 7,
+   "elo": 1019,
+   "id": "be7166af-e1bf-4aa0-987e-935bf554d9c2",
+   "model_creator": {
+    "id": "4c7aaf69-80e6-4b43-92b4-58ea2a1fe9e4",
+    "name": "Producer.ai"
+   },
+   "name": "FUZZ-2.0 Raw"
+  },
+  {
+   "ci_95": 0,
+   "elo": 1000,
+   "id": "63e9674f-a664-4c5e-a5a0-7c4d56e668d8",
+   "model_creator": {
+    "id": "4c7aaf69-80e6-4b43-92b4-58ea2a1fe9e4",
+    "name": "Producer.ai"
+   },
+   "name": "FUZZ-1.1 Pro"
+  },
+  {
+   "ci_95": 7,
+   "elo": 967,
+   "id": "bcfaf02a-d56e-45bc-b36b-b3fd072215a3",
+   "model_creator": {
+    "id": "e2dba554-1abb-4cb9-b2fd-588ca6f5e29c",
+    "name": "Udio"
+   },
+   "name": "Udio v1.5 Allegro"
+  },
+  {
+   "ci_95": 7,
+   "elo": 964,
+   "id": "e735e896-8754-46b7-890b-06a0f5b69302",
+   "model_creator": {
+    "id": "e988202c-0f2c-403d-8a90-a7df00a5ce81",
+    "name": "Sonauto"
+   },
+   "name": "Sonauto V2.1"
+  }
+ ],
+ "tier": "free"
+}
