@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
+from sieve.catalog.effort import EFFORT_ORDER
 from sieve.contracts import Modality, Profile
 
 WEIGHT_TOLERANCE = 0.001
@@ -56,6 +57,7 @@ def validate_profile(
                 f"-- add data/axes/{profile.modality}/{axis}.yaml or fix the name"
             )
 
+    yield from _validate_effort(profile, where)
     yield from _validate_require(profile, where, axis_names)
     yield from _validate_shape(profile, where)
     yield from _validate_policy(profile, where)
@@ -134,3 +136,22 @@ def _validate_policy(profile: Profile, where: str) -> Iterator[str]:
         yield f"{where}: policy.suspend_below_health must be between 0 and 1"
     if policy.max_tenure_days < 0:
         yield f"{where}: policy.max_tenure_days cannot be negative"
+
+
+def _validate_effort(profile: Profile, where: str) -> Iterator[str]:
+    """`prefer_effort` is a mode name or one of two words, never free text.
+
+    A typo here is silent and expensive: an unrecognised value would fall
+    through to the pinned-mode branch, find no mode of that name, and seat the
+    lowest one -- so `prefer_effort: higest` would quietly buy the cheapest
+    model in every family.
+    """
+    prefer = profile.prefer_effort
+    if prefer is None:
+        return
+    allowed = {"best", "cheapest_clearing", *EFFORT_ORDER}
+    if prefer not in allowed:
+        yield (
+            f"{where}: prefer_effort {prefer!r} is not a mode -- "
+            f"use one of {', '.join(sorted(allowed))}"
+        )

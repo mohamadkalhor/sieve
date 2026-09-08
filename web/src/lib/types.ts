@@ -113,6 +113,8 @@ export interface ModelRef {
   creator: string;
   aliases?: string[];
   release_date?: string | null;
+  effort?: string | null;
+  family?: string | null;
 }
 
 
@@ -164,6 +166,7 @@ export interface Profile {
   shape?: Shape;
   policy?: Policy;
   targets?: string[];
+  prefer_effort?: string | null;
 }
 
 

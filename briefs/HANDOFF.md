@@ -134,6 +134,78 @@ Landed and green. Left:
 
 # Phase 2
 
+## Part 0a · An effort mode is a different model
+
+Landed. `ModelRef` gains `effort` and `family`, `Profile` gains
+`prefer_effort`, and both are in `CONTRACTS.md` §1. Migration `0003_effort.sql`
+adds the two columns.
+
+The mode is read from the **published name**, never guessed from the slug, and
+that distinction is the whole point: AA writes a family's top mode without a
+suffix, and which mode that is varies by family. `gpt-5-6-sol` is `(max)`;
+`gemini-3-8-flash` is `(high)`. Anything that assumed the bare slug meant "max"
+would have been wrong for Gemini, and anything that stripped `-high` to reach
+the base row would have sent `-low` there too, which is the bug itself.
+
+A gateway names every mode explicitly, so the bare row is given an alias for
+its own spelled-out mode — `google/gemini-3-8-flash` also answers to
+`google/gemini-3-8-flash-high` — written from the data and never where AA
+already publishes a distinct row under that id. Two matcher fixes were needed
+to make that reach a real gateway id:
+
+- aliases are now indexed by **slug** as well as in full. An alias is written
+  as a canonical id while a gateway id carries the gateway's own prefix, so
+  `ag/gemini-3.8-flash-high` could never equal `google/gemini-3-8-flash-high`
+  however it was normalised.
+- the ambiguity guard counted the *same* model twice as a conflict. A row often
+  reaches one key by two routes — its published name and its spelled mode both
+  normalise to `gemini38flashhigh` — and that was rejecting a match nothing was
+  actually ambiguous about.
+
+Proven on the CLI, same store, same data: `prefer_effort: best` seats
+`openai/gpt-5-6-sol` (max) at 0.728; `cheapest_clearing` seats
+`openai/gpt-5-6-sol-non-reasoning` at 0.378.
+
+### Decisions taken where the brief left a choice
+
+- **Cost is still computed per mode from the profile's shape.** The brief says
+  to use "that mode's own output-token count where a source publishes one" and
+  otherwise to mark the cost unknown rather than copying the base one. The
+  recording publishes **no output-token count for any model** — only
+  `median_output_tokens_per_second` and time-to-first-token — so marking every
+  mode's cost unknown would remove cost from 50 of 60 rows and from every
+  weighted `cost` axis. Each AA row carries its own `pricing` block, so nothing
+  is being *copied from a base row*, which is what that instruction guards
+  against. The true statement Sieve makes today is "at this shape, every mode of
+  a family costs the same", and it is worth more than a blank. **What is still
+  missing is the real thing:** a high mode burns more output tokens for the same
+  task, and no source we read publishes that, so cost cannot yet separate modes.
+  Overturn this if you would rather see `unknown`.
+- **`cheapest_clearing` picks the lowest mode still standing after the
+  constraint gate.** That makes it only as good as the profile's floors: with no
+  `require` and no `min_axis`, it will always seat the bottom of the ladder,
+  which the demonstration above shows plainly (non-reasoning at 0.378). It is
+  meant to be used with floors set. A future refinement could clear against the
+  *incumbent's* score rather than the profile's floors.
+- **An unstated mode ranks above every stated one**, so `best` prefers a model
+  with no modes over a mode row. The alternative — treating "no mode" as
+  low — would have demoted every non-reasoning-capable model.
+
+### Left open
+
+- **`prefer_effort` is on no shipped profile.** Every one of the 17 leaves it
+  unset, which keeps phase 1 behaviour exactly. Setting it is a judgement about
+  each seat and belongs with whoever owns the profile.
+- **The `:batch` price collision from part 1 is now sharper.** `:batch` folds
+  onto its base model, and effort modes deliberately do not. Both are "the same
+  model, served differently"; only one of them keeps its own row. If `:batch`
+  should also stay separate, that is a one-line change to the tag rule and a
+  larger question about what a catalog entry is.
+- **Claude Opus 5's numbers are not locked.** The brief quotes 54.1 at max and
+  43.8 at low; the 60-row trim does not include it. `Quasar 438B (max, based on
+  GLM-5.2)` is parsed correctly, so the multi-clause bracket is covered, but the
+  Opus figures themselves need a wider recording.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from sieve.catalog.effort import effort_of, family_of
 from sieve.catalog.registry import canonical_id
 from sieve.contracts import (
     HttpClient,
@@ -151,6 +152,7 @@ class AALLMSource:
             if model_id is None:
                 continue
 
+            name = str(entry.get("name") or model_id)
             aliases = {
                 str(entry.get("slug") or ""),
                 str(entry.get("id") or ""),
@@ -160,9 +162,14 @@ class AALLMSource:
                 ModelRef(
                     id=model_id,
                     modality=MODALITY,
-                    name=str(entry.get("name") or model_id),
+                    name=name,
                     creator=model_id.split("/", 1)[0],
                     aliases=sorted(aliases),
+                    # PLAN 2.1: one row per effort mode, so the mode has to
+                    # survive into the catalogue or a low-effort call gets
+                    # credited with a high-effort score.
+                    effort=effort_of(name),
+                    family=family_of(model_id),
                 )
             )
 
@@ -171,6 +178,9 @@ class AALLMSource:
             price = _price_of(entry, model_id, at)
             if price is not None:
                 result.prices.append(price)
+
+        # a family's bare row also answers to its own spelled-out mode
+        _name_the_bare_mode(result)
 
         if unknown:
             result.warnings.append(
@@ -224,3 +234,28 @@ class AALLMSource:
                 out.append(observation)
 
         return out
+
+
+def _name_the_bare_mode(result: PullResult) -> None:
+    """Give the bare row of a family the spelled-out name of its own mode.
+
+    AA writes a family's top mode without a suffix, and which mode that is
+    varies: `gpt-5-6-sol` is max, `gemini-3-8-flash` is high. A gateway,
+    meanwhile, names every mode explicitly -- `gemini-3.8-flash-high`. Without
+    an alias that id matches nothing, and the obvious repair (strip the suffix
+    and match the base) is the exact bug PLAN 2.1 forbids, because it would
+    also send `-low` to the high row.
+
+    So the alias is written from the data: the bare row for a family that says
+    it is `high` also answers to `<family>-high`. Never invented where AA
+    already publishes a distinct row under that id.
+    """
+    taken = {m.id for m in result.models}
+    for model in result.models:
+        if model.effort is None or model.family is None or model.id != model.family:
+            continue
+        spelled = f"{model.family}-{model.effort}"
+        if spelled in taken or spelled in model.aliases:
+            continue
+        model.aliases = sorted({*model.aliases, spelled})
+

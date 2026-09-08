@@ -16,6 +16,13 @@ class ModelRef(BaseModel):
     creator: str
     aliases: list[str] = [] # every id any source or inventory has used for it
     release_date: date | None = None
+    effort: str | None = None   # reasoning mode this row is: non-reasoning|minimal|low|medium|high|xhigh|max
+    family: str | None = None   # the id shared by every mode of one model
+                            # PLAN 2.1a: a source that publishes one row per effort mode is
+                            # describing a different model in each, at one price per token, so
+                            # the mode has to survive into the catalogue. Read `effort` from the
+                            # published name -- a family's bare slug is its top mode, and which
+                            # mode that is varies by family.
 
 class Observation(BaseModel):
     model_id: str           # ModelRef.id
@@ -93,6 +100,8 @@ class Profile(BaseModel):
     shape: Shape = Shape()
     policy: Policy = Policy()
     targets: list[str] = []             # target names from config this profile ships to
+    prefer_effort: str | None = None    # "best" | "cheapest_clearing" | a mode name; None leaves
+                                        # every mode of a family in the ranking as its own row
 
 class AxisScore(BaseModel):
     axis: str; value: float | None; coverage: float; contribution: float

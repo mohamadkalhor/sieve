@@ -30,6 +30,7 @@ from sieve.contracts import (
     Ranking,
     TargetResult,
 )
+from sieve.scoring.efforts import choose_efforts
 from sieve.store import Store
 
 
@@ -266,6 +267,19 @@ def rank_profile(
         if reason:
             excluded[model_id] = reason
 
+    # then the effort modes this profile does not want. AA publishes one row
+    # per mode at one price, so an untouched family competes with itself and a
+    # chain fills with six settings of one model. Only rows that already
+    # cleared the constraints are candidates: preferring a cheaper mode must
+    # never resurrect one the profile just rejected.
+    effort_aside: dict[str, str] = {}
+    if profile.prefer_effort:
+        catalogue = {m.id: (m.family, m.effort) for m in store.models(profile.modality)}
+        effort_aside = choose_efforts(
+            {m: catalogue[m] for m in pool if m not in excluded and m in catalogue},
+            profile.prefer_effort,
+        )
+
     # then Pareto pruning among reachable, eligible models
     dominated: dict[str, str] = {}
     pareto = deps.pareto
@@ -273,7 +287,7 @@ def rank_profile(
         rows = {
             m: {n: v for n, (v, _c) in axes_by_model[m].items()}
             for m in pool
-            if m not in excluded and m in local
+            if m not in excluded and m not in effort_aside and m in local
         }
         dominated = pareto.pareto_prune(rows, profile.weights)
 
@@ -311,6 +325,7 @@ def rank_profile(
                 cost_per_task=costs.get(model_id),
                 dominated_by=dominated.get(model_id),
                 excluded_by=excluded.get(model_id)
+                or effort_aside.get(model_id)
                 or ("min_confidence" if confidence < profile.policy.min_confidence else None),
             )
         )

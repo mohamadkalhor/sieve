@@ -91,6 +91,14 @@ class Matcher:
             ).append(canonical)
 
         self._alias_norm = {normalise(a): c for a, c in self.aliases.items()}
+        # An alias is usually written as a full canonical id, while a gateway
+        # id carries the gateway's own vendor prefix -- so `oc-go/x` never
+        # equals the alias `creator/x` however it is normalised. Index the
+        # alias slugs as well, which is the same courtesy `_by_slug` extends
+        # to canonical ids.
+        self._alias_slug: dict[str, list[str]] = {}
+        for alias, canonical in self.aliases.items():
+            self._alias_slug.setdefault(normalise(slug_of(alias)), []).append(canonical)
 
     def knows(self, model_id: str) -> bool:
         """True when this id is already canonical in the catalog."""
@@ -106,6 +114,10 @@ class Matcher:
         key = normalise(local_id)
         if key in self._alias_norm:
             return Match(self._alias_norm[key], ALIAS, "alias")
+
+        hit = self._unique(self._alias_slug, normalise(slug_of(local_id)))
+        if hit:
+            return Match(hit, NORMALISED_SLUG, "alias-slug")
 
         for index, confidence, rule in (
             (self._by_norm, NORMALISED_FULL, "normalised"),
@@ -129,9 +141,15 @@ class Matcher:
 
     @staticmethod
     def _unique(index: dict[str, list[str]], key: str) -> str | None:
-        """Ambiguity is not a match: two canonical ids on one key means neither."""
-        found = index.get(key)
-        return found[0] if found and len(found) == 1 else None
+        """Ambiguity is not a match: two canonical ids on one key means neither.
+
+        Two *entries* on one key are not ambiguous when they name the same
+        model. A row often reaches the same key twice -- its published name
+        and its spelled-out mode both normalise to `gemini38flashhigh` -- and
+        counting that as a conflict rejected a match that was never in doubt.
+        """
+        found = set(index.get(key) or ())
+        return next(iter(found)) if len(found) == 1 else None
 
 
 def match(

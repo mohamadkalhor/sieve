@@ -158,10 +158,13 @@ class Store:
             for m in models:
                 db.execute(
                     "INSERT INTO models (id, modality, name, creator, release_date,"
-                    " first_seen_at, last_seen_at) VALUES (?,?,?,?,?,?,?)"
+                    " effort, family, first_seen_at, last_seen_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?)"
                     " ON CONFLICT (id, modality) DO UPDATE SET"
                     " name=excluded.name, creator=excluded.creator,"
                     " release_date=COALESCE(excluded.release_date, models.release_date),"
+                    " effort=COALESCE(excluded.effort, models.effort),"
+                    " family=COALESCE(excluded.family, models.family),"
                     " last_seen_at=excluded.last_seen_at",
                     (
                         m.id,
@@ -169,6 +172,8 @@ class Store:
                         m.name,
                         m.creator,
                         m.release_date.isoformat() if m.release_date else None,
+                        m.effort,
+                        m.family,
                         stamp,
                         stamp,
                     ),
@@ -210,6 +215,8 @@ class Store:
                         if r["release_date"]
                         else None
                     ),
+                    effort=r["effort"],
+                    family=r["family"],
                 )
             )
         return out

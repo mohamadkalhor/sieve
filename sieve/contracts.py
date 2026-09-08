@@ -75,6 +75,12 @@ class ModelRef(_Model):
     creator: str
     aliases: list[str] = Field(default_factory=list)
     release_date: date | None = None
+    # Reasoning effort. A source that publishes one row per mode -- AA does,
+    # for 230 of its 644 -- describes a different model in each, at the same
+    # price per token. `family` groups the modes of one model so a profile
+    # can choose between them; `effort` says which mode this row is.
+    effort: str | None = None
+    family: str | None = None
 
 
 class Observation(_Model):
@@ -182,6 +188,11 @@ class Profile(_Model):
     shape: Shape = Field(default_factory=Shape)
     policy: Policy = Field(default_factory=Policy)
     targets: list[str] = Field(default_factory=list)
+    # Which effort mode of a family to seat when several are reachable.
+    # "best" takes the highest mode, "cheapest_clearing" the lowest one that
+    # still meets every floor, and a mode name pins that mode. None leaves
+    # every mode in the ranking as its own row, which is the old behaviour.
+    prefer_effort: str | None = None
 
 
 class AxisScore(_Model):
