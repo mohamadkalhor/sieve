@@ -114,3 +114,64 @@ def test_cost_reaches_a_model_that_has_a_price_and_no_benchmark() -> None:
     assert obs.models() == ["vendor/priced-only"]
     injected = obs.get("vendor/priced-only", COST_SOURCE, COST_FIELD)
     assert injected is not None and injected.unit == "usd_per_task"
+
+
+# --------------------------------------------------------------------------- #
+# an effort mode inherits what it can do from the model it is a mode of
+# --------------------------------------------------------------------------- #
+
+
+def test_an_effort_mode_inherits_its_familys_capabilities() -> None:
+    """Nothing publishes capabilities per mode, so a mode had none at all.
+
+    Artificial Analysis is the only source that lists the modes and publishes no
+    capabilities whatsoever; OpenRouter publishes them and carries only the base
+    id. So `gpt-5-6-sol-high` arrived with no tools, no context window and no
+    reasoning, and every profile with a `require:` block excluded every mode it
+    had -- reported as "excluded by tools", which reads as a fact about the
+    model rather than a hole in the catalogue.
+
+    That made PLAN 2.1a unreachable: the modes were split into their own rows
+    and then none of them could ever be seated.
+    """
+    from sieve.contracts import Capability, ModelRef
+    from sieve.engine import inherit_family_capabilities
+
+    base = ModelRef(
+        id="openai/gpt-6-astra",
+        modality="llm",
+        name="GPT-6 Astra",
+        creator="openai",
+        family="openai/gpt-6-astra",
+        effort="max",
+    )
+    high = base.model_copy(update={"id": "openai/gpt-6-astra-high", "effort": "high"})
+    low = base.model_copy(update={"id": "openai/gpt-6-astra-low", "effort": "low"})
+    stranger = ModelRef(id="other/thing", modality="llm", name="Thing", creator="other")
+
+    caps = {
+        "openai/gpt-6-astra": Capability(tools=True, context_window=400_000, reasoning=True),
+        # the mode publishes one thing for itself, and it must win
+        "openai/gpt-6-astra-low": Capability(reasoning=False),
+    }
+
+    out = inherit_family_capabilities(caps, [base, high, low, stranger])
+
+    assert out["openai/gpt-6-astra-high"].tools is True, "the mode can be given tools"
+    assert out["openai/gpt-6-astra-high"].context_window == 400_000
+
+    assert out["openai/gpt-6-astra-low"].tools is True, "inherited"
+    assert out["openai/gpt-6-astra-low"].reasoning is False, "and its own value wins"
+
+    assert "other/thing" not in out, "a model in no family inherits nothing"
+    assert out["openai/gpt-6-astra"] == caps["openai/gpt-6-astra"], "the base is untouched"
+
+
+def test_a_family_with_no_capabilities_anywhere_inherits_nothing() -> None:
+    """Not every family has a base OpenRouter carries. That is not a failure."""
+    from sieve.contracts import ModelRef
+    from sieve.engine import inherit_family_capabilities
+
+    base = ModelRef(id="v/m", modality="llm", name="M", creator="v", family="v/m", effort="max")
+    high = base.model_copy(update={"id": "v/m-high", "effort": "high"})
+    assert inherit_family_capabilities({}, [base, high]) == {}

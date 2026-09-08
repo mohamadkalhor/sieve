@@ -23,6 +23,7 @@ from sieve.contracts import (
     Decision,
     EngineResult,
     Modality,
+    ModelRef,
     Observation,
     ObsTable,
     Profile,
@@ -121,6 +122,48 @@ class Deps:
 # --------------------------------------------------------------------------- #
 # constraints (PLAN section 4 `require`)
 # --------------------------------------------------------------------------- #
+
+
+def inherit_family_capabilities(
+    caps: dict[str, Capability], models: list[ModelRef]
+) -> dict[str, Capability]:
+    """Give every effort mode the capabilities of the model it is a mode of.
+
+    Nothing publishes capabilities per mode. Artificial Analysis, which is the
+    only source that lists the modes at all, publishes **no** capabilities
+    whatsoever; OpenRouter publishes them and carries only the base id. So
+    `gpt-5-6-sol-high` arrived with no `tools`, no `context_window` and no
+    `reasoning`, and every profile with a `require:` block excluded every mode
+    row it had -- silently, and by the reason "excluded by tools", which reads
+    as a fact about the model rather than a gap in the catalogue.
+
+    That made PLAN 2.1a's whole point unreachable: the modes were separated into
+    their own rows and then none of them could ever be seated.
+
+    A mode inherits, it does not override. Anything the mode publishes for
+    itself wins, because a mode that really does differ -- a reasoning mode on a
+    base that has none -- is exactly the case worth keeping.
+    """
+    by_family: dict[str, Capability] = {}
+    for model in models:
+        family = getattr(model, "family", None)
+        if family and model.id == family and model.id in caps:
+            by_family[family] = caps[model.id]
+
+    if not by_family:
+        return caps
+
+    out = dict(caps)
+    for model in models:
+        family = getattr(model, "family", None)
+        if not family or model.id == family:
+            continue
+        parent = by_family.get(family)
+        if parent is None:
+            continue
+        # the mode's own values win; the family fills the gaps
+        out[model.id] = _overlay(parent, caps.get(model.id) or Capability())
+    return out
 
 
 def passes_constraints(
@@ -257,6 +300,7 @@ def rank_profile(
     # what a source publishes about the model, with the gateway's own view of
     # this deployment laid over the top
     caps = dict(store.capabilities(profile.modality))
+    caps = inherit_family_capabilities(caps, store.models(profile.modality))
     for reachable in store.reachable(unmatched=False):
         if reachable.model_id:
             caps[reachable.model_id] = _overlay(caps.get(reachable.model_id), reachable.capability)
