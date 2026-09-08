@@ -107,6 +107,7 @@ class OpenRouterSource:
         response = http.get(URL)
         if response.status != 200:
             result.warnings.append(f"openrouter: HTTP {response.status} from {URL}")
+            result.ok = False
             result.rate_limit = http.rate_limit()
             return result
 

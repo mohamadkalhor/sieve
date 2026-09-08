@@ -1,0 +1,24 @@
+[Unit]
+Description=Sieve — run the loop hourly
+Documentation=file:///opt/sieve/docs/the-loop.md
+
+[Timer]
+OnCalendar=hourly
+
+# Artificial Analysis allows 1,000 requests a day and this run makes six of
+# them (one LLM endpoint, five arena endpoints), so hourly is 144 a day --
+# comfortably inside it, with room for a manual run and a retry. The arithmetic
+# is in docs/the-loop.md; do not raise the frequency without redoing it.
+#
+# The spread keeps a fleet of these off the same second, which matters because
+# the limit is per key, not per machine.
+RandomizedDelaySec=180
+
+# A machine that was asleep at the top of the hour still runs once when it
+# wakes, rather than silently skipping until the next one.
+Persistent=true
+
+Unit=sieve-run.service
+
+[Install]
+WantedBy=timers.target

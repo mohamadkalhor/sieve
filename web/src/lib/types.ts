@@ -190,6 +190,7 @@ export interface Profile {
 
 export interface PullResult {
   source: string;
+  ok?: boolean;
   models?: ModelRef[];
   observations?: Observation[];
   prices?: Price[];

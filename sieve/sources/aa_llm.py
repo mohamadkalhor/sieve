@@ -135,6 +135,7 @@ class AALLMSource:
                 f"aa_llm: HTTP {response.status} from {URL}"
                 + ("" if key else f" (no key in {cfg.key_env or 'the environment'})")
             )
+            result.ok = False
             result.rate_limit = http.rate_limit()
             return result
 

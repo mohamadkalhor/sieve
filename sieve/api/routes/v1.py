@@ -337,6 +337,17 @@ def evaluate(request: Request, name: str, authorization: Auth = None, _: Read = 
     deps = EngineDeps()
     snapshot = store.latest_snapshot() or "none"
     ranking = rank_profile(cfg, store, profile, deps=deps, snapshot=snapshot)
+    # the fourth SSE kind: a watching agent sees the list move, not only the
+    # decision that followed it
+    events.publish(
+        "ranking",
+        {
+            "profile": name,
+            "snapshot": ranking.snapshot,
+            "ranked": len([r for r in ranking.ranks if not r.excluded_by]),
+            "leader": next((r.model_id for r in ranking.ranks if not r.excluded_by), None),
+        },
+    )
     policy = deps.policy
     chain = decision = None
     if policy is not None:

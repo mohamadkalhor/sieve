@@ -42,6 +42,11 @@ def fixture_slug(url: str, params: dict[str, str] | None = None) -> str:
     return slug
 
 
+#: The longest a retry will wait for a published reset. Past this a scheduled
+#: run should fail and be retried by the timer, not hold the job open.
+MAX_RESET_WAIT = 120.0
+
+
 class Http:
     """Real HTTP. One instance per pull; it remembers the last rate limit seen."""
 
@@ -76,9 +81,27 @@ class Http:
                 return self._wrap(url, response)
             last = response
             if attempt < self.retries:
-                time.sleep(self.backoff**attempt)
+                time.sleep(self._wait_for(attempt))
         assert last is not None
         return self._wrap(url, last)
+
+    def _wait_for(self, attempt: int) -> float:
+        """How long to wait before retrying.
+
+        When the server published `X-RateLimit-Reset`, wait until *that*:
+        it is the only moment the next request can succeed, and retrying
+        three times before it is three more refusals counted against a
+        daily budget. Capped, because a reset an hour away should fail the
+        run rather than hold a scheduled job open for an hour.
+        """
+        backoff = self.backoff**attempt
+        reset_at = self._rate.reset_at
+        if reset_at is None:
+            return backoff
+        seconds = (reset_at - datetime.now(UTC)).total_seconds()
+        if seconds <= 0:
+            return backoff
+        return min(max(seconds, backoff), MAX_RESET_WAIT)
 
     def rate_limit(self) -> RateLimit:
         return self._rate

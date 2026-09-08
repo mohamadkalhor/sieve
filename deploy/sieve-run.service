@@ -1,0 +1,31 @@
+[Unit]
+Description=Sieve — the loop: pull, evaluate, decide, apply where auto_apply
+Documentation=file:///opt/sieve/docs/the-loop.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/sieve
+WorkingDirectory=/opt/sieve
+
+# One command, not two. `sieve pull` followed by `sieve plan --store` was two
+# ExecStart lines, and systemd stops at the first that fails -- so a single
+# source being down meant nothing was re-ranked at all, from data that was
+# already on disk and perfectly good. `sieve run` pulls what it can, says which
+# sources failed, ranks every profile from the store either way, and exits
+# non-zero so this unit still shows as failed.
+#
+# It ships a chain only for a profile whose policy sets `auto_apply: true`.
+# Every other profile is computed, decided, recorded, and held.
+ExecStart=/opt/sieve/.venv/bin/sieve run
+
+User=sieve
+Group=sieve
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/sieve/data /opt/sieve/out
+
+MemoryMax=400M

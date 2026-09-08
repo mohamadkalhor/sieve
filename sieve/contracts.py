@@ -381,6 +381,11 @@ class RateLimit(_Model):
 
 class PullResult(_Model):
     source: str
+    #: False when the source could not be read -- an HTTP failure, not an
+    #: empty answer. A caller needs to tell "the endpoint is down" from "the
+    #: endpoint published nothing new", because the first should fail a
+    #: scheduled run and the second is an ordinary quiet hour.
+    ok: bool = True
     models: list[ModelRef] = Field(default_factory=list)
     observations: list[Observation] = Field(default_factory=list)
     prices: list[Price] = Field(default_factory=list)

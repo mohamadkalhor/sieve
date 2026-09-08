@@ -505,6 +505,56 @@ prints "would write" and leaves it drifted.
 - **No target writes concurrently.** Two `sieve apply` runs against one 9router
   file would interleave; SQLite's own locking is all that stands there.
 
+## Part 5 · The loop runs itself
+
+Landed. One command, `sieve run`: pull every enabled source, evaluate every
+profile, decide, and apply **only** where `policy.auto_apply` is true.
+
+- **The units are renamed honestly.** `sieve-pull.*` became `sieve-run.*`, and
+  the service now has **one** `ExecStart` instead of two. That was a real bug,
+  not tidying: systemd stops at the first ExecStart that fails, so one source
+  being down meant nothing was re-ranked at all -- from data already on disk and
+  perfectly good.
+- **A failed source no longer looks like a quiet one.** `PullResult.ok` is False
+  when the endpoint could not be *read*, which is different from an endpoint
+  that published nothing new. `sieve run` carries on with what is stored, ranks
+  every profile, ships what opted in, and still **exits non-zero** so the unit
+  shows as failed. A timer that can never fail is a timer nobody checks.
+- **The rate-limit arithmetic is written down** in `docs/the-loop.md`: six AA
+  requests per run, hourly, 144 a day against a 1,000/day budget -- 14%. With
+  the free-tier endpoints on it is 240. The doc says not to raise the frequency
+  without redoing it, and that the limit is per key, not per host.
+- **Retries wait for the published reset.** `X-RateLimit-Reset` is now used, not
+  merely recorded: three fast retries before the reset are three more refusals
+  charged against the same budget. Capped at 120s, so a reset an hour away fails
+  the run and lets the next timer pick it up rather than holding a systemd job
+  open for an hour.
+- **`ranking` joins the SSE stream**, so all four kinds in PLAN §8 are emitted.
+- **`docs/the-loop.md`** is the operator page: what runs, how often, what it may
+  change without asking, how to turn it off, and how to read a run.
+
+Proven on a scratch install: `cheap_bulk` with `auto_apply: true` shipped
+`out/cheap_bulk.json`; `quick_chat` made the identical decision, wrote nothing,
+and appeared on the `held (no auto_apply)` line.
+
+### Left open
+
+- **The SSE bus is in-process.** A `sieve run` from the timer is a different
+  process, so its events do not reach a running server's `/v1/events`. The work
+  is still visible -- every run writes decision rows and `/v1/decisions` serves
+  them -- but the live stream only covers work done through the API. Making the
+  timer publish would need the bus to leave the process, which is a real design
+  decision and not a small one.
+- **`--no-pull` is the only granularity.** There is no way to say "pull only the
+  sources whose rate budget allows it": the budget is per key and Sieve does not
+  track spend across runs, only what the last response reported.
+- **`RandomizedDelaySec=180` spreads a fleet, it does not coordinate one.** Two
+  machines sharing a key still double the request count; nothing prevents that
+  but arithmetic and attention.
+- **Nothing prunes telemetry on the schedule.** Part 3 left it pruning on write,
+  and `sieve run` does not prune. A store that stops receiving telemetry keeps
+  its last 30 days for ever.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

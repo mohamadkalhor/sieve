@@ -297,6 +297,7 @@ class AAMediaSource:
         response = http.get(url, headers=headers, params={"include_categories": "true"})
         if response.status != 200:
             result.warnings.append(f"aa_media: HTTP {response.status} from {url}")
+            result.ok = False
             return
 
         body = response.body if isinstance(response.body, dict) else {}
@@ -402,6 +403,7 @@ class AAMediaSource:
             return
         if response.status != 200:
             result.warnings.append(f"aa_media: {path} free tier answered HTTP {response.status}")
+            result.ok = False
             return
 
         body = response.body

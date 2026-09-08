@@ -13,6 +13,7 @@ import io
 import json
 import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +114,10 @@ def cmd_pull(args: argparse.Namespace) -> int:
             _out(f"{name}: needs {source_cfg.key_env}; skipped")
             continue
         result = source.pull(source_cfg, http)
+        if not result.ok:
+            # the endpoint could not be read. Not the same as an endpoint that
+            # published nothing new, which is an ordinary quiet hour.
+            failures += 1
 
         # two sources naming one model must land on one record
         result, folded = merge_pull(
@@ -398,6 +403,89 @@ def cmd_plan(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_run(args: argparse.Namespace) -> int:
+    """The loop: pull every enabled source, evaluate every profile, decide, and
+    apply **only** where the profile opted in with `policy.auto_apply`.
+
+    This is what the timer calls. Three things make it safe to leave running:
+
+    - **A source that is down does not stop the run.** Yesterday's observations
+      are still in the store, and a ranking computed from them is far better
+      than no ranking at all. The failure is counted, reported, and the exit
+      code says so, so a monitor still sees it.
+    - **Nothing ships unless a profile asked for it.** `auto_apply` is per
+      profile and defaults to false, so adding a target does not silently put it
+      in charge of every seat.
+    - **Every profile writes a decision row every run**, including a hold. A
+      run that changed nothing has to be as visible as one that changed
+      everything, or "the schedule is working" and "the schedule is stuck" look
+      identical in the log.
+    """
+    cfg = _config(args)
+    store = Store(cfg.db_path)
+    started = datetime.now(UTC)
+
+    # -- pull ---------------------------------------------------------- #
+    pull_failures = 0
+    if not args.no_pull:
+        pull_args = argparse.Namespace(**vars(args))
+        pull_args.source = None
+        pull_failures = cmd_pull(pull_args)
+        if pull_failures:
+            _out(f"run: {pull_failures} source(s) failed; carrying on with what is stored")
+
+    # -- evaluate and decide -------------------------------------------- #
+    profiles = _profiles(cfg, args.profile)
+    result = run(cfg, profiles=profiles, dry_run=args.dry_run, actor=args.actor, store=store)
+
+    for decision in result.decisions:
+        _out(f"{decision.profile}: {decision.reason}  [{decision.actor}]")
+    silent = [p.name for p in profiles if not any(d.profile == p.name for d in result.decisions)]
+    for name in silent:
+        _out(f"{name}: no decision recorded -- nothing ranked for it")
+    for warning in result.warnings:
+        _out(f"warning: {warning}")
+
+    # -- apply, but only where the profile asked ------------------------ #
+    opted_in = {p.name for p in profiles if p.policy.auto_apply}
+    shipping = [c for c in result.chains if c.profile in opted_in]
+    held_back = sorted({c.profile for c in result.chains} - opted_in)
+
+    apply_failures = 0
+    if not shipping:
+        _out(
+            "apply: no profile has auto_apply, so nothing shipped"
+            + (f" ({len(held_back)} computed and held)" if held_back else "")
+        )
+    else:
+        outcomes = apply_targets(
+            cfg,
+            shipping,
+            targets=args.target,
+            dry_run=args.dry_run,
+            actor=args.actor,
+            store=store,
+        )
+        verb = "would write" if args.dry_run else "wrote"
+        for outcome in outcomes:
+            if outcome.error:
+                apply_failures += 1
+                _out(f"{outcome.target}: {outcome.error}")
+            else:
+                _out(f"{outcome.target}: {verb} {', '.join(outcome.written) or '(nothing)'}")
+        if held_back:
+            _out(f"held (no auto_apply): {', '.join(held_back)}")
+
+    took = (datetime.now(UTC) - started).total_seconds()
+    _out(
+        f"run: {len(result.rankings)} ranked, {len(result.decisions)} decided, "
+        f"{len(shipping)} shipped, {took:.1f}s"
+    )
+    # A failed source is worth an exit code -- a timer that never fails is a
+    # timer nobody checks -- but the run itself did its job with what it had.
+    return EXIT_ERROR if (pull_failures or apply_failures) else EXIT_OK
+
+
 def cmd_diff(args: argparse.Namespace) -> int:
     cfg = _config(args)
     profiles = _profiles(cfg, args.profile)
@@ -571,6 +659,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="say what would be written and write nothing; needs no --yes",
     )
     p.set_defaults(func=cmd_apply)
+
+    p = sub.add_parser("run", help="the whole loop: pull, evaluate, decide, apply where auto_apply")
+    p.add_argument("--profile", nargs="*")
+    p.add_argument("--target", nargs="*")
+    p.add_argument("--no-pull", action="store_true", help="evaluate on what is already stored")
+    p.add_argument("--dry-run", action="store_true", help="decide and report, write nothing")
+    p.add_argument("--actor", default="schedule", help="who this run is recorded as")
+    p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("serve", help="run the API and the web build")
     p.add_argument("--host")

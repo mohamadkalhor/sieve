@@ -353,6 +353,7 @@ class FalSource:
                     f"fal: HTTP {response.status} from {URL} page {page}"
                     + (" -- nothing stored" if not out else " -- kept the earlier pages")
                 )
+                result.ok = False
                 return out
             body = response.body if isinstance(response.body, dict) else {}
             items = body.get("items")
