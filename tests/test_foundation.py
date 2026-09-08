@@ -215,7 +215,10 @@ def test_write_routes_need_the_right_scope(tmp_path: Path, monkeypatch: pytest.M
             json=[{"model": "x/y", "ok": True, "at": "2026-09-07T12:00:00Z"}],
             headers={"Authorization": "Bearer other"},
         )
-        assert telemetry.status_code == 200 and telemetry.json() == {"accepted": 1}
+        assert telemetry.status_code == 200
+        # `pruned` is the 30-day retention CONTRACTS section 4 asks for,
+        # applied on write because that is when the table grows
+        assert telemetry.json() == {"accepted": 1, "pruned": 0}
 
 
 def test_the_not_built_envelope_names_the_owner_and_ships_the_shape() -> None:

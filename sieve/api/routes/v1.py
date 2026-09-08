@@ -8,9 +8,9 @@ web can be built against it before the code behind it exists.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from importlib import import_module
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -23,6 +23,7 @@ from sieve.contracts import (
     Axis,
     Chain,
     Decision,
+    HealthRow,
     Modality,
     ModelRef,
     Profile,
@@ -33,6 +34,9 @@ from sieve.contracts import (
 )
 from sieve.engine import Deps as EngineDeps
 from sieve.engine import OwnerMissingError, apply_targets, rank_profile
+from sieve.scoring.health import health as health_of
+from sieve.scoring.health import health_series
+from sieve.scoring.pulse import pulse as pulse_of
 from sieve.store import Store
 
 router = APIRouter(prefix="/v1")
@@ -471,7 +475,80 @@ def post_telemetry(
     body: list[TelemetryEvent],
     token: Annotated[Token, Depends(require("telemetry"))],
 ) -> dict[str, int]:
-    return {"accepted": store_of(request).add_telemetry(body)}
+    """Accept a batch of call outcomes. The caller is a gateway, not a person.
+
+    A gateway knows its **own** ids and nothing else, so `model` may be either a
+    canonical id or a local one and is resolved here. An id that resolves to
+    nothing is still stored under the name it arrived with: dropping it would
+    lose evidence, and it shows up on the Sources screen as an unmatched id for
+    a person to alias.
+
+    CONTRACTS section 4: telemetry is pruned to 30 days, and a write is the
+    natural moment -- the table only grows when someone is writing to it.
+    """
+    store = store_of(request)
+
+    canonical: dict[str, str] = {}
+    for model_id, local_ids in store.local_ids().items():
+        for local_id in local_ids:
+            canonical[local_id] = model_id
+
+    resolved = [
+        event
+        if event.model not in canonical
+        else event.model_copy(update={"model": canonical[event.model]})
+        for event in body
+    ]
+    accepted = store.add_telemetry(resolved)
+    pruned = store.prune_telemetry()
+    return {"accepted": accepted, "pruned": pruned}
+
+
+@router.get("/health")
+def get_health(
+    request: Request,
+    window: Literal["24h", "7d"] = "24h",
+    reachable: bool = True,
+    _: Read = None,
+) -> list[HealthRow]:
+    """What the gateway's own traffic says, per model. The Pulse screen reads this.
+
+    `health` is the number the ranking multiplies by; the rest is why it is that
+    number. `series` is one health value per day for the sparkline the Rankings
+    screen was built with and never got -- a day with no calls is null, not 1.0,
+    because a flat line of ones would claim a model was healthy on a day nobody
+    tried it.
+
+    Reachable models only by default: a model you cannot call has no traffic to
+    report, and listing it with empty figures buries the ones that do.
+    """
+    store = store_of(request)
+    now = datetime.now(UTC)
+    hours = 24 if window == "24h" else 24 * 7
+
+    events = store.telemetry(since=now - timedelta(days=max(7, hours // 24)))
+    figures = pulse_of(events, now, hours=hours)
+    health_now = health_of(events, now)
+    series = health_series(events, now)
+    local = store.local_ids()
+
+    names: set[str] = set(figures) | set(health_now)
+    if reachable:
+        names &= set(local)
+
+    out: list[HealthRow] = []
+    for model_id in sorted(names):
+        out.append(
+            HealthRow(
+                model_id=model_id,
+                local_ids=local.get(model_id, []),
+                health=health_now.get(model_id, 1.0),
+                series=series.get(model_id, []),
+                window=window,
+                **(figures.get(model_id) or {}),  # type: ignore[arg-type]
+            )
+        )
+    return out
 
 
 @router.get("/decisions")

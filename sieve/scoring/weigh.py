@@ -51,11 +51,19 @@ def rank_order(scored: Scored) -> list[str]:
     return sorted(scored, key=lambda model_id: (-scored[model_id][0], model_id))
 
 
-def cost_per_task(price: Price | None, shape: Shape) -> float | None:
+def cost_per_task(
+    price: Price | None, shape: Shape, *, tokens_out: float | None = None
+) -> float | None:
     """What one task on this model costs, in USD, at the profile's shape.
 
     None when the price or the shape is missing: an unknown cost must stay
     unknown, so the `cost` axis reports it unmeasured rather than free.
+
+    `tokens_out`, when given, replaces the shape's declared output tokens with
+    what this model **actually burned** on real calls. It is the only thing that
+    can separate the effort modes of one model: every mode is served at the same
+    price per token, so the rate is identical and the token count is the whole
+    difference. See PLAN 2.1.
     """
     if price is None:
         return None
@@ -65,7 +73,7 @@ def cost_per_task(price: Price | None, shape: Shape) -> float | None:
             return None
         cached_share = shape.cached or 0.0
         in_tokens = float(shape.in_tokens or 0)
-        out_tokens = float(shape.out_tokens or 0)
+        out_tokens = float(tokens_out if tokens_out is not None else (shape.out_tokens or 0))
 
         fresh_in = in_tokens * (1.0 - cached_share)
         cached_in = in_tokens * cached_share

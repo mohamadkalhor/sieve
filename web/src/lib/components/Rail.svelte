@@ -13,7 +13,7 @@
     { href: '/rankings', label: 'Rankings' },
     { href: '/chains', label: 'Chains' },
     { href: '/sources', label: 'Sources' },
-    { href: '/pulse', label: 'Pulse', soon: true }
+    { href: '/pulse', label: 'Pulse' }
   ];
 
   const current = $derived($page.url.pathname);
@@ -32,14 +32,11 @@
     {#each links as link (link.href)}
       <li>
         <a
-          href={link.soon ? undefined : link.href}
+          href={link.href}
           class:active={current.startsWith(link.href)}
-          class:soon={link.soon}
           aria-current={current.startsWith(link.href) ? 'page' : undefined}
-          aria-disabled={link.soon ? 'true' : undefined}
         >
           {link.label}
-          {#if link.soon}<span class="tag">phase 2</span>{/if}
         </a>
       </li>
     {/each}
@@ -109,16 +106,6 @@
     color: var(--ink);
     background: var(--panel2);
     box-shadow: inset 2px 0 0 var(--accent);
-  }
-  li a.soon {
-    opacity: 0.45;
-    cursor: default;
-  }
-  .tag {
-    font-size: 0.62rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--muted);
   }
   footer {
     border-top: 1px solid var(--rule);

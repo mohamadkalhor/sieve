@@ -107,7 +107,8 @@ def test_cost_reaches_a_model_that_has_a_price_and_no_benchmark() -> None:
         weights={"cost": 1.0},
         shape=Shape(in_tokens=2000, out_tokens=500),
     )
-    costs = add_cost_observations(obs, profile, at)
+    costs, from_telemetry = add_cost_observations(obs, profile, at)
+    assert from_telemetry == set(), "no telemetry here, so cost is the shape's"
 
     assert costs["vendor/priced-only"] == pytest.approx(1.0 * 0.002 + 2.0 * 0.0005)
     assert obs.models() == ["vendor/priced-only"]

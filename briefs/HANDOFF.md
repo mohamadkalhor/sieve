@@ -394,6 +394,58 @@ New: `data/axes/music/{instrumental,with_vocals}.yaml`,
   serves music, speech-to-text or speech-to-speech, so they rank but seat
   nothing.
 
+## Part 3 · Telemetry and health
+
+Landed. Health was already wired into `final = score x health` and
+`suspend_below_health` already fired in `decide()`; what was missing was
+everything that makes them mean something.
+
+- **`POST /v1/telemetry` resolves local ids.** A gateway knows its own names and
+  nothing else, so `model` may be either and is resolved through the catalogue.
+  An id that resolves to nothing is still stored under the name it arrived with
+  -- dropping it would lose evidence, and it surfaces on Sources as an unmatched
+  id for a person to alias. The route prunes to 30 days on write, which is when
+  the table grows, and returns `{accepted, pruned}`.
+- **`policy.require_telemetry` fires.** It was documented and read by nothing.
+  It is a seat saying "do not put anything here I have never actually called",
+  and it now excludes with that reason.
+- **`GET /v1/health`** serves the sparkline the Rankings screen was built for and
+  never got, plus the Pulse figures: ok rate, rate-limited share, p50 and p95
+  latency, events, median output tokens, over a 24h/7d toggle. `HealthRow` is in
+  CONTRACTS §1 so `types.ts` carries it.
+- **Pulse is built** -- the sixth screen in PLAN §8 and the only one that did not
+  exist. Sorted worst health first, because the screen exists to surface trouble.
+  Three Playwright specs cover it, including the empty state, which matters as
+  much as the full one: "nobody called it" and "every call failed" must never
+  look alike.
+- **Cost from measured tokens**, the requirement mhmd-cl added. `cost_per_task`
+  takes an observed output-token count, `observed_tokens_out` derives a median
+  per model over a trailing week, and the engine uses it where it exists.
+  Proven on the CLI: the same model reads `cost $0.0005 per task, estimated from
+  the profile shape` before telemetry and `cost $0.0480 per task, from measured
+  tokens` after 40 calls that each burned four times the profile's assumption.
+
+**A typegen bug fell out of it.** `list[float | None]` rendered as
+`number | null[]`, which TypeScript reads as "a number, or an array of nulls".
+The union is parenthesised now. Nothing had caught it because no exported model
+had a list of an optional until `HealthRow.series`.
+
+### Left open
+
+- **`min_calls` is 5 and `days` is 7**, both chosen rather than measured. Five
+  calls is a low bar for replacing a stated assumption with a median; nobody has
+  looked at what number of calls makes the estimate stable.
+- **The tokens are a median over the window**, so a model whose usage shifts
+  (a longer prompt, a harder task) is priced on its recent past. That is the
+  honest reading of "what it burns", but it is not a forecast.
+- **Only `tokens_out` is used.** `tokens_in` is stored and ignored, though the
+  profile's declared input shape is just as much an assumption.
+- **The Rankings sparkline column still does not call the new route.** The
+  column was built in phase 1 and the data now exists; wiring it is part 6.
+- **Nothing prunes on a schedule.** Pruning happens on write, so a store that
+  stops receiving telemetry keeps its last 30 days for ever. Part 5's scheduled
+  run is the place for that.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

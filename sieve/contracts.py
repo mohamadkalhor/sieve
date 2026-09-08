@@ -272,6 +272,31 @@ class Decision(_Model):
     detail: dict[str, Any] = Field(default_factory=dict)
 
 
+class HealthRow(_Model):
+    """One model's own traffic, for the Pulse screen. `GET /v1/health` serves these.
+
+    `health` is the number the ranking multiplies the score by; everything else
+    is why it is that number. A field is None when nothing was measured -- no
+    calls, or none that reported a latency -- never 0, because "nobody called
+    it" and "every call failed" are opposite facts.
+    """
+
+    model_id: str
+    local_ids: list[str] = Field(default_factory=list)
+    health: float
+    #: one health value per day, oldest first; a day with no calls is None
+    series: list[float | None] = Field(default_factory=list)
+    window: str = "24h"
+    events: int = 0
+    ok_rate: float | None = None
+    rate_limited_share: float | None = None
+    p50_latency_ms: float | None = None
+    p95_latency_ms: float | None = None
+    #: what a call really burned, which is the only thing that can separate the
+    #: cost of one effort mode from another. See PLAN 2.1.
+    median_tokens_out: float | None = None
+
+
 class TelemetryEvent(_Model):
     model: str
     profile: str | None = None
@@ -477,6 +502,7 @@ EXPORTED: tuple[type[BaseModel], ...] = (
     Chain,
     Decision,
     TelemetryEvent,
+    HealthRow,
     SourceConfig,
     InventoryConfig,
     TargetConfig,

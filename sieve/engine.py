@@ -98,6 +98,10 @@ class Deps:
         return self._get("sieve.scoring.weigh", "A")
 
     @property
+    def pulse(self) -> Any | None:
+        return self._get("sieve.scoring.pulse", "A")
+
+    @property
     def health(self) -> Any | None:
         return self._get("sieve.scoring.health", "A")
 
@@ -125,9 +129,15 @@ def passes_constraints(
     capability: Capability,
     axis_pct: dict[str, float],
     appearances: int | None,
+    has_telemetry: bool = True,
 ) -> str | None:
     """None when the model is eligible, otherwise the constraint that excluded it."""
     require = profile.require
+    # `policy.require_telemetry` is a seat saying "do not put anything here I
+    # have never actually called". A benchmark says a model is good; only your
+    # own traffic says it works for you.
+    if profile.policy.require_telemetry and not has_telemetry:
+        return "require_telemetry"
     if require.get("tools") and capability.tools is not True:
         return "tools"
     if require.get("reasoning") and capability.reasoning is not True:
@@ -158,7 +168,12 @@ COST_SOURCE = "price"
 COST_FIELD = "per_task"
 
 
-def add_cost_observations(obs: ObsTable, profile: Profile, at: datetime) -> dict[str, float]:
+def add_cost_observations(
+    obs: ObsTable,
+    profile: Profile,
+    at: datetime,
+    measured_tokens: dict[str, float] | None = None,
+) -> tuple[dict[str, float], set[str]]:
     """Put `price:per_task` into the table so a cost axis can rank it.
 
     Cost is the one axis that cannot be computed once per modality: it is the
@@ -169,7 +184,9 @@ def add_cost_observations(obs: ObsTable, profile: Profile, at: datetime) -> dict
     """
     from sieve.scoring.weigh import cost_per_task
 
+    measured = measured_tokens or {}
     costs: dict[str, float] = {}
+    from_telemetry: set[str] = set()
     # Every priced model, not every *observed* one. Iterating the observed set
     # was circular: a model a source prices but nobody benchmarks -- which is
     # most of what a gateway carries -- was not in the table yet, so it never
@@ -177,10 +194,16 @@ def add_cost_observations(obs: ObsTable, profile: Profile, at: datetime) -> dict
     # ranked nothing at all because of it.
     for model_id in sorted(obs.prices):
         price = obs.price(model_id)
-        cost = cost_per_task(price, profile.shape)
+        # A model whose own traffic has been measured is priced on the tokens
+        # it really burns; everything else falls back to the shape the profile
+        # declares, which is an assumption and is reported as one.
+        tokens_out = measured.get(model_id)
+        cost = cost_per_task(price, profile.shape, tokens_out=tokens_out)
         if cost is None or cost <= 0:
             continue
         costs[model_id] = cost
+        if tokens_out is not None:
+            from_telemetry.add(model_id)
         obs.add(
             Observation(
                 model_id=model_id,
@@ -193,7 +216,7 @@ def add_cost_observations(obs: ObsTable, profile: Profile, at: datetime) -> dict
                 pulled_at=at,
             )
         )
-    return costs
+    return costs, from_telemetry
 
 
 def _appearances(obs: ObsTable, model_id: str) -> int | None:
@@ -220,7 +243,15 @@ def rank_profile(
     """One profile, scored end to end. Empty (with warnings) until A has landed."""
     at = at or datetime.now(UTC)
     obs = store.obs_table(profile.modality)
-    costs = add_cost_observations(obs, profile, at)
+    # PLAN 2.1: the rate per token is identical across a model's effort modes,
+    # so only the tokens actually burned can tell them apart, and the gateway's
+    # own traffic is the only place that number exists.
+    measured_tokens = (
+        deps.pulse.observed_tokens_out(store.telemetry(since=at - timedelta(days=7)), at)
+        if deps.pulse is not None
+        else {}
+    )
+    costs, costed_from_telemetry = add_cost_observations(obs, profile, at, measured_tokens)
     local = store.local_ids()
 
     # what a source publishes about the model, with the gateway's own view of
@@ -253,6 +284,9 @@ def rank_profile(
             name: per_axis[name].get(model_id, (None, 0.0)) for name in per_axis
         }
 
+    # who has actually been called, for `policy.require_telemetry`
+    called = {event.model for event in store.telemetry(since=at - timedelta(days=7))}
+
     # constraints first
     excluded: dict[str, str] = {}
     for model_id in pool:
@@ -263,6 +297,7 @@ def rank_profile(
             caps.get(model_id, Capability()),
             pct,
             _appearances(obs, model_id),
+            has_telemetry=model_id in called,
         )
         if reason:
             excluded[model_id] = reason
@@ -326,7 +361,11 @@ def rank_profile(
                 # phase 2 part 3 will set this to "telemetry" for a model whose
                 # own traffic has been measured; until then every cost is the
                 # profile's declared shape, which cannot separate effort modes.
-                cost_from="shape" if model_id in costs else None,
+                cost_from=(
+                    None
+                    if model_id not in costs
+                    else ("telemetry" if model_id in costed_from_telemetry else "shape")
+                ),
                 dominated_by=dominated.get(model_id),
                 excluded_by=excluded.get(model_id)
                 or effort_aside.get(model_id)

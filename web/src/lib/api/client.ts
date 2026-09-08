@@ -13,6 +13,7 @@ import type {
   Modality,
   Profile,
   Ranking,
+  HealthRow,
   Reachable,
   TargetResult
 } from '$lib/types';
@@ -183,6 +184,10 @@ export const api = {
 
   decisions: (profile?: string, o?: RequestOptions) =>
     request<Decision[]>(`/v1/decisions${q({ profile, limit: 50 })}`, o),
+
+  /** What the gateway's own traffic says, per model. The Pulse screen reads this. */
+  health: (window: '24h' | '7d' = '24h', reachable = true, o?: RequestOptions) =>
+    request<HealthRow[]>(`/v1/health${q({ window, reachable })}`, o),
 
   sources: (o?: RequestOptions) => request<SourceRow[]>('/v1/sources', o),
 

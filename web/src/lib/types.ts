@@ -95,6 +95,22 @@ export interface EngineResult {
 }
 
 
+/** One model's own traffic, for the Pulse screen. `GET /v1/health` serves these. `health` is the number the ranking multiplies the score by; everything else is ... */
+export interface HealthRow {
+  model_id: string;
+  local_ids?: string[];
+  health: number;
+  series?: (number | null)[];
+  window?: string;
+  events?: number;
+  ok_rate?: number | null;
+  rate_limited_share?: number | null;
+  p50_latency_ms?: number | null;
+  p95_latency_ms?: number | null;
+  median_tokens_out?: number | null;
+}
+
+
 export interface InventoryConfig {
   name: string;
   kind: string;

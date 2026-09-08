@@ -65,7 +65,10 @@ def ts_type(schema: dict[str, Any]) -> str:
     if kind == "array":
         items = schema.get("items")
         inner = ts_type(items) if isinstance(items, dict) else "unknown"
-        return f"{inner}[]"
+        # A union has to be parenthesised before `[]` binds to it: TypeScript
+        # reads `number | null[]` as "a number, or an array of nulls", which is
+        # not what `list[float | None]` means and is not even close.
+        return f"({inner})[]" if "|" in inner else f"{inner}[]"
 
     if kind == "object":
         extra = schema.get("additionalProperties")
