@@ -169,7 +169,12 @@ def add_cost_observations(obs: ObsTable, profile: Profile, at: datetime) -> dict
     from sieve.scoring.weigh import cost_per_task
 
     costs: dict[str, float] = {}
-    for model_id in obs.models():
+    # Every priced model, not every *observed* one. Iterating the observed set
+    # was circular: a model a source prices but nobody benchmarks -- which is
+    # most of what a gateway carries -- was not in the table yet, so it never
+    # got a cost, so it never entered the table. A keyless `pull openrouter`
+    # ranked nothing at all because of it.
+    for model_id in sorted(obs.prices):
         price = obs.price(model_id)
         cost = cost_per_task(price, profile.shape)
         if cost is None or cost <= 0:
