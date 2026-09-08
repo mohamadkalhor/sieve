@@ -23,9 +23,11 @@ from sieve.api.sse import events
 from sieve.config import Config
 from sieve.contracts import (
     Axis,
+    BoardRow,
     Chain,
     Decision,
     HealthRow,
+    Leaderboard,
     Modality,
     ModelRef,
     Profile,
@@ -38,6 +40,7 @@ from sieve.contracts import (
 )
 from sieve.engine import Deps as EngineDeps
 from sieve.engine import OwnerMissingError, apply_targets, rank_profile
+from sieve.scoring import leaderboard
 from sieve.scoring.health import health as health_of
 from sieve.scoring.health import health_series
 from sieve.scoring.pulse import pulse as pulse_of
@@ -771,6 +774,53 @@ def get_diff(request: Request, _: Read = None) -> list[TargetDiff]:
                 )
             )
     return out
+
+
+@router.get("/leaderboard")
+def get_leaderboard(
+    request: Request,
+    modality: Modality,
+    metric: str | None = None,
+    _: Read = None,
+) -> Leaderboard:
+    """The ranking for one modality, best first, deduplicated.
+
+    The Field scatter needs a quality axis *and* a cost. Media models almost
+    never have both -- 5 of 313 scored media models carry a price against 60 of
+    60 LLMs -- so `scatter_ok` says whether that chart can answer anything here.
+    Where it cannot, this ranking answers the question that can be answered:
+    which of these is best.
+    """
+    store = store_of(request)
+    computed = leaderboard.board(
+        modality,
+        store.obs_table(modality),
+        store.models(modality),
+        set(store.latest_prices(modality)),
+        metric,
+    )
+    return Leaderboard(
+        modality=computed.modality,
+        metric=computed.metric,
+        metrics=list(leaderboard.metrics_for(modality)),
+        rows=[
+            BoardRow(
+                model_id=r.model_id,
+                name=r.name,
+                creator=r.creator,
+                value=r.value,
+                merged=r.merged,
+            )
+            for r in computed.rows
+        ],
+        scored=computed.scored,
+        priced=computed.priced,
+        priced_share=computed.priced_share,
+        scatter_ok=computed.scatter_ok,
+        low=computed.low,
+        high=computed.high,
+        reason=computed.reason,
+    )
 
 
 @router.get("/decisions")

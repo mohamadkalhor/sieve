@@ -43,7 +43,23 @@ modalities = ["llm"]
 [sources.aa_media]
 enabled = true
 key_env = "ARTIFICIAL_ANALYSIS_API_KEY"
-modalities = ["text-to-video", "text-to-image"]
+# The media modalities the Field has to handle without a cost axis: recorded
+# arena endpoints, plus the free tier, so music, speech-to-text and
+# speech-to-speech exist here exactly as they do in the shipped config.
+modalities = [
+  "text-to-video", "text-to-image", "image-editing", "image-to-video",
+  "text-to-speech", "music", "speech-to-text", "speech-to-speech"
+]
+free_music_instrumental = true
+free_music_with_vocals = true
+free_speech_to_text = true
+free_speech_to_speech = true
+
+# Prices for media, so the Field can tell "no cost axis here" from "no source
+# for one". Without it the threshold would never be exercised.
+[sources.fal]
+enabled = true
+modalities = ["text-to-image", "image-editing", "text-to-video", "image-to-video"]
 
 [inventories.gateway]
 kind = "list"

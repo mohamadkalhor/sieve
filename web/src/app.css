@@ -53,6 +53,23 @@ body {
 .scroll-x {
   overflow-x: auto;
   overscroll-behavior-x: contain;
+
+  /*
+   * Room for a focus ring.
+   *
+   * `overflow-x: auto` establishes a clipping box, and an outline is drawn
+   * *outside* the element it belongs to -- so the first and last children of a
+   * horizontal scroller had their focus rings sliced off against the edge. The
+   * padding gives the ring somewhere to be drawn and the negative margin takes
+   * the space back, so nothing moves on screen.
+   *
+   * `scroll-padding` keeps the same gap when the browser scrolls a focused item
+   * into view, which is the other half of the same problem: without it, tabbing
+   * to an off-screen tab parks it flush against the edge and clips it again.
+   */
+  padding: 4px;
+  margin: -4px;
+  scroll-padding-inline: 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {

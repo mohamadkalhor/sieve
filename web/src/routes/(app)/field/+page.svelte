@@ -2,9 +2,16 @@
   /** Field: every measured model at a glance, one axis against what it costs. */
   import { goto } from '$app/navigation';
   import { api, type ApiError, type ModelRow } from '$lib/api/client';
-  import type { Axis, Modality, Profile, Ranking } from '$lib/types';
+  import type {
+    Axis,
+    Leaderboard as LeaderboardData,
+    Modality,
+    Profile,
+    Ranking
+  } from '$lib/types';
   import Empty from '$lib/components/Empty.svelte';
   import Kpi from '$lib/components/Kpi.svelte';
+  import Leaderboard from '$lib/components/Leaderboard.svelte';
   import Scatter, { type Point } from '$lib/components/Scatter.svelte';
 
   let modalities = $state<{ modality: Modality; models: number }[]>([]);
@@ -14,6 +21,8 @@
   let models = $state<ModelRow[]>([]);
   let rankings = $state<Record<string, Ranking>>({});
   let axisName = $state<string>('');
+  let board = $state<LeaderboardData | null>(null);
+  let metric = $state<string | undefined>(undefined);
   let error = $state<ApiError | null>(null);
   let loading = $state(true);
 
@@ -80,11 +89,13 @@
   async function load(which: Modality) {
     loading = true;
     error = null;
-    const [axesResult, profilesResult, modelsResult] = await Promise.all([
+    const [axesResult, profilesResult, modelsResult, boardResult] = await Promise.all([
       api.axes(which),
       api.profiles(which),
-      api.models({ modality: which, limit: 1000 })
+      api.models({ modality: which, limit: 1000 }),
+      api.leaderboard(which, metric)
     ]);
+    board = boardResult.ok ? boardResult.value : null;
 
     if (!axesResult.ok) error = axesResult.error;
     axes = axesResult.ok ? axesResult.value : [];
@@ -118,8 +129,30 @@
   });
 
   $effect(() => {
+    // a modality change resets the metric: `elo:with_vocals` means nothing
+    // outside music
+    void modality;
+    metric = undefined;
+  });
+
+  $effect(() => {
     void load(modality);
   });
+
+  async function chooseMetric(next: string) {
+    metric = next;
+    const again = await api.leaderboard(modality, next);
+    if (again.ok) board = again.value;
+  }
+
+  /**
+   * Is a quality-against-cost scatter answerable for this modality?
+   *
+   * The server decides, against a named threshold, because it is the side that
+   * knows how many models carry a price. Today only `llm` clears it: 5 of 313
+   * scored media models have one.
+   */
+  const showScatter = $derived(board?.scatter_ok !== false);
 
   const matched = $derived(models.filter((m) => m.reachable).length);
 </script>
@@ -154,7 +187,7 @@
   <Kpi label="holding a seat" value={primaries.size} tone="accent" />
 </div>
 
-<div class="picker">
+<div class="picker" hidden={!showScatter}>
   <label for="axis">Axis</label>
   <select id="axis" bind:value={axisName}>
     {#each usedAxes as axis (axis.name)}
@@ -168,12 +201,22 @@
 
 {#if loading}
   <p class="muted">Loading…</p>
-{:else if points.some((p) => p.y !== null)}
+{:else if showScatter && points.some((p) => p.y !== null)}
   <Scatter
     {points}
     yLabel={axisName}
     onselect={(id) => goto(`/rankings?model=${encodeURIComponent(id)}`)}
   />
+  {#if board && (board.rows ?? []).length > 0}
+    <!-- a modality with both: the ranking sits under the chart -->
+    <div class="under"><Leaderboard {board} onmetric={chooseMetric} /></div>
+  {/if}
+{:else if board}
+  <!--
+    No cost axis worth plotting. Same screen, same tab, a different chart,
+    because a different question is the one that can be answered here.
+  -->
+  <Leaderboard {board} onmetric={chooseMetric} />
 {:else}
   <Empty
     {error}
@@ -185,6 +228,9 @@
 {/if}
 
 <style>
+  .under {
+    margin-top: 1.75rem;
+  }
   .top {
     margin-bottom: 1rem;
   }

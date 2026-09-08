@@ -297,6 +297,47 @@ class TargetDiff(_Model):
     error: str | None = None
 
 
+class BoardRow(_Model):
+    """One model on the media ranking."""
+
+    model_id: str
+    name: str
+    creator: str
+    value: float
+    #: ids that collapsed into this one. Artificial Analysis publishes the same
+    #: model under several identities -- `Wan 3.0` and `Wan Text to Video` carry
+    #: an identical score -- and an undeduplicated top ten is five models each
+    #: printed twice.
+    merged: list[str] = Field(default_factory=list)
+
+
+class Leaderboard(_Model):
+    """A media ranking, and why the screen looks the way it does.
+
+    The Field scatter plots quality against cost, so a point needs both. Media
+    models almost never have both, so `scatter_ok` says whether that chart is
+    answerable at all for this modality; where it is not, this ranking is shown
+    in its place rather than a handful of dots over an empty field.
+    """
+
+    modality: Modality
+    #: the field ranked on, e.g. `elo` or `elo:with_vocals`
+    metric: str
+    #: every metric this modality could be ranked on, best first
+    metrics: list[str] = Field(default_factory=list)
+    rows: list[BoardRow] = Field(default_factory=list)
+    scored: int = 0
+    priced: int = 0
+    priced_share: float = 0.0
+    scatter_ok: bool = False
+    #: the population's own endpoints, so a bar length is honest about the
+    #: spread rather than rescaled to look dramatic
+    low: float | None = None
+    high: float | None = None
+    #: set when there is no ranking to draw, and says why in a sentence
+    reason: str | None = None
+
+
 class HealthRow(_Model):
     """One model's own traffic, for the Pulse screen. `GET /v1/health` serves these.
 
@@ -539,6 +580,8 @@ EXPORTED: tuple[type[BaseModel], ...] = (
     Decision,
     TelemetryEvent,
     HealthRow,
+    BoardRow,
+    Leaderboard,
     TargetDiff,
     SourceConfig,
     InventoryConfig,

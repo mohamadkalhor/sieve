@@ -46,6 +46,16 @@ export interface AxisScore {
 }
 
 
+/** One model on the media ranking. */
+export interface BoardRow {
+  model_id: string;
+  name: string;
+  creator: string;
+  value: number;
+  merged?: string[];
+}
+
+
 /** What a model can do. From inventory and OpenRouter; never from a benchmark. */
 export interface Capability {
   tools?: boolean | null;
@@ -118,6 +128,22 @@ export interface InventoryConfig {
   token_env?: string | null;
   models?: string[];
   options?: Record<string, unknown>;
+}
+
+
+/** A media ranking, and why the screen looks the way it does. The Field scatter plots quality against cost, so a point needs both. Media models almost never hav... */
+export interface Leaderboard {
+  modality: Modality;
+  metric: string;
+  metrics?: string[];
+  rows?: BoardRow[];
+  scored?: number;
+  priced?: number;
+  priced_share?: number;
+  scatter_ok?: boolean;
+  low?: number | null;
+  high?: number | null;
+  reason?: string | null;
 }
 
 

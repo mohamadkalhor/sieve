@@ -14,6 +14,7 @@ import type {
   Profile,
   Ranking,
   HealthRow,
+  Leaderboard,
   Reachable,
   TargetDiff,
   TargetResult
@@ -189,6 +190,13 @@ export const api = {
   /** What the gateway's own traffic says, per model. The Pulse screen reads this. */
   health: (window: '24h' | '7d' = '24h', reachable = true, o?: RequestOptions) =>
     request<HealthRow[]>(`/v1/health${q({ window, reachable })}`, o),
+
+  /**
+   * The ranking for one modality, best first. Also says whether a
+   * quality-against-cost scatter is answerable here at all.
+   */
+  leaderboard: (modality: Modality, metric?: string, o?: RequestOptions) =>
+    request<Leaderboard>(`/v1/leaderboard${q({ modality, metric })}`, o),
 
   /** What every target holds now, so a diff is against reality and not a belief. */
   diff: (o?: RequestOptions) => request<TargetDiff[]>('/v1/diff', o),
