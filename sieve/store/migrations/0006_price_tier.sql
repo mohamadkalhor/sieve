@@ -1,0 +1,12 @@
+-- Which tier a price is, where a source prices one model several ways.
+--
+-- fal writes "Video costs $0.0125 per second at 480p, $0.02 at 768p, $0.04 at
+-- 1080p". The parser refused the whole string, because taking the first number
+-- would have billed 4K work at the 480p line -- but refusing dropped the model
+-- from the catalogue entirely, and a tiered price is not unparseable. It is
+-- several prices. The cheapest is stored with the tier named, so the number is
+-- both true and visibly incomplete.
+--
+-- A plain ADD COLUMN is enough here: only one price per (model, source,
+-- modality, observed_at) is stored, so the uniqueness is unchanged.
+ALTER TABLE prices ADD COLUMN tier TEXT;

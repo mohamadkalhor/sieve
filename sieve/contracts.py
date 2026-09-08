@@ -128,6 +128,12 @@ class Price(_Model):
     cached_input: float | None = None
     per_unit: float | None = None
     source_url: str | None = None
+    # Which tier this rate is, when a source prices one model several ways:
+    # "480p", "1080p", "batch". A tiered price is not unparseable, it is
+    # several prices, and dropping the model was losing more than it protected.
+    # The cheapest tier is stored and named; a profile shape may one day ask
+    # for a particular one.
+    tier: str | None = None
     observed_at: datetime
 
 
@@ -331,6 +337,14 @@ class PullResult(_Model):
     #: model_id -> what the source says the model can do. Never from a
     #: benchmark: only a catalogue that publishes it (OpenRouter today).
     capabilities: dict[str, Capability] = Field(default_factory=dict)
+    #: Model ids whose modality is a *claim*, not a reading. A source whose
+    #: own category spans more than one of our modalities cannot say which
+    #: one a row is -- fal files music and sound effects together under
+    #: `text-to-audio`. The rule (PLAN 2.2): claim the modality only when a
+    #: source that *does* separate them agrees, which means the id folded onto
+    #: one the catalogue already holds. Anything unconfirmed is dropped and
+    #: counted, never assigned.
+    provisional: set[str] = Field(default_factory=set)
     rate_limit: RateLimit = Field(default_factory=RateLimit)
     warnings: list[str] = Field(default_factory=list)
 

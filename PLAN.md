@@ -125,6 +125,36 @@ the score and the number of tokens burned to reach it. So:
 - a profile may then ask for the cheapest mode that clears a bar, and pick
   medium over max by itself.
 
+### 2.2 A modality is claimed, never assumed
+
+A source's own categories are its filing system, not ours, and they do not
+always line up. fal files music generation and sound effects together under
+`text-to-audio`: 47 models, some of which we can rank and some of which nothing
+on earth measures. The category cannot tell us which is which, so the category
+must not decide.
+
+**The rule.** When a source category spans more than one of our modalities, the
+modality is a *claim*. It stands only where a source that **does** separate them
+agrees — in practice, where the id folds onto one the catalogue already holds in
+that modality. Artificial Analysis separates music from sound effects by
+publishing music as two leaderboards and never scoring sound effects, so a fal
+`text-to-audio` row that reaches an AA music model becomes `music` and carries
+its price. Every other row is **dropped and counted**, and the count is
+reported.
+
+Two things this rule refuses, both deliberately:
+
+- **assigning the nearest modality.** A wrong modality is not a small error: it
+  puts a model in a ranking it was never measured for, and the coverage rules
+  cannot catch it because the coverage looks fine.
+- **inventing a modality for the remainder.** A `sound-effects` modality would
+  be a list nobody can rank, because no source scores sound effects — dead
+  weight on every screen. Revisit it the day a score source exists.
+
+`PullResult.provisional` carries the claimed ids, and the pull confirms or drops
+them. It is general: any future source whose categories are coarser than ours
+uses the same path.
+
 ## 3. Axes — the vocabulary between sources and profiles
 
 An axis is a YAML file. It names the source fields that feed it, how each is

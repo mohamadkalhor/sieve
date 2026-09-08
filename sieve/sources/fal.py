@@ -24,7 +24,7 @@ merely mis-rank a model, it recommends the wrong one and bills for it.
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 from sieve.catalog.registry import canonical_id
 from sieve.contracts import (
@@ -46,10 +46,20 @@ PAGE_SIZE = 200
 #: A guard against paging for ever if the envelope ever stops saying `pages`.
 MAX_PAGES = 40
 
-#: fal's category -> our modality. Only mappings that are certain are here.
+#: A fal category that spans more than one of our modalities, so the modality it
+#: implies is a *claim* and not a reading. fal files music generation and sound
+#: effects together under `text-to-audio`; Artificial Analysis separates them by
+#: publishing music as two leaderboards and never scoring sound effects. So a
+#: text-to-audio row is offered as `music` and kept only if it folds onto a music
+#: model the catalogue already holds. The rest are dropped and counted -- a list
+#: nobody can rank is dead weight on every screen, and a sound-effects modality
+#: with no score source would be exactly that.
+PROVISIONAL: dict[str, Modality] = {"text-to-audio": "music"}
+
+#: fal's category -> our modality, where the mapping is certain.
 #: `video-to-video`, `image-to-3d`, `training`, `vision` and the rest have no
-#: modality in Sieve, and the brief is explicit that a wrong one is worse than
-#: none -- so those models are counted and skipped rather than forced.
+#: modality in Sieve, and a wrong one is worse than none -- so those models are
+#: counted and skipped rather than forced into the nearest thing.
 CATEGORIES: dict[str, Modality] = {
     "text-to-image": "text-to-image",
     "image-to-image": "image-editing",
@@ -106,49 +116,93 @@ _FORMS: tuple[tuple[re.Pattern[str], Unit, bool], ...] = (
 )
 
 
-#: The same unit priced more than once in one string: a tier table, not a rate.
-_TIERED: tuple[re.Pattern[str], ...] = (
-    re.compile(_MONEY + r"\s*(?:per|/)\s*(?:generated\s+)?image", re.I),
-    re.compile(_MONEY + r"\s*(?:per|/)\s*(?:compute\s+|output\s+video\s+|video\s+)?second", re.I),
-    re.compile(_MONEY + r"\s*(?:per|/)\s*(?:extra\s+)?megapixel", re.I),
+class Rate(NamedTuple):
+    """One readable price, and the tier it applies to if there is more than one."""
+
+    amount: float
+    unit: Unit
+    tier: str | None
+
+
+#: What a tier is called, taken from the words fal actually writes after a rate:
+#: "at 480p", "for 1080p", "at 4K". Anything else is not treated as a tier.
+_TIER = re.compile(
+    r"(?:at|for|in)\s+\*{0,2}((?:\d{3,4}p|4k|2k|8k|hd|sd|standard|pro|fast|turbo))\*{0,2}",
+    re.I,
 )
 
 
-def parse_price(prose: str) -> tuple[float, Unit] | None:
-    """`(amount, unit)` for a form this parser can prove, else None.
+def parse_rates(prose: str) -> list[Rate]:
+    """Every rate this parser can prove, cheapest first.
 
-    Deliberately narrow. Anything it cannot read with certainty -- a price that
-    depends on resolution, a training run billed per step, a table of token
-    tiers -- comes back None and is counted as unparsed.
+    A tiered price is not unparseable -- it is several prices. "Video costs
+    $0.0125 per second at 480p, $0.02 at 768p, $0.04 at 1080p" is three honest
+    numbers, and refusing the string dropped the model from the catalogue
+    altogether. What must never happen is taking the first number and calling it
+    "the" price, which would bill 4K work at the 480p line.
+
+    Anything genuinely ambiguous still comes back empty: a table of token tiers,
+    a first-unit-plus-marginal price, a training run billed per step.
     """
     if not prose:
-        return None
+        return []
     text = " ".join(prose.split())
 
-    # A tiered price is not one price. "Video costs $0.0125 per second at
-    # 480p, $0.02 per second at 768p" has no single rate, and taking the
-    # first would quietly bill 4K work at the 480p line. Two different
-    # amounts against the same unit means the answer is "unparsed".
-    for tier in _TIERED:
-        amounts = {found for found in tier.findall(text)}
+    # A price whose parts are not alternatives but *additions* -- "$0.03 for the
+    # first megapixel, plus $0.015 per extra" -- has no single rate at all. The
+    # same words also appear where every amount is identical ("each extra image
+    # is $0.08 per image"), and that is one rate stated twice, so the language
+    # alone does not decide it: differing amounts alongside it do.
+    if re.search(r"\bplus\b|\bfirst\b|\bextra\b|\badditional\b", text, re.I):
+        amounts = {found.group(1) for found in re.finditer(_MONEY, text)}
         if len(amounts) > 1:
-            return None
+            return []
+    # several rates against different units in one string is a bill, not a price
+    if re.search(r"per\s*1\s*m(?:illion)?\s*tokens", text, re.I) and re.search(
+        r"image tokens|audio tokens|video tokens", text, re.I
+    ):
+        return []
+
     for pattern, unit, is_total in _FORMS:
-        found = pattern.search(text)
+        found = list(pattern.finditer(text))
         if not found:
             continue
-        groups = found.groups()
-        if is_total:
-            seconds = as_float(groups[0])
-            amount = as_float(groups[1])
-            if not seconds or amount is None:
+        rates: list[Rate] = []
+        for match in found:
+            groups = match.groups()
+            if is_total:
+                seconds = as_float(groups[0])
+                amount = as_float(groups[1])
+                if not seconds or amount is None:
+                    continue
+                value = amount / seconds
+            else:
+                value = as_float(groups[0]) or 0.0
+            if value <= 0:
                 continue
-            return amount / seconds, unit
-        amount = as_float(groups[0])
-        if amount is None:
+            after = text[match.end() : match.end() + 40]
+            tier = _TIER.search(after)
+            rates.append(Rate(value, unit, tier.group(1).lower() if tier else None))
+
+        if not rates:
             continue
-        return amount, unit
-    return None
+        # One rate is simply the price. The same rate written twice is still one
+        # price -- "each extra image is $0.08 per image" restates it. Several
+        # *different* rates are tiers, and only tiers we can name are
+        # trustworthy: an unlabelled second amount might be a discount, a typo
+        # or a second product, and none of those is a price.
+        if len({r.amount for r in rates}) > 1 and not all(r.tier for r in rates):
+            return []
+        if len({r.amount for r in rates}) == 1:
+            rates = rates[:1]
+        return sorted(rates, key=lambda r: r.amount)
+    return []
+
+
+def parse_price(prose: str) -> tuple[float, Unit] | None:
+    """The cheapest readable rate, or None. Kept for callers that want no tier."""
+    rates = parse_rates(prose)
+    return (rates[0].amount, rates[0].unit) if rates else None
 
 
 def model_id_of(entry: dict[str, Any]) -> str | None:
@@ -177,7 +231,10 @@ class FalSource:
 
     name = "fal"
     needs_key = False
-    modalities: ClassVar[list[Modality]] = sorted(set(CATEGORIES.values()))
+    # `music` is here because of PROVISIONAL: a text-to-audio row is offered
+    # as music and kept only if something that separates music from sound
+    # effects already knows the id.
+    modalities: ClassVar[list[Modality]] = sorted({*CATEGORIES.values(), *PROVISIONAL.values()})
 
     def pull(self, cfg: SourceConfig, http: HttpClient) -> PullResult:
         result = PullResult(source=self.name)
@@ -190,6 +247,7 @@ class FalSource:
 
         skipped_category: dict[str, int] = {}
         unreadable: dict[tuple[str, Modality], int] = {}
+        tiered = 0
         seen: set[tuple[str, Modality]] = set()
         have_price: set[tuple[str, Modality]] = set()
 
@@ -199,6 +257,9 @@ class FalSource:
 
             category = str(entry.get("category") or "")
             modality = CATEGORIES.get(category)
+            provisional = modality is None and category in PROVISIONAL
+            if provisional:
+                modality = PROVISIONAL[category]
             if modality is None:
                 skipped_category[category or "(none)"] = skipped_category.get(category, 0) + 1
                 continue
@@ -218,6 +279,8 @@ class FalSource:
             first_time = key not in seen
             if first_time:
                 seen.add(key)
+            if provisional:
+                result.provisional.add(model_id)
 
             aliases = {str(entry.get("id") or ""), str(entry.get("title") or "")} - {"", model_id}
             if first_time:
@@ -234,20 +297,25 @@ class FalSource:
             prose = str(entry.get("pricingInfoOverride") or "")
             if not prose.strip() or key in have_price:
                 continue
-            parsed = parse_price(prose)
-            if parsed is None:
+            rates = parse_rates(prose)
+            if not rates:
                 unreadable.setdefault(key, 0)
                 unreadable[key] += 1
                 continue
-            amount, unit = parsed
+            # cheapest tier, named. Storing the lowest without saying which
+            # tier it is would understate the cost of anything bigger.
+            cheapest = rates[0]
+            if len(rates) > 1:
+                tiered += 1
             have_price.add(key)
             result.prices.append(
                 Price(
                     model_id=model_id,
                     source=self.name,
                     modality=modality,
-                    unit=unit,
-                    per_unit=amount,
+                    unit=cheapest.unit,
+                    per_unit=cheapest.amount,
+                    tier=cheapest.tier,
                     source_url=f"https://fal.ai/models/{entry.get('id')}",
                     observed_at=at,
                 )
@@ -259,6 +327,11 @@ class FalSource:
             result.warnings.append(
                 f"fal: {unparsed} of {len(have_price) + unparsed} prices unparsed -- "
                 "left blank on purpose; a wrong price is worse than no price"
+            )
+        if tiered:
+            result.warnings.append(
+                f"fal: {tiered} model(s) priced by tier -- the cheapest tier is"
+                " stored and named, so their real cost at a higher setting is more"
             )
         if skipped_category:
             listed = ", ".join(f"{k} {v}" for k, v in sorted(skipped_category.items()))

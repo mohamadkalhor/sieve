@@ -306,8 +306,8 @@ class Store:
             for p in prices:
                 cur = db.execute(
                     "INSERT OR IGNORE INTO prices (model_id, source, modality, unit, input,"
-                    " output, cached_input, per_unit, source_url, observed_at)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    " output, cached_input, per_unit, source_url, tier, observed_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         p.model_id,
                         p.source,
@@ -318,6 +318,7 @@ class Store:
                         p.cached_input,
                         p.per_unit,
                         p.source_url,
+                        p.tier,
                         _iso(p.observed_at),
                     ),
                 )
@@ -344,6 +345,7 @@ class Store:
                 cached_input=r["cached_input"],
                 per_unit=r["per_unit"],
                 source_url=r["source_url"],
+                tier=r["tier"],
                 observed_at=_dt(r["observed_at"]),
             )
         return out

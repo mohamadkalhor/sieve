@@ -154,6 +154,7 @@ export interface Price {
   cached_input?: number | null;
   per_unit?: number | null;
   source_url?: string | null;
+  tier?: string | null;
   observed_at: string;
 }
 
@@ -177,6 +178,7 @@ export interface PullResult {
   observations?: Observation[];
   prices?: Price[];
   capabilities?: Record<string, Capability>;
+  provisional?: string[];
   rate_limit?: RateLimit;
   warnings?: string[];
 }

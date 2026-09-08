@@ -68,6 +68,10 @@ modalities = [
   "image-to-video",
   "text-to-speech",
   "speech-to-text",
+  # fal files music and sound effects together under `text-to-audio`, so a
+  # row is only claimed as music when Artificial Analysis -- which scores
+  # music and never scores sound effects -- already knows the id.
+  "music",
 ]
 
 [sources.manual]

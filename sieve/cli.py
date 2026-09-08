@@ -20,7 +20,7 @@ from sieve import plugins
 from sieve.catalog.aliases import load_aliases
 from sieve.catalog.registry import merge_pull
 from sieve.config import DEFAULT_CONFIG, Config, default_config, load_config
-from sieve.contracts import Profile
+from sieve.contracts import Profile, PullResult
 from sieve.engine import COST_SOURCE, OwnerMissingError, apply_targets, run
 from sieve.http import client as http_client
 from sieve.http import fixtures_enabled
@@ -118,7 +118,13 @@ def cmd_pull(args: argparse.Namespace) -> int:
         result, folded = merge_pull(
             result, [m.id for m in store.models()], {**file_aliases, **store.aliases()}
         )
+        result, unconfirmed = confirm_provisional(result, store)
 
+        if unconfirmed:
+            _out(
+                f"  {unconfirmed} model(s) dropped: their category spans more than one"
+                " modality and nothing that separates them recognised the id"
+            )
         snapshot = store.new_snapshot(source_rows=len(result.observations))
         store.upsert_models(result.models)
         added = store.add_observations(result.observations, snapshot=snapshot)
@@ -188,6 +194,36 @@ def _refresh_inventories(
         if len(unmatched) > 5:
             _out(f"  ... and {len(unmatched) - 5} more; see /v1/inventory?unmatched=true")
     return failures
+
+
+def confirm_provisional(result: PullResult, store: Store) -> tuple[PullResult, int]:
+    """Keep a claimed modality only where a source that separates them agrees.
+
+    PLAN 2.2. A source whose own category spans several of our modalities --
+    fal files music generation and sound effects together under `text-to-audio`
+    -- cannot say which one a row is. So it offers the modality and this decides:
+    the claim stands only if the id is one the catalogue already holds in that
+    modality, which means something that *does* distinguish them measured it.
+
+    Everything else is dropped and counted. It is not assigned to the nearest
+    modality, because a list nobody can rank is dead weight on every screen, and
+    it is not given a modality of its own, because nothing measures it.
+    """
+    if not result.provisional:
+        return result, 0
+
+    known = {m.id for m in store.models()}
+    keep = {model_id for model_id in result.provisional if model_id in known}
+    drop = result.provisional - keep
+    if not drop:
+        return result, 0
+
+    kept = result.model_copy(deep=True)
+    kept.models = [m for m in kept.models if m.id not in drop]
+    kept.observations = [o for o in kept.observations if o.model_id not in drop]
+    kept.prices = [p for p in kept.prices if p.model_id not in drop]
+    kept.provisional = keep
+    return kept, len(drop)
 
 
 def cmd_check(args: argparse.Namespace) -> int:

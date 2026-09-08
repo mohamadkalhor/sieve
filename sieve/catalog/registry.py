@@ -169,9 +169,16 @@ def merge_pull(
     for model in result.models:
         if matcher.knows(model.id):
             continue
-        found = matcher.match(model.id)
-        if found.model_id and found.confidence >= min_confidence:
-            rewrite[model.id] = found.model_id
+        # The id first, then the names the source published for the same row.
+        # A source often names a model better than it slugs it -- fal's id is
+        # `fal-ai/lyria3` and its title is "Lyria 3 Pro", which is what AA calls
+        # it -- and trying only the id threw that away. The bar is the same.
+        for candidate in (model.id, *model.aliases):
+            found = matcher.match(candidate)
+            if found.model_id and found.confidence >= min_confidence:
+                if found.model_id != model.id:
+                    rewrite[model.id] = found.model_id
+                break
 
     if not rewrite:
         return result, {}

@@ -63,6 +63,14 @@ class Price(BaseModel):
                             # modality this model is in", which is what a
                             # single-modality source means and what every row
                             # written before migration 0004 meant.
+    modality: Modality | None = None   # which modality this rate is for; None means
+                            # every modality the model is in. fal prices one model
+                            # per endpoint, so a price keyed on the model alone put
+                            # the per-image rate on its video row.
+    tier: str | None = None # "480p", "1080p": which tier this rate is, where a
+                            # source prices one model several ways. The cheapest is
+                            # stored and named, so the number is true and visibly
+                            # incomplete.
     unit: str               # as Observation.unit price units
     input: float | None = None
     output: float | None = None
@@ -165,7 +173,13 @@ CI fails if it is stale.
 class Source(Protocol):
     name: str; modality: list[Modality]; needs_key: bool
     def pull(self, cfg: SourceConfig, http: HttpClient) -> PullResult
-    # PullResult: models, observations, prices, capabilities, rate_limit, warnings.
+    # PullResult: models, observations, prices, capabilities, provisional,
+    # rate_limit, warnings.
+    # `provisional: set[model_id]` is PLAN 2.2: ids whose modality is a *claim*,
+    # because the source's own category spans more than one of ours. fal files
+    # music and sound effects together under `text-to-audio`. The claim stands
+    # only where a source that separates them already knows the id; the rest are
+    # dropped and counted, never assigned to the nearest modality.
     # `capabilities: dict[model_id, Capability]` is how a catalogue that publishes
     # what a model can do (OpenRouter's context_length, supported_parameters) reaches
     # the `require:` gate. Without it only a gateway inventory could ever answer

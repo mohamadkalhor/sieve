@@ -18,7 +18,14 @@ import pytest
 
 from sieve.contracts import SourceConfig
 from sieve.http import FixturePlayer, fixture_slug
-from sieve.sources.fal import CATEGORIES, PAGE_SIZE, FalSource, model_id_of, parse_price
+from sieve.sources.fal import (
+    CATEGORIES,
+    PAGE_SIZE,
+    PROVISIONAL,
+    FalSource,
+    model_id_of,
+    parse_price,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -59,12 +66,6 @@ def test_the_forms_that_can_be_proven(prose: str, amount: float, unit: str) -> N
 @pytest.mark.parametrize(
     "prose",
     [
-        # tiered by resolution: there is no single rate, and taking the first
-        # would bill 4K work at the 480p line
-        (
-            "Video costs **$0.0125** per second at **480p**, **$0.02** per second at "
-            "**768p**, and **$0.04** per second at **1080p**."
-        ),
         # a table of token prices, several rates, none of them "the" price
         (
             "Text tokens (per 1M): **$5.00** input, **$1.25** cached, **$10.00** output. "
@@ -84,6 +85,42 @@ def test_the_forms_that_can_be_proven(prose: str, amount: float, unit: str) -> N
 )
 def test_anything_ambiguous_is_left_blank(prose: str) -> None:
     assert parse_price(prose) is None, f"read a price it should have refused: {prose[:60]}"
+
+
+def test_a_tiered_price_is_read_as_tiers_and_the_cheapest_is_named() -> None:
+    """A tiered price is not unparseable -- it is several prices.
+
+    Refusing the whole string dropped the model from the catalogue, which loses
+    more than it protects. The cheapest is stored *with its tier named*, so the
+    number is true and visibly incomplete; taking the first and calling it "the"
+    price would bill 4K work at the 480p line.
+    """
+    from sieve.sources.fal import parse_rates
+
+    rates = parse_rates(
+        "Video costs **$0.0125** per second at **480p**, **$0.02** per second at "
+        "**768p**, and **$0.04** per second at **1080p**."
+    )
+    assert [r.tier for r in rates] == ["480p", "768p", "1080p"]
+    assert [r.amount for r in rates] == pytest.approx([0.0125, 0.02, 0.04])
+    assert all(r.unit == "usd_per_second" for r in rates)
+
+    cheapest = parse_price(
+        "Video costs **$0.0125** per second at **480p**, **$0.04** per second at **1080p**."
+    )
+    assert cheapest is not None and cheapest[0] == pytest.approx(0.0125)
+
+
+def test_an_unlabelled_second_rate_is_still_refused() -> None:
+    """Only tiers that can be named are trustworthy.
+
+    Two amounts against one unit with nothing saying which is which could be
+    anything -- a discount, a typo, a second product. Named tiers are evidence;
+    an unlabelled pair is not.
+    """
+    from sieve.sources.fal import parse_rates
+
+    assert parse_rates("Requests cost **$0.10** per second, or **$0.20** per second.") == []
 
 
 def test_a_single_rate_repeated_is_still_one_rate() -> None:
@@ -150,7 +187,10 @@ def test_a_category_with_no_modality_is_skipped_and_counted(player: FixturePlaye
     """
     result = FalSource().pull(SourceConfig(name="fal"), player)
 
-    assert all(m.modality in CATEGORIES.values() for m in result.models)
+    # PROVISIONAL adds `music`: a text-to-audio row is offered as music and
+    # kept only if something that separates music from sound effects knows it
+    allowed = {*CATEGORIES.values(), *PROVISIONAL.values()}
+    assert all(m.modality in allowed for m in result.models)
     skipped = [w for w in result.warnings if "no Sieve modality" in w]
     assert skipped, "the skipped categories are named"
     for absent in ("video-to-video", "image-to-3d", "training"):
