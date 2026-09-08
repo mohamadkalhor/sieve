@@ -68,5 +68,12 @@
   "rows_kept": 67,
   "rows_published": 67,
   "url": "https://artificialanalysis.ai/api/v2/media/speech-to-text/models/free"
+ },
+ "fal_ai_api_models__limit_200_page_1.json": {
+  "params": "limit=200&page=1",
+  "recorded": "2026-09-08",
+  "rows_kept": 95,
+  "rows_published": 1494,
+  "url": "https://fal.ai/api/models"
  }
 }

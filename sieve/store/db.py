@@ -305,11 +305,13 @@ class Store:
         with self.tx() as db:
             for p in prices:
                 cur = db.execute(
-                    "INSERT OR IGNORE INTO prices (model_id, source, unit, input, output,"
-                    " cached_input, per_unit, source_url, observed_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                    "INSERT OR IGNORE INTO prices (model_id, source, modality, unit, input,"
+                    " output, cached_input, per_unit, source_url, observed_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?)",
                     (
                         p.model_id,
                         p.source,
+                        p.modality,
                         p.unit,
                         p.input,
                         p.output,
@@ -326,14 +328,16 @@ class Store:
         rows = self.db.execute(
             "SELECT p.* FROM prices p JOIN models m"
             " ON m.id = p.model_id AND m.modality = ?"
-            " ORDER BY p.observed_at ASC",
-            (modality,),
+            " WHERE p.modality IS NULL OR p.modality = ?"
+            " ORDER BY (p.modality IS NULL), p.observed_at ASC",
+            (modality, modality),
         )
         out: dict[str, Price] = {}
         for r in rows:
             out[r["model_id"]] = Price(
                 model_id=r["model_id"],
                 source=r["source"],
+                modality=r["modality"],
                 unit=r["unit"],
                 input=r["input"],
                 output=r["output"],

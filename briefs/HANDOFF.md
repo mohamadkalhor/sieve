@@ -206,6 +206,73 @@ Proven on the CLI, same store, same data: `prefer_effort: best` seats
   GLM-5.2)` is parsed correctly, so the multi-clause bracket is covered, but the
   Opus figures themselves need a wider recording.
 
+## Part 0b · fal, the price for the media field
+
+Landed. `sieve/sources/fal.py`, no key, registered as a plugin and enabled in
+`sieve.toml.example`. Recording in `tests/fixtures`, 95 of 1,494 rows, chosen to
+exercise every branch: each parsed unit, a resolution-tiered refusal, a token
+table, and categories with no Sieve modality.
+
+**Live numbers, 2026-09-08.** `sieve pull fal` reads 1,494 models over 8 pages
+at `limit=200`. 985 sit in a Sieve modality; 509 are skipped and named
+(`video-to-video` 203, `training` 59, `text-to-audio` 47, `audio-to-audio` 43,
+`image-to-3d` 41, `vision` 34, and the rest). After folding endpoint variants —
+`nano-banana-2/edit` and `nano-banana-2/text-to-image` are one model — that is
+**435 model rows and 67 prices, with 83 of 124 price strings refused**.
+
+Refusing them is the point. The parser reads only per-image, per-second and
+per-token forms it can prove, and a **tiered** price is refused outright: "Video
+costs $0.0125 per second at 480p, $0.02 at 768p, $0.04 at 1080p" has no single
+rate, and taking the first would bill 4K work at the 480p line.
+
+**Two defects had to be fixed before the join produced anything**, and both were
+older than this part:
+
+- **`data/aliases.yaml` never reached a pull.** `merge_pull` was handed
+  `store.aliases()` only, so the hand-written file — whose own header says it
+  beats every rule in the matcher — could not fix a source-to-source merge at
+  all. It only ever reached inventory matching. The file is now merged in, with
+  store entries still winning.
+- **A price had no modality.** The table was keyed `(model_id, source,
+  observed_at)`, so a model serving both image and video could hold one price,
+  and fal's per-image rate landed on its video row. That is a wrong price, which
+  the rules forbid outright. `Price.modality` is in CONTRACTS §1 and migration
+  `0004_price_modality.sql` **rebuilds** the table, because the uniqueness lived
+  in a table constraint and SQLite cannot alter one in place — an ADD COLUMN
+  alone left the old UNIQUE binding and silently dropped the second modality's
+  price.
+
+**The join.** Ten checked aliases in `data/aliases.yaml` carry fal's ids onto
+AA's, all slug-identical after normalisation and differing only in the vendor
+prefix (`fal-ai/veo3.1` → `google/veo-3-1`, `xai/grok-imagine-image` →
+`spacexai/grok-imagine-image`). `sieve score --profile image_general` then ranks
+on quality *and* cost: `google/nano-banana-2` leads at 0.848 with
+`cost +0.038 (cov 1.00)`, while a model with a score and no price shows
+`cost +0.000 (cov 0.00)` — the coverage loss, not a silent zero.
+
+### Left open
+
+- **The join is small: 8 model-modality pairs.** Both sides are trimmed
+  recordings (AA to 142 media models of 482), and fal carries hundreds of models
+  AA never measures. Against a live AA key it will be larger. **The 482 figure
+  the brief asks for cannot be measured here** — no AA key on this machine.
+- **The near-misses are not aliases.** `nano-banana` against `nano-banana-2`,
+  `gpt-image-1.5` against `gpt-image-2` — close names, different models. None was
+  added, and the alias file says so, because fusing them is the exact failure the
+  0.9 merge floor exists to prevent.
+- **`merge_pull`'s 0.9 floor still rejects every 0.85 slug match.** Ten were
+  hand-written instead. A slug that is *identical* after normalisation and
+  differs only in creator is stronger evidence than the generic 0.85 rule, and
+  could earn its own confidence — that is a matcher change nobody has agreed to,
+  so it was not made.
+- **`text-to-audio` (47 models) has no modality.** It is probably our `music`,
+  but fal mixes music and sound effects under it and the rules say a wrong
+  modality is worse than none. Needs a decision.
+- **fal publishes no quality of any kind**, by design. Nothing here ranks a
+  model on its own; it only makes a media model's cost knowable.
+- **The Field chart for a media modality** is untested — that half of 0b's
+  "Done when" is a web check and belongs with part 6.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

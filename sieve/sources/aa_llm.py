@@ -258,4 +258,3 @@ def _name_the_bare_mode(result: PullResult) -> None:
         if spelled in taken or spelled in model.aliases:
             continue
         model.aliases = sorted({*model.aliases, spelled})
-

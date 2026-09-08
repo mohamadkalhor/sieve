@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from sieve import plugins
+from sieve.catalog.aliases import load_aliases
 from sieve.catalog.registry import merge_pull
 from sieve.config import Config, default_config, load_config
 from sieve.contracts import Profile
@@ -72,6 +73,13 @@ def cmd_pull(args: argparse.Namespace) -> int:
     http = http_client()
     wanted = args.source or [s.name for s in cfg.enabled_sources()]
     failures = 0
+    # The hand-written alias file says it beats every rule in the matcher, and
+    # until now it did not reach a pull at all: only the store table did, so an
+    # alias written to join two sources -- the whole reason media has both a
+    # score and a price -- was never consulted. Store entries still win, since
+    # those were learned from a gateway that actually serves the id.
+    file_aliases = load_aliases(cfg.aliases_file)
+
     for name in wanted:
         source_cfg = cfg.sources.get(name)
         if source_cfg is None:
@@ -95,7 +103,9 @@ def cmd_pull(args: argparse.Namespace) -> int:
         result = source.pull(source_cfg, http)
 
         # two sources naming one model must land on one record
-        result, folded = merge_pull(result, [m.id for m in store.models()], store.aliases())
+        result, folded = merge_pull(
+            result, [m.id for m in store.models()], {**file_aliases, **store.aliases()}
+        )
 
         snapshot = store.new_snapshot(source_rows=len(result.observations))
         store.upsert_models(result.models)

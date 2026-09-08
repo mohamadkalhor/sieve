@@ -59,3 +59,40 @@ z-ai/glm-5.3-flash:
 #   - internal/reasoning-large
 # openai/gpt-5-2:
 #   - internal/chat-default
+
+# --- fal ids against Artificial Analysis ids -------------------------------
+# AA measures media quality and publishes no media price; fal publishes media
+# prices and measures no quality. Joining them is the only way a media model
+# gets both, and the two catalogues name the same model under different vendor
+# prefixes: fal writes the serving vendor, AA writes the creator.
+#
+# Every pair below was checked on 2026-09-08 and is slug-identical after
+# normalisation -- `wan-3.0` and `wan-3-0`, `veo3.1` and `veo-3-1`. The matcher
+# scores those 0.85 on the slug rule, and `merge_pull` refuses anything under
+# 0.9 because a wrong merge fuses two models. Writing them here is the sanctioned
+# way to say "this one is checked", rather than lowering that floor for
+# everything.
+#
+# Do NOT add near-misses here. `nano-banana` and `nano-banana-2`, `gpt-image-1.5`
+# and `gpt-image-2` look close and are different models; fusing them would be the
+# exact failure the 0.9 floor exists to prevent.
+alibaba/wan-3-0:
+  - alibaba/wan-3.0
+alibaba/wan-2-5-preview:
+  - fal-ai/wan-25-preview
+bytedance-seed/seedance-2-0:
+  - bytedance/seedance-2.0
+google/nano-banana-2:
+  - fal-ai/nano-banana-2
+google/veo-3-1:
+  - fal-ai/veo3.1
+microsoft-ai/mai-image-2-5:
+  - microsoft/mai-image-2.5
+microsoft-ai/mai-image-2-5-pro:
+  - microsoft/mai-image-2.5-pro
+resemble-ai/chatterbox-hd:
+  - resemble-ai/chatterboxhd
+spacexai/grok-imagine-image:
+  - xai/grok-imagine-image
+spacexai/grok-imagine-video:
+  - xai/grok-imagine-video

@@ -52,6 +52,13 @@ class Capability(BaseModel):  # from inventory + openrouter; never from a benchm
 class Price(BaseModel):
     model_id: str
     source: str
+    modality: Modality | None = None   # PLAN 2.1b: a media model is priced per
+                            # endpoint -- one rate per image, another per second of
+                            # video -- so a price keyed on the model alone puts the
+                            # wrong number on the other row. None means "every
+                            # modality this model is in", which is what a
+                            # single-modality source means and what every row
+                            # written before migration 0004 meant.
     unit: str               # as Observation.unit price units
     input: float | None = None
     output: float | None = None

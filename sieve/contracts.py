@@ -113,6 +113,11 @@ class Capability(_Model):
 class Price(_Model):
     model_id: str
     source: str
+    # Which modality this price is for. A media model is priced per endpoint --
+    # one rate per image, another per second of video -- so a price keyed on the
+    # model alone puts the wrong number on the other row. None means "whatever
+    # modality this model is in", which is what a single-modality source means.
+    modality: Modality | None = None
     unit: Unit
     input: float | None = None
     output: float | None = None

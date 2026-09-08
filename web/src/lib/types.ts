@@ -147,6 +147,7 @@ export interface Policy {
 export interface Price {
   model_id: string;
   source: string;
+  modality?: Modality | null;
   unit: Unit;
   input?: number | null;
   output?: number | null;

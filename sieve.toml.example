@@ -39,6 +39,20 @@ modalities = [
 enabled = true       # no key needed
 modalities = ["llm"]
 
+# Price for the media field. Artificial Analysis measures media quality and
+# publishes no media price at all, so cost for image, video and speech comes
+# from here or from nowhere. No key needed.
+[sources.fal]
+enabled = true
+modalities = [
+  "text-to-image",
+  "image-editing",
+  "text-to-video",
+  "image-to-video",
+  "text-to-speech",
+  "speech-to-text",
+]
+
 [sources.manual]
 enabled = true
 dir = "data/observations"

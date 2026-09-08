@@ -414,11 +414,14 @@ def test_the_recordings_match_what_the_manifest_claims(player: FixturePlayer) ->
     is then quietly measuring something else.
     """
     manifest = json.loads((FIXTURES / "RECORDINGS.json").read_text(encoding="utf-8"))
-    assert len(manifest) == 10
+    assert len(manifest) == 11
 
     for name, entry in manifest.items():
         body = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
-        rows = body["data"] if isinstance(body, dict) and "data" in body else body
+        # AA answers `{data: [...]}`, fal answers `{items: [...]}`
+        rows = body
+        if isinstance(body, dict):
+            rows = body.get("data", body.get("items", body))
         assert len(rows) == entry["rows_kept"], f"{name} holds {len(rows)}, manifest says {entry}"
         assert entry["rows_kept"] <= entry["rows_published"]
         assert f"{fixture_slug(entry['url'], _params_of(entry))}.json" == name
