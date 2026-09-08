@@ -19,7 +19,7 @@ from typing import Any
 from sieve import plugins
 from sieve.catalog.aliases import load_aliases
 from sieve.catalog.registry import merge_pull
-from sieve.config import Config, default_config, load_config
+from sieve.config import DEFAULT_CONFIG, Config, default_config, load_config
 from sieve.contracts import Profile
 from sieve.engine import COST_SOURCE, OwnerMissingError, apply_targets, run
 from sieve.http import client as http_client
@@ -37,8 +37,20 @@ EXIT_NOT_BUILT = 3
 
 
 def _config(args: argparse.Namespace) -> Config:
+    """The config the command runs against.
+
+    A missing `sieve.toml` where none was asked for is normal -- a fresh
+    install has no config and the defaults are usable. A `--config` naming a
+    file that is not there is a mistake, and used to fall back to the defaults
+    without a word: the command then ran against a different store and a
+    different set of sources, and looked like the source published nothing.
+    """
     path = Path(args.config)
-    return load_config(path) if path.exists() else default_config()
+    if path.exists():
+        return load_config(path)
+    if args.config != DEFAULT_CONFIG:
+        raise ValueError(f"no such config file: {path}")
+    return default_config()
 
 
 def _profiles(cfg: Config, names: Sequence[str] | None = None) -> list[Profile]:
@@ -470,7 +482,7 @@ def cmd_migrate(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sieve", description="Weighted model selection.")
-    parser.add_argument("--config", default="sieve.toml", help="path to sieve.toml")
+    parser.add_argument("--config", default=DEFAULT_CONFIG, help="path to sieve.toml")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("pull", help="pull measurements from a source, and list inventories")
@@ -541,6 +553,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     except NotImplementedError as exc:
         print(f"not built yet: {exc}", file=sys.stderr)
         return EXIT_NOT_BUILT
+    except ValueError as exc:
+        # a bad config path or a malformed file: the person is editing YAML or
+        # TOML, and deserves the sentence rather than a traceback
+        print(str(exc), file=sys.stderr)
+        return EXIT_ERROR
     except KeyboardInterrupt:
         return 130
 

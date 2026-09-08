@@ -7,7 +7,11 @@ this file does not follow code. Change it by pull request, and say why.
 
 ```python
 Modality = Literal["llm","text-to-image","image-editing","text-to-video",
-                   "image-to-video","text-to-speech","speech-to-text","music"]
+                   "image-to-video","text-to-speech","speech-to-text",
+                   "speech-to-speech","music"]
+                   # `speech-to-speech` added in phase 2 part 2: AA publishes a
+                   # free-tier voice-to-voice leaderboard and nothing could store
+                   # it, because the literal had no name for it.
 
 class ModelRef(BaseModel):
     id: str                 # canonical: "<creator>/<slug>", lowercase, e.g. "anthropic/claude-opus-5"

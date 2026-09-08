@@ -3,7 +3,7 @@
 
 // --- unions -------------------------------------------------------------
 
-export type Modality = "llm" | "text-to-image" | "image-editing" | "text-to-video" | "image-to-video" | "text-to-speech" | "speech-to-text" | "music";
+export type Modality = "llm" | "text-to-image" | "image-editing" | "text-to-video" | "image-to-video" | "text-to-speech" | "speech-to-text" | "speech-to-speech" | "music";
 
 export type Unit = "index_0_100" | "fraction" | "elo" | "usd_per_1m_tokens" | "tokens_per_s" | "seconds" | "usd_per_image" | "usd_per_second" | "usd_per_1m_chars" | "count" | "usd_per_task";
 

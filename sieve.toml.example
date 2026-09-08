@@ -33,7 +33,24 @@ modalities = [
   "text-to-video",
   "image-to-video",
   "text-to-speech",
+  # the free tier below adds these three
+  "music",
+  "speech-to-text",
+  "speech-to-speech",
 ]
+
+# The free tier, one flag per endpoint, read as source options. Each endpoint is
+# its own leaderboard: music is two separate votes (a model can be good at
+# instrumental and ordinary with vocals), speech-to-text publishes a word error
+# rate rounded to one decimal, and speech-to-speech publishes three scores with
+# very different coverage.
+#
+# text-to-speech is deliberately absent. The documented arena endpoint serves it,
+# and running both wrote two rows for one measurement.
+free_music_instrumental = true
+free_music_with_vocals = true
+free_speech_to_text = true
+free_speech_to_speech = true
 
 [sources.openrouter]
 enabled = true       # no key needed

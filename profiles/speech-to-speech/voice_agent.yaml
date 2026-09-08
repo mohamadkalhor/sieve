@@ -1,0 +1,13 @@
+# A voice agent is judged on holding a conversation, which is the one thing AA
+# measures here. Coverage does the work: a model scored on one of the three
+# published tests ranks on that one and says so.
+
+name: voice_agent
+modality: speech-to-speech
+purpose: "a voice-to-voice agent a person talks to"
+weights:
+  conversation: 1.0
+shape: {seconds: 300}
+policy:
+  margin: 5.0
+  chain: 3

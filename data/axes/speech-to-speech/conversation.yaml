@@ -1,0 +1,21 @@
+# Three published scores that are not interchangeable, and their coverage says
+# so: bba_score appears on 34 of the 38 free-tier models, fdb_score on 26,
+# tau_voice_score on 21. Weighting them without the coverage rule would credit a
+# model for a test it was never given.
+#
+# `missing: renormalise` judges a model on the scores it actually has and drops
+# its coverage accordingly, so a model measured on bba alone is ranked on bba
+# alone and reports that it was. The 0.6 floor means a model with only the
+# thinnest of the three falls out rather than being ranked on one number.
+
+name: conversation
+modality: speech-to-speech
+label: "Conversation"
+describes: "how well a voice-to-voice model holds a conversation, across AA's three published scores"
+fields:
+  - {source: aa_media, field: bba_score, weight: 0.5}
+  - {source: aa_media, field: fdb_score, weight: 0.3}
+  - {source: aa_media, field: tau_voice_score, weight: 0.2}
+missing: renormalise
+min_coverage: 0.6
+higher_is_better: true

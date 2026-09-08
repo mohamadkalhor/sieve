@@ -20,6 +20,10 @@ Modality = Literal[
     "image-to-video",
     "text-to-speech",
     "speech-to-text",
+    # Voice-to-voice models: one row per model with up to three published
+    # scores. Added in phase 2 part 2 -- the free-tier endpoint existed and
+    # nothing could store it, because the literal had no name for it.
+    "speech-to-speech",
     "music",
 ]
 

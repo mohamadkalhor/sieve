@@ -99,6 +99,12 @@ def _section(raw: dict[str, Any], name: str) -> dict[str, Any]:
 def load_config(path: str | Path | None = None, *, root: Path | None = None) -> Config:
     """Read `sieve.toml`; every section is optional and falls back to defaults."""
     file = Path(path) if path else Path(DEFAULT_CONFIG)
+    # A missing sieve.toml is normal and falls back to defaults. A missing file
+    # somebody *named* is not: it used to fall back silently, so a typo in
+    # `--config` ran the whole command against the default configuration and
+    # looked like the source simply published nothing.
+    if path is not None and not file.exists():
+        raise ValueError(f"no such config file: {file}")
     base = root or (file.parent.resolve() if file.exists() else Path.cwd())
     raw: dict[str, Any] = {}
     if file.exists():

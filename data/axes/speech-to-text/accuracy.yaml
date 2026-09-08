@@ -1,0 +1,23 @@
+# `aa_wer_index` is a word error rate, and LOWER IS BETTER.
+#
+# The name says index and the API gives no direction, so this was settled from
+# the published leaderboard rather than guessed: artificialanalysis.ai ranks
+# speech-to-text by AA-WER, describes it as "% of words transcribed
+# incorrectly", and puts Fun-Realtime-ASR-preview (1.7%) at the top with
+# Google's legacy Chirp (31.2%) at the bottom. Guessing the other way would have
+# recommended the single worst model in the field.
+#
+# THE HONEST LIMIT OF THIS AXIS. The free endpoint rounds the rate to one
+# decimal place, so 44 of the 58 models that publish a value all read 0.0 --
+# every model under 5% is tied. It separates a badly broken transcriber from a
+# working one and nothing finer. Use it as a floor, not as a ranking signal.
+
+name: accuracy
+modality: speech-to-text
+label: "Accuracy"
+describes: "AA word error rate: the share of words transcribed incorrectly"
+fields:
+  - {source: aa_media, field: aa_wer_index, weight: 1.0}
+missing: penalise
+min_coverage: 0.5
+higher_is_better: false

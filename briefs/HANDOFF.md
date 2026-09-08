@@ -324,6 +324,76 @@ on quality *and* cost: `google/nano-banana-2` leads at 0.848 with
 - **The Field chart for a media modality** is untested — that half of 0b's
   "Done when" is a web check and belongs with part 6.
 
+## Part 2 · The free-tier media endpoints, with their true shapes
+
+All five defects fixed, each with a test, plus a sixth the work exposed. The
+free tier is one flag per endpoint in `sieve.toml.example`, and `FREE_ENDPOINTS`
+is now a spec table describing what each really publishes rather than a
+path-to-modality map read by a parser that stored every numeric key it saw.
+
+1. **Music collided with itself.** Instrumental and with-vocals both wrote a
+   field called `elo` for the same model in one pull, and observations are
+   unique on `(model, source, field, observed_at)`, so one silently lost every
+   time. They are `elo:instrumental` and `elo:with_vocals` now, with an axis
+   each. Suno V5.5: 1186 and 1170 — two contests, as the brief said.
+2. **text-to-speech was pulled twice**, from `ENDPOINTS` and `FREE_ENDPOINTS`.
+   The arena endpoint wins: it publishes `rank` and it is the documented one.
+   **The brief's reason for preferring it was wrong** — it says the arena tier
+   carries appearances, release date and price, and against the recording it
+   carries none of those; its rows are `elo`, `ci95`, `rank`, `id`, `name`,
+   `model_creator` and nothing else. The free tier's only real advantage is one
+   extra model, 96 against 95, which is not worth two sources disagreeing.
+3. **`ci_95` was stored as a measurement of its own**, beside the Elo it
+   describes. It is `Observation.ci95` on the Elo row now, as the arena parser
+   already did.
+4. **speech-to-speech was never pulled**, because `Modality` had no name for it.
+   Added to the literal and to CONTRACTS §1. Its three scores are kept apart and
+   their coverage is the reason: `bba_score` on 34 of 38 models, `fdb_score` on
+   26, `tau_voice_score` on 21.
+5. **`aa_wer_index` is a word error rate and lower is better.** Settled from the
+   published leaderboard as instructed, not guessed: artificialanalysis.ai ranks
+   speech-to-text by AA-WER, calls it "% of words transcribed incorrectly", and
+   puts Fun-Realtime-ASR-preview (1.7%) first with Google's legacy Chirp (31.2%)
+   last. With the direction set, `sieve score --profile transcription`
+   independently seats `fun-realtime-asr-preview` first — the same model the
+   leaderboard ranks first, which is the strongest confirmation available.
+
+**The sixth: the ids were UUIDs.** Music and speech-to-text rows carry no
+`slug`, and the fallback ran through to `id`, which is a UUID — producing
+`suno/8a999846-4c1d-4ce7-a8b7-1310a7166fd7`, an id that matches nothing and
+never will. It now goes slug, then name, and refuses a UUID outright. The name
+needed cleaning too: the free tier writes `Cloud Speech-To-Text (Chirp), Google`
+and the trailing creator was ending up in the slug.
+
+**A seventh, found on the way.** `sieve --config <path>` fell back to the
+defaults **without a word** when the path did not exist, so a typo ran the whole
+command against a different store and different sources and looked like the
+source had published nothing. It now fails with `no such config file: …`. A
+missing `sieve.toml` where none was named is still fine.
+
+New: `data/axes/music/{instrumental,with_vocals}.yaml`,
+`data/axes/speech-to-text/accuracy.yaml`,
+`data/axes/speech-to-speech/conversation.yaml`, and the profiles
+`music_general`, `transcription`, `voice_agent`.
+
+### Left open
+
+- **The accuracy axis is coarse and says so.** The free endpoint rounds the
+  error rate to one decimal, so 44 of the 58 models that publish a value all
+  read 0.0 — everything under 5% ties. It separates a broken transcriber from a
+  working one and nothing finer; the leaderboard's own 1.7/2.0/2.2 precision is
+  thrown away before the API returns it. A test fails if the endpoint ever stops
+  rounding, so the axis can be reweighted then.
+- **`speech-to-speech` has one axis over three scores.** Whether `bba_score`
+  deserves half the weight is a judgement nobody has made on evidence; the
+  0.5/0.3/0.2 split follows their coverage, which is a proxy, not a reason.
+- **Music has no cost.** fal's `text-to-audio` category is where music prices
+  would come from and it has no Sieve modality yet — the open question with
+  mhmd-cl.
+- **The three new profiles are unreachable-only.** Nothing in any inventory
+  serves music, speech-to-text or speech-to-speech, so they rank but seat
+  nothing.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

@@ -1,0 +1,13 @@
+# Accuracy is the only axis this modality has, and it is coarse: the free
+# endpoint rounds the error rate to one decimal, so most working models tie.
+# Read it as "nothing badly broken gets seated", not as a ranking.
+
+name: transcription
+modality: speech-to-text
+purpose: "turning recorded speech into text"
+weights:
+  accuracy: 1.0
+shape: {seconds: 600}
+policy:
+  margin: 5.0
+  chain: 3

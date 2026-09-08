@@ -1,0 +1,15 @@
+# Two leaderboards, not one contest. Artificial Analysis runs instrumental and
+# with-vocals as separate votes, and a model can be good at one and ordinary at
+# the other: Suno V5.5 scores 1186 here and 1170 with vocals. Phase 1 wrote both
+# to a field called `elo`, and since observations are unique on
+# (model, source, field, observed_at), one of them silently lost every pull.
+
+name: instrumental
+modality: music
+label: "Instrumental"
+describes: "human-preference Elo on the instrumental leaderboard"
+fields:
+  - {source: aa_media, field: "elo:instrumental", weight: 1.0}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

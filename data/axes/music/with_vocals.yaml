@@ -1,0 +1,12 @@
+# The other half of the music field. See instrumental.yaml: these are two
+# separate votes and 15 of the 18 free-tier models appear on both.
+
+name: with_vocals
+modality: music
+label: "With vocals"
+describes: "human-preference Elo on the with-vocals leaderboard"
+fields:
+  - {source: aa_media, field: "elo:with_vocals", weight: 1.0}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

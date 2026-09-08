@@ -1,0 +1,14 @@
+# Both music leaderboards, weighted evenly. A track brief that names vocals or
+# an instrumental should use a profile that weights one of them instead -- these
+# really are two different contests.
+
+name: music_general
+modality: music
+purpose: "generating music where vocals may or may not be wanted"
+weights:
+  instrumental: 0.5
+  with_vocals: 0.5
+shape: {seconds: 30}
+policy:
+  margin: 5.0
+  chain: 3

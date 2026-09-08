@@ -45,13 +45,60 @@ ENDPOINTS: dict[str, Modality] = {
     "text-to-speech": "text-to-speech",
 }
 
-#: free-tier endpoints, off unless `sieve.toml` turns them on.
-FREE_ENDPOINTS: dict[str, Modality] = {
-    "music/instrumental": "music",
-    "music/with-vocals": "music",
-    "speech-to-text": "speech-to-text",
-    "text-to-speech": "text-to-speech",
+
+class FreeSpec(NamedTuple):
+    """What one free-tier endpoint really publishes, measured 2026-09-08.
+
+    `scores` maps the API's key to the field name Sieve stores. `interval` names
+    the key holding the confidence interval, which belongs in the Elo row's own
+    `ci95` and is not a measurement of its own.
+    """
+
+    modality: Modality
+    scores: dict[str, str]
+    interval: str | None
+    unit: Unit
+
+
+#: The free tier, off unless `sieve.toml` turns it on. Every response is
+#: `{"tier": "free", "data": [...]}` and the interval key is `ci_95`, not
+#: `ci95`. There is no `rank`, no `appearances` and no `release_date`, and the
+#: music and speech-to-text rows carry no `slug` either.
+#:
+#: `text-to-speech` is deliberately absent. It is served by both this tier and
+#: the documented arena endpoint, and running both wrote two rows for one
+#: (model, source, field). The arena one wins: it publishes `rank`, it is the
+#: documented endpoint, and -- checked against the recording -- the free tier's
+#: only advantage is one extra model (96 against 95). One row of coverage is not
+#: worth two sources disagreeing about the same number.
+FREE_ENDPOINTS: dict[str, FreeSpec] = {
+    # Two leaderboards, one modality, and they are not the same contest:
+    # Suno V5.5 scores 1186 with vocals and 1170 without. Writing both as `elo`
+    # meant one silently lost to the (model, source, field, observed_at) key.
+    "music/instrumental": FreeSpec("music", {"elo": "elo:instrumental"}, "ci_95", "elo"),
+    "music/with-vocals": FreeSpec("music", {"elo": "elo:with_vocals"}, "ci_95", "elo"),
+    # A word error rate, not an index: the published leaderboard ranks lowest
+    # first and calls it "% of words transcribed incorrectly". See
+    # data/axes/speech-to-text/accuracy.yaml for why that axis is weighted the
+    # way it is.
+    "speech-to-text": FreeSpec(
+        "speech-to-text", {"aa_wer_index": "aa_wer_index"}, None, "fraction"
+    ),
+    # Three scores that are not interchangeable: bba_score is published for 34
+    # of 38 models, fdb_score for 26, tau_voice_score for 21. An axis over them
+    # needs the coverage rule, never a silent zero.
+    "speech-to-speech": FreeSpec(
+        "speech-to-speech",
+        {
+            "bba_score": "bba_score",
+            "fdb_score": "fdb_score",
+            "tau_voice_score": "tau_voice_score",
+        },
+        None,
+        "index_0_100",
+    ),
 }
+
 
 #: the per-unit price key each modality publishes, and its unit.
 PRICE_UNITS: dict[Modality, Unit] = {
@@ -91,17 +138,39 @@ def parse_ci95(raw: Any) -> float | None:
     return max(abs(float(found.group(1))), abs(float(found.group(2))))
 
 
+_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
 def model_id_of(entry: dict[str, Any]) -> str | None:
-    slug = str(entry.get("slug") or entry.get("id") or entry.get("name") or "").strip()
-    if not slug:
+    """`<creator>/<slug>` for one published row.
+
+    The music and speech-to-text free-tier rows carry **no `slug`**, and their
+    `id` is a UUID. Falling through to it produced a canonical id like
+    `suno/8a999846-4c1d-4ce7-a8b7-1310a7166fd7`, which matches nothing and never
+    will. So the order is slug, then name, and the UUID is refused outright
+    rather than used as a last resort.
+    """
+    for key in ("slug", "name", "id"):
+        candidate = str(entry.get(key) or "").strip()
+        if key == "name":
+            # the free tier writes names as "Cloud Speech-To-Text (Chirp), Google"
+            # -- the creator again, after a comma. Keeping it produces a slug that
+            # repeats the creator and matches nothing.
+            candidate = candidate.rsplit(",", 1)[0].strip() if "," in candidate else candidate
+        if candidate and not _UUID.match(candidate):
+            break
+    else:
         return None
+    if not candidate or _UUID.match(candidate):
+        return None
+
     creator = entry.get("model_creator") or entry.get("creator") or {}
     creator_slug = ""
     if isinstance(creator, dict):
         creator_slug = str(creator.get("slug") or creator.get("name") or "").strip()
     elif isinstance(creator, str):
         creator_slug = creator.strip()
-    return canonical_id(creator_slug, slug)
+    return canonical_id(creator_slug, candidate)
 
 
 class Category(NamedTuple):
@@ -202,11 +271,13 @@ class AAMediaSource:
                 continue
             self._pull_arena(http, headers, path, modality, at, result)
 
-        for path, modality in FREE_ENDPOINTS.items():
+        for path, spec in FREE_ENDPOINTS.items():
             option = f"free_{slugify(path)}"
             if not cfg.options.get(option, False):
                 continue
-            self._pull_free(http, headers, path, modality, at, result)
+            if spec.modality not in wanted:
+                continue
+            self._pull_free(http, headers, path, spec, at, result)
 
         result.rate_limit = http.rate_limit()
         return result
@@ -312,11 +383,17 @@ class AAMediaSource:
         http: HttpClient,
         headers: dict[str, str],
         path: str,
-        modality: Modality,
+        spec: FreeSpec,
         at: Any,
         result: PullResult,
     ) -> None:
-        """Probe an endpoint whose shape is not documented. Never fails the pull."""
+        """One free-tier endpoint, read to the shape it really returns.
+
+        The old version stored *every* numeric key it found, which put the
+        confidence interval in beside the Elo as if it were a second
+        measurement, and wrote two different leaderboards to one field name.
+        This reads only the keys the spec names.
+        """
         url = f"{FREE_BASE}/{path}/models/free"
         try:
             response = http.get(url, headers=headers)
@@ -334,29 +411,38 @@ class AAMediaSource:
             return
 
         stored = 0
+        unmatched = 0
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
             model_id = model_id_of(entry)
             if model_id is None:
+                unmatched += 1
                 continue
+
+            aliases = {str(entry.get("slug") or ""), str(entry.get("name") or "")} - {"", model_id}
             result.models.append(
                 ModelRef(
                     id=model_id,
-                    modality=modality,
+                    modality=spec.modality,
                     name=str(entry.get("name") or model_id),
                     creator=model_id.split("/", 1)[0],
+                    aliases=sorted(aliases),
                 )
             )
-            for field, value in entry.items():
-                if as_float(value) is None or field in ("id", "rank"):
-                    continue
+
+            # the interval describes the score; it is not a score
+            ci95 = parse_ci95(entry.get(spec.interval)) if spec.interval else None
+
+            for key, field in spec.scores.items():
                 observation = make_observation(
                     model_id=model_id,
-                    modality=modality,
+                    modality=spec.modality,
                     source=self.name,
-                    field=slugify(str(field)),
-                    value=value,
+                    field=field,
+                    value=entry.get(key),
+                    unit=spec.unit,
+                    ci95=ci95,
                     observed_at=at,
                     pulled_at=at,
                 )
@@ -364,7 +450,13 @@ class AAMediaSource:
                     result.observations.append(observation)
                     stored += 1
 
-        result.warnings.append(
-            f"aa_media: {path} free tier is undocumented; stored {stored} numeric field(s) "
-            "as-is -- check the field names before pointing an axis at them"
-        )
+        if unmatched:
+            result.warnings.append(
+                f"aa_media: {path} free tier: {unmatched} row(s) had no usable id "
+                "(no slug, no name, and a UUID is not an id) -- skipped rather than guessed"
+            )
+        if not stored:
+            result.warnings.append(
+                f"aa_media: {path} free tier published none of {sorted(spec.scores)} "
+                "-- the shape has changed; check it before trusting an axis on it"
+            )
