@@ -41,17 +41,74 @@ traffic has observed.
 | **Artificial Analysis** `api/v2/data/llms/models` | llm | free, key required, 1 000 req/day | REST, `x-api-key` | 644 models. Fields: `artificial_analysis_intelligence_index`, `artificial_analysis_coding_index`, `artificial_analysis_math_index`, `gpqa`, `hle`, `mmlu_pro`, `livecodebench`, `scicode`, `math_500`, `aime`, `aime_25`, `ifbench`, `lcr`, `terminalbench_hard`, `terminalbench_v2_1`, `tau2`, `tau_banking`; pricing (in/out/blended per 1M); `median_output_tokens_per_second`, `median_time_to_first_token_seconds`. The newer v4.2 components (AA-Briefcase, GDPval-AA, GDP.pdf, CritPt, AA-Omniscience, Coding Agent Index, Finance Index) are on the site but **not in the API yet** — the axis system must accept them the day they appear. |
 | **Artificial Analysis** `api/v2/data/media/text-to-image` (157), `image-editing` (74), `text-to-video` (81), `image-to-video` (75), `text-to-speech` (95) | media | free, same key | REST; `?include_categories=true` | Arena Elo with `ci95`, `appearances`, `rank`, `release_date`. Video and image carry per-category Elo (`style_category`, `subject_matter_category`, `format_category` — e.g. Physics, Moving camera, Text, Nature, Anime). |
 | **Artificial Analysis** `api/v2/media/{music/instrumental,music/with-vocals,speech-to-text,speech-to-speech,text-to-speech}/models/free` | media | free tier of the paid Data API | REST | Music Elo (+genres), STT word-error-rate index, TTS pricing per 1M characters. Verify the free-tier shape on first pull; treat as optional sources. |
-| **OpenRouter** `api/v1/models` | llm | free, **no key** | REST | ~600 models: prices, context length, `architecture.input_modalities` / `output_modalities`, `supported_parameters` (tools, reasoning, structured outputs), top provider limits. Also republishes a subset of AA scores. The best key-free capability and price source. |
+| **OpenRouter** `api/v1/models` | llm | free, **no key** | REST | ~600 models: prices, context length, `architecture.input_modalities` / `output_modalities`, `supported_parameters` (tools, reasoning, structured outputs), top provider limits. Also republishes a subset of AA scores. The best key-free capability and price source. Measured 2026-09-08: 426 models, of which only 11 output images and 4 output audio, and **none output video** — so it cannot price the media field. |
+| **fal** `fal.ai/api/models?limit=&page=` | media | free, **no key** | REST, paginated | Measured 2026-09-08: **1,493 models**, categories `text-to-image`, `image-to-image`, `text-to-video`, `image-to-video`, `video-to-video`, `text-to-audio`, `text-to-speech`, `speech-to-text`, `image-to-3d`. Carries **price**, `durationEstimate`, `machineType`, `licenseType`, `modelFamily`, `sandboxFree*` and a thumbnail. Publishes **no quality score at all** — see §2.1. |
 | **Arena** (ex-LMArena) | llm, image, video, webdev, search, agent | free (HF dataset `lmarena-ai/leaderboard-dataset`, CC) | download parquet/CSV | Human-preference Elo per arena. No REST API; the dataset is updated regularly. |
 | **LiveBench** | llm | free (HF datasets `livebench/*`, GitHub) | download | Contamination-free monthly questions; per-category scores (coding, math, reasoning, language, data analysis, IF). |
 | **Epoch AI benchmarking hub** | llm | free, CC-BY (CSV; `pip install epochai`) | download | Independent runs of GPQA Diamond, FrontierMath, SWE-bench Verified and others, with run metadata. |
 | **manual** | any | — | CSV/JSON dropped in `data/observations/` | For private benchmarks or a source with no connector yet. |
 
 Sources without a free machine-readable feed (Vellum, Scale SEAL, most vendor
-pages) are out of scope; the `manual` source covers them.
+pages) are out of scope; the `manual` source covers them. Replicate was
+measured and rejected: `api.replicate.com/v1/models` answers 401 without a
+paid key, and behind it there is no quality measurement — only run counts.
 
 Phase 1 ships AA (llm + media) and OpenRouter plus `manual`. Arena, LiveBench
 and Epoch are phase 2 connectors behind the same interface.
+
+### 2.1 Two rules this project exists to honour
+
+Both were measured on 2026-09-08 against the live APIs. Neither is optional,
+and neither may be quietly dropped from a later phase.
+
+**A model generation marketplace never judges quality.** fal, Replicate and
+the rest publish what a model costs and what knobs it takes; they run no
+votes and no evaluations. Artificial Analysis and the public arenas are the
+only sources that measure *good*. So the media modalities are assembled from
+two sides and must stay that way:
+
+```
+   AA           quality  (elo, per-category elo, ci95, appearances)
+   fal          price, run duration, hardware, licence, parameters
+                              ↓  joined on the model, by name + alias
+   a media model that can be ranked on value, not just on taste
+```
+
+A media model with a score and no price ranks on quality alone and says so.
+A media model with a price and no score is listed and never ranked. Neither
+is invented. fal states its prices in English prose (`pricingInfoOverride`,
+e.g. "Your request will cost **$0.08** per image"), so the parser must be
+conservative: parse the plain per-image, per-second and per-1M-token forms,
+and leave everything it cannot read blank rather than guessing.
+
+**An effort mode is a different model.** AA publishes one row per reasoning
+effort, and 230 of its 644 rows are effort modes. Measured examples:
+
+| model | mode | intelligence | $ / 1M in |
+|---|---|---|---|
+| GPT-5.6 Sol | max | 51.3 | 4.00 |
+| GPT-5.6 Sol | xhigh | 49.8 | 4.00 |
+| GPT-5.6 Sol | high | 48.3 | 4.00 |
+| GPT-5.6 Sol | medium | 46.0 | 4.00 |
+| GPT-5.6 Sol | low | 40.8 | 4.00 |
+| GPT-5.6 Sol | non-reasoning | 32.9 | 4.00 |
+| Claude Opus 5 | max effort | 54.1 | 5.00 |
+| Claude Opus 5 | low effort | 43.8 | 5.00 |
+| Gemini 3.8 Flash | high / medium / low | 47.1 / 46.8 / 41.0 | 0.75 |
+
+The rate per token is identical across every mode of a model; what changes is
+the score and the number of tokens burned to reach it. So:
+
+- effort modes are **separate catalog entries**, never merged onto a base
+  model. Collapsing them assigns max effort's score to a low effort call,
+  which is the single most expensive mistake this tool can make;
+- a gateway that serves `-high`, `-medium` and `-low` as separate ids must
+  match each to **its own** AA row, not to the base name;
+- cost per task for a mode uses that mode's own output-token count where the
+  source publishes one, because the price per token cannot tell the modes
+  apart and the token count is the only thing that can;
+- a profile may then ask for the cheapest mode that clears a bar, and pick
+  medium over max by itself.
 
 ## 3. Axes — the vocabulary between sources and profiles
 
@@ -316,13 +373,15 @@ targets `file`, `http`; API + tokens + SSE; MCP server; CLI; web screens
 Field, Profiles, Rankings, Chains, Sources; tests, CI, docs skeleton, deploy
 units.
 
-**Phase 2 — the loop closes** (brief: `briefs/PHASE-2.md`) — real recorded
-fixtures replacing the invented ones; the AA music, speech-to-text and
-speech-to-speech free endpoints, against their measured shapes; telemetry
-ingest, health and the Pulse screen; targets `webhook`, `ninerouter`,
-`litellm`, and a Chains diff that reads each target's `current()`; a scheduled
-pull-evaluate-decide-apply run with `auto_apply`; the unfinished half of the
-web.
+**Phase 2 — the loop closes** (brief: `briefs/PHASE-2.md`) — **the two rules
+of §2.1 first**: effort modes as separate catalog entries priced on their own
+token counts, and the `fal` source joined to AA so media models rank on value.
+Then: real recorded fixtures replacing the invented ones; the AA music,
+speech-to-text and speech-to-speech free endpoints, against their measured
+shapes; telemetry ingest, health and the Pulse screen; targets `webhook`,
+`ninerouter`, `litellm`, and a Chains diff that reads each target's
+`current()`; a scheduled pull-evaluate-decide-apply run with `auto_apply`; the
+unfinished half of the web.
 
 **Phase 3** — sources `arena`, `livebench`, `epoch`; motion polish; docs site;
 `pip install sieve` + Docker image; v0.1.0 release.

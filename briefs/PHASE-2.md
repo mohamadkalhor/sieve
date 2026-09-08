@@ -44,6 +44,97 @@ Two things that run showed, both for part 1:
 
 ---
 
+## Part 0 · The two rules of PLAN §2.1 — do these first
+
+Read `PLAN.md` §2.1 in full before writing a line. Both rules were measured
+against the live APIs on 2026-09-08. They come first because everything
+downstream inherits them, and because the first is a live correctness bug.
+
+### 0a · An effort mode is a different model
+
+**The bug.** AA publishes one row per reasoning effort — 230 of its 644 rows.
+`GPT-5.6 Sol` alone ships six: max 51.3, xhigh 49.8, high 48.3, medium 46.0,
+low 40.8, non-reasoning 32.9 — every one of them at the same $4.00 / 1M in.
+`Claude Opus 5` runs 54.1 at max effort and 43.8 at low, same price. A gateway
+that serves `gemini-3.8-flash-high`, `-medium` and `-low` as three ids is today
+matched onto one AA row, so a low-effort call is credited with a high-effort
+score. That is the most expensive error this tool can make, and it is live.
+
+Do:
+
+- keep every effort mode as its **own catalog entry**. Never merge a mode onto
+  a base model, and never let an alias collapse two modes into one id;
+- the mode belongs in the id and in a field of its own, so a profile can ask
+  about it. AA's own slugs are the naming to follow: `<base>`, `<base>-low`,
+  `<base>-medium`, `<base>-high`, `<base>-xhigh`, `<base>-non-reasoning`,
+  where the bare slug is the model's top mode. Its `name` carries the mode in
+  brackets, e.g. `GPT-5.6 Sol (medium)`, `Claude Opus 5 (Adaptive Reasoning,
+  Max Effort)` — parse the bracket, do not guess from the slug alone;
+- match an inventory id to **its own** mode row: `ag/gemini-3.8-flash-high` to
+  `gemini-3-8-flash` (AA's bare slug is the high mode here — confirm per
+  family, do not assume), `-low` to `gemini-3-8-flash-low`. Where a gateway
+  serves a base id with no mode, match the base row and say in the record
+  which mode that is;
+- cost per task must use **that mode's own output-token count** where a source
+  publishes one. The price per token is identical across modes, so the rate can
+  never separate them; only the tokens burned can. Where no token count is
+  published, mark the mode's cost `unknown` rather than copying the base one;
+- a profile gains `prefer_effort` (`cheapest_clearing` | `best` | a named
+  mode). `cheapest_clearing` picks the lowest mode of a family that still meets
+  the profile's floors — the behaviour this whole tool was asked for.
+
+**Done when:** `sieve score --profile coder` shows several modes of one family
+as separate rows with their own scores; a gateway's `-high` and `-low` ids
+resolve to different AA rows, proven by name in the output; a profile set to
+`cheapest_clearing` picks a lower mode than `best` on the same data; and a
+test locks the Sol and Opus numbers above so a future merge cannot undo it.
+
+### 0b · The `fal` source: price for the media field
+
+**Why.** AA scores 482 media models and prices **none** of them. OpenRouter
+carries only 11 image and 4 audio models and no video at all. fal publishes
+1,493 media models with prices and no quality score whatsoever. Neither side
+is enough; joined, they rank.
+
+- `sieve/sources/fal.py`, `needs_key = False`. `https://fal.ai/api/models`
+  with `limit` and `page`; the envelope is `{items, page, size, pages, total}`.
+  Measured: 1,493 models over 8 pages at `limit=200`. Be a good citizen —
+  page politely, and let `HttpClient` handle retries.
+- Useful fields: `id` (`fal-ai/nano-banana-2/edit`), `title`, `category`
+  (`text-to-image`, `image-to-image`, `text-to-video`, `image-to-video`,
+  `video-to-video`, `text-to-audio`, `text-to-speech`, `speech-to-text`,
+  `image-to-3d`), `modelFamily`, `pricingInfoOverride`, `durationEstimate`,
+  `machineType`, `licenseType`, `deprecated`, `removed`, `sandboxFreeDaily`.
+  Skip anything `deprecated` or `removed`.
+- **Prices are English prose.** Examples measured: `"Your request will cost
+  **$0.08** per image."`, `"Your request will cost **$0.15** per image. ... 4K
+  outputs will be charged at ..."`, `"Text tokens (per 1M): **$5.00** input,
+  **$1.25** cached, **$10.00** output. Image tokens (per 1M): **$8.00** ..."`.
+  Parse only the forms you can prove: per image, per second, per 1M tokens.
+  Everything else is **left blank**, counted, and reported as
+  `fal: N of M prices unparsed`. A wrong price is worse than no price. 126 of
+  a 200-model sample carried a price string at all, so most of the catalogue
+  has none and that is normal.
+- `category` maps to our modality; `image-to-image` is our `image-editing`.
+  `video-to-video` and `image-to-3d` have no modality yet — store them with
+  the modality left out rather than forcing them into a wrong one.
+- Matching to AA is by normalised name through the existing alias machinery.
+  fal's ids are provider paths, not model names, so `fal-ai/nano-banana-2/edit`
+  must reach AA's `nano-banana-2` for image editing. Write the aliases you
+  need into `data/aliases.yaml`; report how many of AA's 482 media models got
+  a price.
+- The media `cost` axis and the `value` view start working the moment a price
+  exists. A media model with a score and no price ranks on quality and says
+  so; one with a price and no score is listed and never ranked.
+
+**Done when:** `sieve pull fal` stores over a thousand models with parsed
+prices and an honest unparsed count; a real `sieve score --profile
+image_general` ranks on quality *and* cost with prices attributed to fal; and
+the Field chart for a media modality has points on it, which it does not
+today.
+
+---
+
 ## Part 1 · Real data replaces the invented fixtures
 
 `tests/fixtures/recorded/` now holds **real, trimmed API responses**, recorded
@@ -287,6 +378,10 @@ Same format as phase 1, to the card and to `relay say --as negar-cl`:
 - anything unfinished, verbatim, per part;
 - decisions you took where this brief left a choice, and why;
 - any `CONTRACTS.md` change as a diff.
+
+Part 0 is reported first and separately, because it is the reason this phase
+exists. If quota ends the session, Part 0 alone, finished and pushed, is a
+good outcome; Parts 1–7 with Part 0 half-done is not.
 
 ## Rules that do not bend
 
