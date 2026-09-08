@@ -555,6 +555,78 @@ and appeared on the `held (no auto_apply)` line.
   and `sieve run` does not prune. A store that stops receiving telemetry keeps
   its last 30 days for ever.
 
+## Part 6 · Finish the web
+
+Landed, all six items, and two of them were answered by measuring rather than
+by building.
+
+1. **The editor edits constraints, shape and policy**, not only weights.
+   `PATCH /profiles/{name}/policy` existed and no screen called it; the two
+   routes for the other blocks did not exist at all, so
+   `PATCH /profiles/{name}/constraints` and `.../shape` are new. Constraints
+   are **replaced**, not merged, because the interesting edit is *removing* one
+   and a merge cannot say that -- `{"tools": false}` reads as "require the
+   absence of tools". Each block saves on its own: they are three decisions and
+   one Save button would make them look like one. Turning on `auto_apply` says
+   in words what it will do unattended.
+2. **New profile, cloned.** `POST /v1/profiles` with `{name, from}`. Starting
+   empty means assembling weights that sum to 1 over axes for a modality you
+   have not picked yet; starting from the seat next to it is how anyone
+   actually makes one. It refuses a duplicate name with 409, because chains are
+   keyed by name and phase 1 already shipped that collision once.
+3. **The Chains screen** shows the `current()` diff from part 4, one block per
+   target, and the apply confirmation now **names the targets it will write
+   to**. A target that cannot be read back says so rather than showing an empty
+   diff.
+4. **Lenis: decided against, in writing.** `briefs/C.md` no longer asks for it
+   and carries the reason. It replaces the browser's scrolling on a dense data
+   tool -- a 644-row scatter, tables, a diff -- desynchronising `scrollIntoView`
+   and moving Page Up/Down away from where the platform puts them.
+   `animate:flip` on the ranking stays: it shows which row moved where, which is
+   information.
+5. **The scatter was measured, not rebuilt.** Phase 1's handoff said it redrew
+   every point on hover. It does not, and `e2e/field-hover.spec.ts` proves it by
+   counting `arc()` calls: a full repaint draws 59, and **40 hovers draw 0**.
+   Per hover: median 0.10 ms, p95 0.90 ms. The zero is the real result -- it
+   holds at any point count, because the scene effect does not depend on the
+   hover at all.
+6. **Lighthouse ran.** Desktop 100 performance / 100 accessibility. Mobile was
+   73-76 with an LCP of 7.0 s, of which 6.5 s was *render delay* on a paragraph
+   of static text. Two causes, both fixed:
+   - the shells were not prerendered, so `index.html` was empty and nothing --
+     not even a heading -- painted until the bundle hydrated. The static routes
+     are prerendered now (`ssr` at build time only; the data still comes from
+     `/v1` in the browser), and FastAPI serves `<path>.html` when it exists,
+     which it previously ignored in favour of the SPA shell;
+   - the Google Fonts stylesheet was render-blocking, on someone else's domain.
+     It is loaded non-blocking with an onload swap, so a network that cannot
+     reach Google shows the page in a fallback stack instead of nothing.
+
+   Six mobile runs after: **64, 73, 94, 94, 95, 97**, median 94, accessibility
+   100 every time. The spread is real and worth stating: when this sandbox's
+   DNS for `fonts.googleapis.com` fails fast, LCP is 2.1-2.5 s and the score is
+   94-97; when it stalls, LCP is ~6.8 s and the score drops to the 60s-70s.
+
+### Left open
+
+- **The webfont is still a third-party request.** Non-blocking is not the same
+  as absent: a machine that cannot reach Google still pays a connection attempt
+  and renders in the fallback stack. Self-hosting the three families would make
+  the mobile score flat instead of bimodal. That changes what the app looks
+  like on a bad network, so it is a design call rather than mine.
+- **The two low Lighthouse runs are not explained to the millisecond.** They
+  correlate exactly with a stalled font connection, and nothing else in the
+  trace moves, but this machine is offline and a real deployment would not
+  reproduce the stall.
+- **Parameterised routes are not prerendered** -- `/profiles/[name]`,
+  `/rankings/[profile]`, `/chains/[profile]` -- because there is no build-time
+  list of names. They land on the SPA shell as before. Prerendering them would
+  mean enumerating profiles at build time, which couples the build to a store.
+- **The clone form is on the Profiles list, not in the editor.** Cloning *this*
+  profile from the profile you are looking at would be the more obvious gesture.
+- **`min_axis` is not editable** in the constraints block, only shown. It is a
+  map of axis to floor rather than a flag, and it needs a different control.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

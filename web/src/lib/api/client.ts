@@ -211,6 +211,39 @@ export const api = {
       body: weights
     }),
 
+  /** Merged into the existing policy: send only what changed. */
+  setPolicy: (name: string, policy: Record<string, unknown>, o?: RequestOptions) =>
+    request<Profile>(`/v1/profiles/${encodeURIComponent(name)}/policy`, {
+      ...o,
+      method: 'PATCH',
+      body: policy
+    }),
+
+  /**
+   * Replaces the whole `require` block, because the interesting edit is
+   * *removing* a constraint and a merge cannot say that.
+   */
+  setConstraints: (name: string, require: Record<string, unknown>, o?: RequestOptions) =>
+    request<Profile>(`/v1/profiles/${encodeURIComponent(name)}/constraints`, {
+      ...o,
+      method: 'PATCH',
+      body: require
+    }),
+
+  /** Merged. Changing the shape re-prices every model on the seat. */
+  setShape: (name: string, shape: Record<string, unknown>, o?: RequestOptions) =>
+    request<Profile>(`/v1/profiles/${encodeURIComponent(name)}/shape`, {
+      ...o,
+      method: 'PATCH',
+      body: shape
+    }),
+
+  /** A new profile, cloned from one that already works. */
+  createProfile: (
+    body: { name: string; from: string; purpose?: string },
+    o?: RequestOptions
+  ) => request<Profile>('/v1/profiles', { ...o, method: 'POST', body }),
+
   apply: (profiles: string[], o?: RequestOptions) =>
     request<TargetResult[]>('/v1/apply', { ...o, method: 'POST', body: { profiles } }),
 

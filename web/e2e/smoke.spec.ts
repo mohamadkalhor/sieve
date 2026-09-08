@@ -41,7 +41,9 @@ test('saving without a token shows the 401 rather than pretending', async ({ pag
   await cost.fill('0.5');
   await cost.dispatchEvent('input');
 
-  await page.getByRole('button', { name: 'Save' }).click();
+  // named exactly: the editor now has four save buttons -- weights,
+  // constraints, shape and policy -- because they are four decisions
+  await page.getByRole('button', { name: 'Save weights' }).click();
   await expect(page.locator('.error')).toContainText(/token/i);
 });
 

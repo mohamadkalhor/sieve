@@ -9,7 +9,7 @@ PLAN §8 first. The web talks only to `/v1`; types come from
 ## Scaffold
 
 SvelteKit (Svelte 5, runes) + TypeScript strict + Tailwind v4 + D3 (scale,
-axis, shape only) + Lenis + Motion. `pnpm`. Adapter-static with SPA
+axis, shape only). `pnpm`. Adapter-static with SPA
 fallback so FastAPI can serve `web/build`. `PUBLIC_SIEVE_API` env for the
 base URL; `lib/api/client.ts` typed fetch with the error envelope of
 CONTRACTS §6 and an SSE hook for `/v1/events`.
@@ -25,7 +25,28 @@ body background explicitly.
 Layout: left rail 168 px (logo, Field · Profiles · Rankings · Chains ·
 Sources · Pulse, footer with last pull time and next run from
 `/v1/sources`), main pane; page transitions crossfade the main pane only.
-Lenis for scroll; every motion behind `prefers-reduced-motion`.
+**Native scroll** -- see the note below; every motion behind
+`prefers-reduced-motion`.
+
+### Scroll: native, decided 2026-09-08
+
+This brief asked for Lenis. It is not used, and that is a decision rather than
+an omission.
+
+Lenis replaces the browser's scrolling with its own animation. On a dense data
+tool -- a 644-row scatter, ranking tables, a diff -- that costs more than it
+buys: it desynchronises `scrollIntoView`, makes Page Up/Down and Home/End land
+somewhere other than where the platform would put them, and moves the scrollbar
+away from the content it is reporting on. People who rely on scroll position
+being exactly predictable are the ones it hurts, and the whole app is already
+built to respect `prefers-reduced-motion`.
+
+Motion is not banned here. `animate:flip` on the ranking list is kept, because
+it shows *which row moved where* when a weight changes -- that is information,
+not decoration, and it is behind the reduced-motion check like everything else.
+
+If smooth scroll is ever wanted, it belongs behind the same check and with
+keyboard paging tested first.
 
 ## Field (`/field?modality=llm`)
 

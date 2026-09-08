@@ -8,6 +8,33 @@
   let error = $state<ApiError | null>(null);
   let loading = $state(true);
 
+  // New profile, cloned. Starting from nothing means assembling weights that
+  // sum to 1 over axes that exist for a modality you have not chosen yet;
+  // starting from the seat next to it and changing two numbers is how anybody
+  // actually makes one.
+  let cloning = $state(false);
+  let cloneFrom = $state('');
+  let cloneName = $state('');
+  let clonePurpose = $state('');
+  let token = $state('');
+  let busy = $state(false);
+
+  async function clone(event: SubmitEvent) {
+    event.preventDefault();
+    busy = true;
+    const result = await api.createProfile(
+      { name: cloneName.trim(), from: cloneFrom, purpose: clonePurpose.trim() || undefined },
+      { token: token || undefined }
+    );
+    busy = false;
+    if (!result.ok) {
+      error = result.error;
+      return;
+    }
+    error = null;
+    window.location.href = `/profiles/${encodeURIComponent(result.value.name)}`;
+  }
+
   $effect(() => {
     (async () => {
       const found = await api.profiles();
@@ -38,10 +65,53 @@
 
 <svelte:head><title>Profiles · Sieve</title></svelte:head>
 
-<h1>Profiles</h1>
-<p class="lede">
-  One per role your agents play. Open one to move its weights and watch the list re-rank.
-</p>
+<header class="top">
+  <div>
+    <h1>Profiles</h1>
+    <p class="lede">
+      One per role your agents play. Open one to move its weights and watch the list re-rank.
+    </p>
+  </div>
+  <button type="button" class="new" onclick={() => (cloning = !cloning)} aria-expanded={cloning}>
+    {cloning ? 'Cancel' : 'New profile'}
+  </button>
+</header>
+
+{#if cloning}
+  <form class="clone" onsubmit={clone}>
+    <p class="hint">
+      Cloned from an existing seat: weights, constraints, shape and policy come across, and you
+      change what differs.
+    </p>
+    <div class="fields">
+      <label>
+        <span>Clone from</span>
+        <select bind:value={cloneFrom} required>
+          <option value="" disabled>choose a profile</option>
+          {#each profiles as p (p.name)}
+            <option value={p.name}>{p.name} ({p.modality})</option>
+          {/each}
+        </select>
+      </label>
+      <label>
+        <span>New name</span>
+        <input bind:value={cloneName} placeholder="coder_cheap" required pattern="[A-Za-z0-9_\-]+" />
+      </label>
+      <label>
+        <span>Purpose</span>
+        <input bind:value={clonePurpose} placeholder="what this seat is for" />
+      </label>
+      <label>
+        <span>Token</span>
+        <input type="password" bind:value={token} placeholder="profiles:write" autocomplete="off" />
+      </label>
+    </div>
+    <button type="submit" class="primary" disabled={busy || !cloneFrom || !cloneName.trim()}>
+      {busy ? 'Creating…' : 'Create'}
+    </button>
+    {#if error}<p class="error">{error.message}</p>{/if}
+  </form>
+{/if}
 
 {#if loading}
   <p class="muted">Loading…</p>
@@ -75,6 +145,83 @@
 {/each}
 
 <style>
+  .top {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .new {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel2);
+    color: inherit;
+    font: inherit;
+    font-size: 0.82rem;
+    padding: 0.35rem 0.8rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .clone {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.9rem 1rem 1rem;
+    margin: 0.5rem 0 1.2rem;
+  }
+  .clone .hint {
+    margin: 0 0 0.8rem;
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    max-width: 60ch;
+  }
+  .fields {
+    display: grid;
+    gap: 0.7rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+  .fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.78rem;
+    min-width: 0;
+  }
+  .fields span {
+    color: var(--muted);
+  }
+  .fields input,
+  .fields select {
+    padding: 0.32rem 0.45rem;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--bg);
+    color: inherit;
+    font: inherit;
+    font-size: 0.82rem;
+    min-width: 0;
+  }
+  .clone button.primary {
+    margin-top: 0.9rem;
+    padding: 0.35rem 1rem;
+    border: 1px solid var(--ink);
+    border-radius: 6px;
+    background: var(--ink);
+    color: var(--bg);
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .clone button.primary:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .error {
+    margin: 0.6rem 0 0;
+    color: #c53030;
+    font-size: 0.8rem;
+  }
   h1 {
     font-size: 1.6rem;
     margin: 0;

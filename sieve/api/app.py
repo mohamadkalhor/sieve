@@ -102,9 +102,20 @@ def create_app(config: Config | None = None) -> FastAPI:
         # a 404 from StaticFiles.
         @app.get("/{path:path}", include_in_schema=False)
         async def spa(path: str) -> Response:
+            root = web.resolve()
             candidate = (web / path).resolve()
-            if path and candidate.is_file() and candidate.is_relative_to(web.resolve()):
+            if path and candidate.is_file() and candidate.is_relative_to(root):
                 return FileResponse(candidate)
+
+            # A prerendered route is `<path>.html` on disk. Without this the
+            # request fell through to the empty SPA shell and the build-time
+            # HTML -- the whole point of prerendering -- was never served, so
+            # nothing painted until the JS bundle had run.
+            if path:
+                page = (web / f"{path.rstrip('/')}.html").resolve()
+                if page.is_file() and page.is_relative_to(root):
+                    return FileResponse(page)
+
             if index.is_file():
                 return FileResponse(index)
             return JSONResponse(

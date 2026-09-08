@@ -13,10 +13,9 @@ import { expect, test, type Page } from '@playwright/test';
  * TWO ROW COUNTS, AND WHY
  *
  * The shipped fixture store used to rank six models, so a 60-row case had to
- * be built. It ranks 59 now -- deriving cost for every priced model, not only
- * the benchmarked ones, put the whole OpenRouter catalogue in the pool -- but
- * that count is a property of the fixtures and will move again, so both cases
- * stay:
+ * be built. It has ranked 59, then 108, as each part put more models in the
+ * pool -- cost for every priced model, then fal's media prices. That count is a
+ * property of the fixtures and will keep moving, so both cases stay:
  *
  *   1. `shipped data` measures the app exactly as it ships, at whatever row
  *      count the fixtures really yield. That count is asserted, not assumed,
@@ -252,9 +251,11 @@ test('one input re-ranks well inside a frame, on the data that ships', async ({ 
   const timings = await measure(page, SAMPLES);
   const { median, p95 } = report('shipped fixture data', timings);
 
-  // the fixtures really do yield this few rows; see the note at the top
+  // How many rows the fixtures yield is a moving number -- 6 in phase 1, 59
+  // after the recordings landed, 108 once fal supplied media prices -- so it is
+  // printed rather than bounded. Pinning it here only ever meant a passing test
+  // failing the day the data got better.
   expect(timings.rows).toBeGreaterThan(0);
-  expect(timings.rows).toBeLessThan(60);
   // every input actually re-rendered the list, or the timings mean nothing
   expect(timings.rendered).toBe(SAMPLES);
   // and the point of the exercise is that rows move, not just that text changes

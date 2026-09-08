@@ -7,6 +7,7 @@ web can be built against it before the code behind it exists.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
@@ -14,9 +15,10 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
-from sieve.api.auth import Token, actor_for, require, require_read
+from sieve.api.auth import Token, actor_for, require_read
+from sieve.api.auth import require as require_scope
 from sieve.api.sse import events
 from sieve.config import Config
 from sieve.contracts import (
@@ -29,6 +31,7 @@ from sieve.contracts import (
     Profile,
     Ranking,
     Reachable,
+    Shape,
     TargetDiff,
     TargetResult,
     TelemetryEvent,
@@ -75,6 +78,16 @@ def error(status: int, code: str, message: str, **extra: Any) -> JSONResponse:
     return JSONResponse(
         status_code=status, content={"error": {"code": code, "message": message}, **extra}
     )
+
+
+#: The constraints `require:` understands. An unknown key would silently never
+#: match, which reads to a person as "the constraint is not working".
+KNOWN_CONSTRAINTS = frozenset(
+    {"tools", "reasoning", "structured_output", "context_min", "min_axis", "input_modalities"}
+)
+
+#: A profile name becomes a file name and a chain key, so it stays boring.
+_PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$", re.I)
 
 
 def not_built(shape: type[BaseModel], owner: str, module: str) -> JSONResponse:
@@ -248,7 +261,7 @@ def put_profile(
     request: Request,
     name: str,
     profile: Profile,
-    token: Annotated[Token, Depends(require("profiles:write"))],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
     if profile.name != name:
@@ -275,7 +288,7 @@ def patch_weights(
     request: Request,
     name: str,
     weights: Annotated[dict[str, float], Body()],
-    token: Annotated[Token, Depends(require("profiles:write"))],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
     try:
@@ -300,7 +313,7 @@ def patch_policy(
     request: Request,
     name: str,
     policy: Annotated[dict[str, Any], Body()],
-    token: Annotated[Token, Depends(require("profiles:write"))],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
     try:
@@ -320,6 +333,151 @@ def patch_policy(
         profile.policy.model_dump(mode="json"),
         merged.model_dump(mode="json"),
         f"policy set by {token.name}",
+    )
+    return updated
+
+
+@router.patch("/profiles/{name}/constraints")
+def patch_constraints(
+    request: Request,
+    name: str,
+    require: Annotated[dict[str, Any], Body()],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    """Replace the `require` block: tools, reasoning, context_min, min_axis.
+
+    Replaced rather than merged, because the interesting edit is *removing* a
+    constraint. A merge cannot express "stop requiring tools" -- you would have
+    to send `{"tools": false}`, which reads as "require the absence of tools".
+    """
+    cfg, store = config_of(request), store_of(request)
+    try:
+        profile = load_profile(cfg, name)
+    except OwnerMissingError:
+        return not_built(Profile, "B", "sieve.profiles.load")
+    if profile is None:
+        return error(404, "not_found", f"no profile {name!r}")
+
+    unknown = set(require) - KNOWN_CONSTRAINTS
+    if unknown:
+        return error(
+            400,
+            "bad_constraints",
+            f"unknown constraint(s): {', '.join(sorted(unknown))}. "
+            f"Known: {', '.join(sorted(KNOWN_CONSTRAINTS))}",
+        )
+
+    updated = profile.model_copy(update={"require": require})
+    _save(cfg, updated)
+    log_decision(
+        store,
+        name,
+        "policy",
+        token.name,
+        profile.require,
+        require,
+        f"constraints set by {token.name}",
+    )
+    return updated
+
+
+@router.patch("/profiles/{name}/shape")
+def patch_shape(
+    request: Request,
+    name: str,
+    shape: Annotated[dict[str, Any], Body()],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    """The shape a task has on this seat -- what cost is computed against.
+
+    Changing it re-prices every model, so it is a decision row like any other:
+    a seat that quietly started costing tasks at 200k input instead of 2k would
+    otherwise look like the models had changed.
+    """
+    cfg, store = config_of(request), store_of(request)
+    try:
+        profile = load_profile(cfg, name)
+    except OwnerMissingError:
+        return not_built(Profile, "B", "sieve.profiles.load")
+    if profile is None:
+        return error(404, "not_found", f"no profile {name!r}")
+
+    try:
+        merged = Shape.model_validate({**profile.shape.model_dump(exclude_none=True), **shape})
+    except ValidationError as exc:
+        return error(400, "bad_shape", str(exc.errors()[0].get("msg", exc)))
+
+    updated = profile.model_copy(update={"shape": merged})
+    _save(cfg, updated)
+    log_decision(
+        store,
+        name,
+        "policy",
+        token.name,
+        profile.shape.model_dump(mode="json"),
+        merged.model_dump(mode="json"),
+        f"shape set by {token.name}",
+    )
+    return updated
+
+
+@router.post("/profiles")
+def post_profile(
+    request: Request,
+    body: Annotated[dict[str, Any], Body()],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    """A new profile, cloned from one that already works.
+
+    Cloning rather than starting empty is the whole point: a profile is a set of
+    weights that sum to 1 over axes that exist for its modality, plus
+    constraints, a shape and a policy. Assembling that from nothing is an
+    exercise in reading error messages; starting from the seat next to it and
+    changing two numbers is how anybody actually makes one.
+    """
+    cfg, store = config_of(request), store_of(request)
+    name = str(body.get("name") or "").strip()
+    source = str(body.get("from") or "").strip()
+
+    if not name:
+        return error(400, "bad_request", "a new profile needs a `name`")
+    if not _PROFILE_NAME.match(name):
+        return error(
+            400,
+            "bad_request",
+            f"{name!r} is not a usable profile name: letters, digits, _ and - only",
+        )
+    if not source:
+        return error(400, "bad_request", "a new profile needs `from`: the profile to clone")
+
+    try:
+        existing = {p.name for p in _profiles_module().load_profiles(cfg.profiles_dir)}
+        original = load_profile(cfg, source)
+    except OwnerMissingError:
+        return not_built(Profile, "B", "sieve.profiles.load")
+
+    if name in existing:
+        # Chains are keyed by name, so two profiles sharing one would overwrite
+        # each other's chain row -- the collision phase 1 shipped and had to fix.
+        return error(409, "exists", f"a profile named {name!r} already exists")
+    if original is None:
+        return error(404, "not_found", f"no profile {source!r} to clone")
+
+    updated = original.model_copy(
+        update={
+            "name": name,
+            "purpose": str(body.get("purpose") or f"cloned from {source}"),
+        }
+    )
+    _save(cfg, updated)
+    log_decision(
+        store,
+        name,
+        "policy",
+        token.name,
+        None,
+        updated.model_dump(mode="json"),
+        f"created by {token.name}, cloned from {source}",
     )
     return updated
 
@@ -461,7 +619,7 @@ def recommend(
 def post_apply(
     request: Request,
     body: Annotated[dict[str, Any], Body()],
-    token: Annotated[Token, Depends(require("apply"))],
+    token: Annotated[Token, Depends(require_scope("apply"))],
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
     wanted = body.get("profiles") or []
@@ -485,7 +643,7 @@ def post_apply(
 def post_telemetry(
     request: Request,
     body: list[TelemetryEvent],
-    token: Annotated[Token, Depends(require("telemetry"))],
+    token: Annotated[Token, Depends(require_scope("telemetry"))],
 ) -> dict[str, int]:
     """Accept a batch of call outcomes. The caller is a gateway, not a person.
 
@@ -658,7 +816,7 @@ def get_sources(request: Request, _: Read = None) -> list[dict[str, Any]]:
 def post_pull(
     request: Request,
     name: str,
-    token: Annotated[Token, Depends(require("apply"))],
+    token: Annotated[Token, Depends(require_scope("apply"))],
 ) -> Any:
     from sieve import plugins
     from sieve.http import client as http_client
@@ -695,7 +853,7 @@ def get_inventory(
 def put_alias(
     request: Request,
     body: Annotated[dict[str, str], Body()],
-    token: Annotated[Token, Depends(require("profiles:write"))],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     store = store_of(request)
     alias, model_id = body.get("alias"), body.get("model_id")

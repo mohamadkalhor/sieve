@@ -7,7 +7,7 @@
   import { page } from '$app/stores';
   import { api, type ApiError } from '$lib/api/client';
   import type { Decision, Profile, Ranking } from '$lib/types';
-  import Chip from '$lib/components/Chip.svelte';
+  import ProfileSettings from '$lib/components/ProfileSettings.svelte';
   import ConfDots from '$lib/components/ConfDots.svelte';
   import Empty from '$lib/components/Empty.svelte';
   import WeightSlider from '$lib/components/WeightSlider.svelte';
@@ -168,30 +168,25 @@
         sum {Object.values(weights).reduce((a, b) => a + b, 0).toFixed(3)}
       </p>
 
-      <h2>Constraints</h2>
-      <div class="chips">
-        {#each Object.entries(profile.require ?? {}) as [key, value] (key)}
-          <Chip label={key} value={typeof value === 'object' ? JSON.stringify(value) : String(value)} />
-        {:else}
-          <span class="muted">none</span>
-        {/each}
-      </div>
+      <h2>Everything that is not a weight</h2>
+      <ProfileSettings
+        {profile}
+        {token}
+        onsaved={(updated, what) => {
+          profile = updated;
+          error = null;
+          notice = `Saved ${what}. The YAML on disk changed and a decision was logged.`;
+          void api.ranking(name).then((again) => {
+            if (again.ok) ranking = again.value;
+          });
+        }}
+        onerror={(e) => {
+          error = e;
+          notice = '';
+        }}
+      />
 
-      <h2>Shape</h2>
-      <div class="chips">
-        {#each Object.entries(profile.shape ?? {}).filter(([, v]) => v != null) as [key, value] (key)}
-          <Chip label={key.replace('_tokens', '')} value={String(value)} />
-        {/each}
-      </div>
-
-      <h2>Policy</h2>
-      <div class="chips">
-        {#each Object.entries(profile.policy ?? {}) as [key, value] (key)}
-          <Chip label={key} value={String(value)} tone={key === 'margin' ? 'accent' : 'muted'} />
-        {/each}
-      </div>
-
-      <h2>Save</h2>
+      <h2>Save weights</h2>
       <label class="token">
         <span>Token</span>
         <input
@@ -203,7 +198,7 @@
       </label>
       <div class="actions">
         <button type="button" onclick={evaluate} disabled={busy}>Evaluate</button>
-        <button type="button" class="primary" onclick={save} disabled={busy || !dirty}>Save</button>
+        <button type="button" class="primary" onclick={save} disabled={busy || !dirty}>Save weights</button>
         <button type="button" onclick={reset} disabled={!dirty}>Reset</button>
       </div>
       {#if notice}<p class="notice">{notice}</p>{/if}
@@ -288,11 +283,6 @@
     color: var(--muted);
     font-size: 0.75rem;
     margin: 0.3rem 0 0;
-  }
-  .chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
   }
   .token {
     display: flex;

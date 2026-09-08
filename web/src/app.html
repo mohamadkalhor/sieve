@@ -5,12 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Weighted model selection for agent fleets" />
     <link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+    <!--
+      Webfonts, loaded without blocking the first paint.
+
+      As a plain stylesheet link this cost 6.2 s of render delay on a throttled
+      mobile profile: the browser will not paint a single pixel until a
+      render-blocking stylesheet resolves, and this one is on somebody else's
+      domain. On a network that cannot reach Google at all -- an air-gapped
+      deployment, or a machine behind a proxy that drops it -- the page stayed
+      blank until the request timed out.
+
+      `media="print"` makes it non-blocking, and the onload swap applies it the
+      moment it arrives. Every family already has a real fallback stack in
+      tokens.css, so the page is readable in a system font first and reflows
+      into the intended one. The <noscript> copy keeps the fonts for a reader
+      with JS off, who is not waiting on a JS-driven app anyway.
+    -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,300&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'; this.onload=null;"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,300&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

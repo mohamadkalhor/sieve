@@ -94,8 +94,21 @@
 
       <h2>Apply</h2>
       <p class="muted small">
-        Writes {computed.length} model{computed.length === 1 ? '' : 's'} to this profile's targets.
+        Writes {computed.length} model{computed.length === 1 ? '' : 's'} to
+        {#if targets.length === 0}
+          no target — nothing is configured.
+        {:else}
+          {#each targets as t, i (t.target)}<strong>{t.target}</strong> ({t.kind}){i <
+            targets.length - 1
+              ? ', '
+              : ''}{/each}.
+        {/if}
       </p>
+      {#if targets.some((t) => t.supported !== false && (t.current?.[name]?.length ?? 0) === 0)}
+        <p class="muted small">
+          At least one target holds nothing for this profile yet, so this is the first write.
+        </p>
+      {/if}
       <label class="token">
         <span>Token</span>
         <input
