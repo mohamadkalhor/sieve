@@ -17,7 +17,18 @@ and the API use the recorded payloads in `tests/fixtures/` too, so you can run
 the whole pipeline offline:
 
 ```bash
-SIEVE_FIXTURES=1 sieve pull && sieve score --profile coder
+SIEVE_FIXTURES=1 uv run sieve pull && uv run sieve score --profile coder
+```
+
+Two caveats while the bugs in the README's [Known issues](README.md#known-issues)
+stand. `sieve` is not on your PATH after `uv sync` — it lives in `.venv`, so
+either prefix with `uv run` as above or activate the venv. And `sieve pull`
+still skips Artificial Analysis with fixtures on, because `sieve/cli.py` tests
+`needs_key` before it tests `fixtures_enabled()`; until that is fixed, set any
+non-empty value to get the recorded payloads, which never leave disk:
+
+```bash
+SIEVE_FIXTURES=1 ARTIFICIAL_ANALYSIS_API_KEY=fixture uv run sieve pull aa_llm
 ```
 
 ## The one idea worth knowing

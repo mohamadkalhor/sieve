@@ -1,2 +1,13 @@
+packages:
+  - .
+
+# esbuild's postinstall fetches the binary for the platform it is installed on,
+# so it has to be allowed to run. The key moved between majors, so both spellings
+# are here: pnpm 10 and 11 read onlyBuiltDependencies, pnpm 12 reads allowBuilds,
+# and each ignores the other. pnpm 9 runs build scripts without being asked, but
+# errors on a workspace file with no packages field -- hence the one above.
+onlyBuiltDependencies:
+  - esbuild
+
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true

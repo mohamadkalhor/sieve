@@ -22,6 +22,7 @@ from sieve.config import Config, default_config, load_config
 from sieve.contracts import Profile
 from sieve.engine import OwnerMissingError, apply_targets, run
 from sieve.http import client as http_client
+from sieve.http import fixtures_enabled
 from sieve.store import Store
 
 EXIT_OK = 0
@@ -85,7 +86,10 @@ def cmd_pull(args: argparse.Namespace) -> int:
             _out(f"{name}: {exc}")
             failures += 1
             continue
-        if getattr(source, "needs_key", False) and not source_cfg.key():
+        # A fixture run answers from disk, so a key it will never send is not
+        # a reason to skip the source -- that silently emptied every AA pull
+        # under SIEVE_FIXTURES=1.
+        if getattr(source, "needs_key", False) and not source_cfg.key() and not fixtures_enabled():
             _out(f"{name}: needs {source_cfg.key_env}; skipped")
             continue
         result = source.pull(source_cfg, http)
