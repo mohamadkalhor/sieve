@@ -12,6 +12,7 @@ axis pointed at the wrong source is a confident wrong answer.
 | `aa_llm` | LLM benchmarks: intelligence, coding, maths, agentic indices, latency, price | yes | terms of use |
 | `aa_media` | Human preference Elo for image, video and speech, per category | yes | terms of use |
 | `openrouter` | Prices, context windows, capabilities for LLMs | no | terms of use |
+| `aa_media_prices` | **Prices** for media models, from the leaderboards | no | terms of use, citation required |
 | `fal` | **Prices** for media models | no | terms of use |
 | `deepinfra` | **Prices** for media models, machine-readable | no | terms of use |
 | `arena` | **Human preference Elo**, text and media | no | **CC-BY-4.0** |
@@ -35,6 +36,75 @@ support for ~428 LLMs — the only key-free answer to "can this model actually d
 what the profile requires". It republishes a subset of Artificial Analysis's
 scores, and Sieve deliberately **does not** store those: AA is the source of
 AA's numbers, and keeping them twice would double their weight in an axis.
+
+### Artificial Analysis media prices — `aa_media_prices`
+
+The v2 data API returns nine fields for a media arena and none of them is a
+price, `include_prices=true` included. **The leaderboard pages carry one on
+every row.** PLAN §2.3 said the opposite for a day, on the strength of checking
+the API and not the page.
+
+This makes Artificial Analysis the primary media price source, and a better one
+than any marketplace: the price arrives on the same row as the score, joined by
+the same uuid. `aa_media` already stores that uuid as an alias, so the fold is
+exact — no name matching at all.
+
+| board | key | stored as | priced |
+| --- | --- | --- | --- |
+| `/image/leaderboard/text-to-image` | `pricePer1kImages` | `usd_per_image` | 143 |
+| `/image/leaderboard/editing` | `pricePer1kImages` | `usd_per_image` | 68 |
+| `/video/leaderboard/text-to-video` | `pricePerMinute` | `usd_per_second` | 86 |
+| `/video/leaderboard/image-to-video` | `pricePerMinute` | `usd_per_second` | 72 |
+| `/text-to-speech` | `pricePer1mCharacters` | `usd_per_1m_chars` | 77 |
+| `/speech-to-text` | `pricePer1kMinutes` | `usd_per_second` | 47 |
+| `/speech-to-speech` | `pricePerHourInput`/`Output` | `usd_per_second` | 32 |
+
+Measured 2026-09-09. Together they take the media priced share from 13.4% to
+**53.0%**, which is what brings the Field's cost scatter back for six of the
+eight media modalities without touching the threshold.
+
+#### It reads a page, so it is built to fail loudly
+
+Next.js streams its data as `self.__next_f.push([1,"<chunk>"])` — JSON inside a
+JS string literal inside HTML. Unescaping once gives a payload whose row objects
+decode with `json.loads`. **Nothing here pattern-matches a number.**
+
+There is deliberately no anchor on a prop name. The first version looked for
+`hostModels`, and the speech boards turned out to publish one set of rows four
+times over — `stsIndexHostModels`, `costPerHourOfInputAudioHostModels`,
+`pricingHostModels`, `tauChartModels` — each a different subset, none of them
+under the name being looked for. Anchoring on the price key finds every copy and
+cannot go stale when a chart is renamed.
+
+Two guards, because a page is a weaker contract than an endpoint:
+
+- a board whose shape has moved returns `ok=False` and the run goes **red**;
+- `sieve check` **errors** on an enabled board that has priced nothing while its
+  siblings have — a board that quietly stopped producing on some earlier run.
+
+#### The unit is never converted across a modality
+
+Per 1k images, per minute, per 1M characters and per 1k minutes are four
+different things. A thousand images is a thousand images and a minute is sixty
+seconds, so those conversions are arithmetic — but the *units* stay apart, and
+because `cost_per_task` reads `shape.images` for one and `shape.seconds` for
+another, comparing an image price with a video price is impossible by
+construction rather than forbidden by convention.
+
+`priceDisplayOverride: "no_api"` means the model has no public API. Whatever
+number sits in the price field, nobody can pay it, so the row is skipped and
+counted.
+
+#### Attribution
+
+The pages embed a schema.org Dataset carrying the licence and the citation
+Artificial Analysis asks for. Both are reproduced here because this is a public
+tool built on their measurements:
+
+> Artificial Analysis (2025). LLM benchmarks dataset.
+> <https://artificialanalysis.ai>
+
+Terms of use: <https://artificialanalysis.ai/docs/legal/Terms-of-Use.pdf>
 
 ### fal — `fal`
 

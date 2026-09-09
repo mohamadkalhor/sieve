@@ -157,26 +157,55 @@ uses the same path.
 
 ### 2.3 Where a media price comes from, and where it does not
 
-Artificial Analysis scores media and prices nothing. Its five arena endpoints
-publish nine fields and not one of them is a price, `include_prices=true`
-included. Every media price in Sieve therefore comes from a marketplace, and a
-marketplace price is one vendor charging to run one model — never the price of
-the model. Sources are kept separate, ranking uses the cheapest known price,
-and the vendor is named wherever the number is shown.
+**This section said "Artificial Analysis scores media and prices nothing." That
+was false**, and how it came to be written matters more than the correction: the
+v2 data API was checked, found to return nine fields and no price even with
+`include_prices=true`, and the conclusion was drawn from the API alone. The
+**leaderboard pages** carry a price on every row. Nobody looked at the page.
 
-Measured 2026-09-08 against the live catalogues, over 775 scored media models
-of which 62 carried any price:
+Artificial Analysis is therefore the **primary** media price source. It is the
+one that scores the models too, so its price arrives on the same row as its
+score, joined by the same uuid — no name matching, no marketplace guesswork.
 
-| source | key | media models | price form | models it can price |
-| --- | --- | --- | --- | --- |
-| fal | no | 1,498 total, 729 with a price sentence | English prose | +88 once tiers are parsed |
-| DeepInfra | no | 116 | numeric, unit declared, in cents | +42, of which 30 fal cannot reach |
-| Eden AI | no | 106 named | numeric | +13, later |
-| AIML API | no | 691 | none published anywhere | catalogue only, never a price source |
-| models.dev | no | 7,583 | numeric | LLM data; 57 image-output models |
-| Together, Replicate, Segmind, Runware, Nebius, SiliconFlow, Hyperbolic | yes | — | — | 401 without an account, so never a default |
+| board | key | unit | priced, 2026-09-09 |
+| --- | --- | --- | --- |
+| `/image/leaderboard/text-to-image` | `pricePer1kImages` | per image | 143 |
+| `/image/leaderboard/editing` | `pricePer1kImages` | per image | 68 |
+| `/video/leaderboard/text-to-video` | `pricePerMinute` | per second | 86 |
+| `/video/leaderboard/image-to-video` | `pricePerMinute` | per second | 72 |
+| `/video/leaderboard/video-editing` | `pricePerMinute` | per second | 9 |
+| `/text-to-speech` | `pricePer1mCharacters` | per 1M chars | 77 |
+| `/speech-to-text` | `pricePer1kMinutes` | per second | 47 |
+| `/speech-to-speech` | `pricePerHourInput` / `Output` | per second | 32 |
+| `/music/leaderboard/instrumental` | — | — | none published |
 
-Two rules follow.
+Four things follow from reading a page rather than an endpoint, and each is paid
+for rather than hidden.
+
+- **Parse it, never pattern-match it.** Next.js streams the data as
+  `self.__next_f.push([1,"<chunk>"])` — JSON inside a JS string inside HTML.
+  Unescaping once yields a payload whose row objects decode with `json.loads`.
+  No regex ever reads a number.
+- **Fail loudly.** A board whose shape has moved returns `ok=False` and the run
+  goes red, and `sieve check` errors on an enabled board that has priced nothing
+  while its siblings have. A page-shaped source that silently returns nothing is
+  an absence rendering as a fact.
+- **Never convert across modalities.** Per 1k images, per minute, per 1M
+  characters and per 1k minutes are four different things. They are stored under
+  four units, and `cost_per_task` reads a different `Shape` field for each, so a
+  cross-modality comparison is impossible by construction rather than forbidden
+  by convention.
+- **Attribute it.** The pages embed a schema.org Dataset carrying AA's licence
+  and the citation they ask for. Both are reproduced in `docs/sources.md`.
+
+**The marketplaces are the fallback, not the source.** `fal` and `deepinfra`
+stay in the tree, tested and recorded, and ship disabled: AA prices the same
+models on the same row, so a marketplace price is only wanted where AA has none
+— music today, and the models that do not join the catalogue. Measured against
+the recordings, AA alone takes the media priced share from 13.4% to 53.0%.
+
+Two rules from the marketplace work survive unchanged, because they are about
+reading a price and not about which vendor publishes it.
 
 - **Several numbers in a sentence is not a reason to refuse it.** 494 of the fal
   price sentences carry more than one amount; 78 are one price restated as

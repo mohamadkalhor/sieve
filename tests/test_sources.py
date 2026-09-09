@@ -415,18 +415,32 @@ def test_the_recordings_match_what_the_manifest_claims(player: FixturePlayer) ->
     is then quietly measuring something else.
     """
     manifest = json.loads((FIXTURES / "RECORDINGS.json").read_text(encoding="utf-8"))
-    assert len(manifest) == 16
+    assert len(manifest) == 23
 
     for name, entry in manifest.items():
         body = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
         # Three shapes: AA answers `{data: [...]}`, fal `{items: [...]}`, the
         # Hugging Face datasets-server `{rows: [...]}`.
         rows = body
+        # a recording may be the raw body or the whole response envelope
+        if isinstance(body, dict) and "body" in body and "status" in body:
+            rows = body = body["body"]
         if isinstance(body, dict):
             for key in ("data", "items", "rows"):
                 if key in body:
                     rows = body[key]
                     break
+
+        # A fourth shape: the Artificial Analysis leaderboards are pages, so the
+        # body is HTML and "rows" means the models its payload yields. Counted
+        # by the same parser that reads them, which keeps the manifest honest
+        # about a recording nobody can eyeball.
+        if isinstance(rows, str) and rows.lstrip().startswith("<"):
+            from sieve.sources.aa_media_prices import BOARDS, flight, model_of, rows_of
+
+            board = next(b for b in BOARDS if b.url == entry["url"])
+            found = [model_of(r) for r in rows_of(flight(rows), board.key)]
+            rows = sorted({m[0] for m in found if m})
 
         if entry["rows_kept"] is None:
             # not a row list at all -- the dataset-metadata recording, which is

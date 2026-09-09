@@ -76,6 +76,55 @@
   "rows_published": 67,
   "url": "https://artificialanalysis.ai/api/v2/media/speech-to-text/models/free"
  },
+ "artificialanalysis_ai_image_leaderboard_editing.json": {
+  "params": null,
+  "recorded": "2026-09-09",
+  "rows_kept": 25,
+  "rows_published": 74,
+  "url": "https://artificialanalysis.ai/image/leaderboard/editing"
+ },
+ "artificialanalysis_ai_image_leaderboard_text_to_image.json": {
+  "params": null,
+  "recorded": "2026-09-09",
+  "rows_kept": 75,
+  "rows_published": 158,
+  "url": "https://artificialanalysis.ai/image/leaderboard/text-to-image"
+ },
+ "artificialanalysis_ai_speech_to_speech.json": {
+  "params": null,
+  "recorded": "2026-09-09",
+  "rows_kept": 25,
+  "rows_published": 58,
+  "url": "https://artificialanalysis.ai/speech-to-speech"
+ },
+ "artificialanalysis_ai_speech_to_text.json": {
+  "params": null,
+  "recorded": "2026-09-09",
+  "rows_kept": 11,
+  "rows_published": 51,
+  "url": "https://artificialanalysis.ai/speech-to-text"
+ },
+ "artificialanalysis_ai_text_to_speech.json": {
+  "params": null,
+  "recorded": "2026-09-09",
+  "rows_kept": 24,
+  "rows_published": 95,
+  "url": "https://artificialanalysis.ai/text-to-speech"
+ },
+ "artificialanalysis_ai_video_leaderboard_image_to_video.json": {
+  "params": null,
+  "recorded": "2026-09-09",
+  "rows_kept": 32,
+  "rows_published": 89,
+  "url": "https://artificialanalysis.ai/video/leaderboard/image-to-video"
+ },
+ "artificialanalysis_ai_video_leaderboard_text_to_video.json": {
+  "params": null,
+  "recorded": "2026-09-09",
+  "rows_kept": 32,
+  "rows_published": 95,
+  "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video"
+ },
  "datasets_server_huggingface_co_filter__config_image_edit_dataset_lmarena_ai_leaderboard_dataset_length_100_offset_0_split_latest_where_category_overall.json": {
   "params": "dataset=lmarena-ai%2Fleaderboard-dataset&config=image_edit&split=latest&offset=0&length=100&where=%22category%22%3D%27overall%27",
   "recorded": "2026-09-08",

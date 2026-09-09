@@ -994,6 +994,87 @@ with the five legitimate endpoint-collisions named so a sixth cannot creep in.
   Both are `video-to-audio`, which has no Sieve modality, so neither reaches the
   catalogue; if that modality ever exists, this collision becomes real.
 
+## Part 10 job 1 · Artificial Analysis prices media after all
+
+Landed. `sieve/sources/aa_media_prices.py`, registered as `aa_media_prices`, no
+key, seven requests, seven recordings.
+
+PLAN §2.3 opened "Artificial Analysis scores media and prices nothing". That was
+false. The v2 data API returns nine fields and no price even with
+`include_prices=true`; the **leaderboard pages** carry one on every row. The API
+was checked and the page was not. §2.3 is rewritten.
+
+    media priced share, one store, one config
+      fal + deepinfra                          13.4%
+      + aa_media_prices                        53.0%     threshold is 25%
+
+Six of the eight media modalities now clear the threshold on their own, so the
+Field's cost scatter comes back without the constant being touched — which is
+what job 4 asked for and it needed no code.
+
+### What the card got wrong, measured before anything was built on it
+
+| the card | measured 2026-09-09 |
+| --- | --- |
+| text-to-image 147 priced | 147 with a number, **143** payable |
+| text-to-video 87 / image-to-video 73 | 86 / 72 |
+| "109 text-to-image rows are `no_api`" | **10** distinct models; 109 counted the same rows once per sub-board |
+| "TTS and STT are keyed by LABEL, no uuid" | **every board joins by uuid.** TTS carries `model.id` on all 102 rows; STT's label-keyed `data:[]` is a chart dataset, and its real rows carry ids too |
+| "speech-to-speech UNDETERMINED" | **priced**: `pricePerHourInput` / `pricePerHourOutput`, 32 of 58, plus `averageCostPerTask` |
+| text-to-speech 49 / speech-to-text 56 | 77 / 47 |
+
+So there is no label matching anywhere in this source. The join is a uuid on all
+seven boards, `aa_media` already stores those uuids as aliases, and 110 of the
+201 fixture rows fold onto catalogue models with no fuzzy matching at all.
+
+### How it reads a page without becoming a scraper
+
+Next.js streams data as `self.__next_f.push([1,"<chunk>"])` — JSON inside a JS
+string inside HTML. Unescaping once gives a payload whose row objects decode
+with `json.loads`. Nothing pattern-matches a number.
+
+**There is no anchor on a prop name.** The first version looked for
+`hostModels`, and the speech boards publish one set of rows four times over —
+`stsIndexHostModels`, `costPerHourOfInputAudioHostModels`, `pricingHostModels`,
+`tauChartModels` — each a different subset, none under the name being looked
+for. It found four arrays of RSC placeholder strings and reported zero models.
+Anchoring on the price key finds every copy and cannot go stale when a chart is
+renamed.
+
+Two guards, because a page is a weaker contract than an endpoint: a board whose
+shape has moved returns `ok=False` and the run goes red, and `sieve check`
+errors on an enabled board that has priced nothing while its siblings have.
+
+### Units
+
+Per 1k images, per minute, per 1M characters, per 1k minutes and per hour of
+input audio. A thousand images is a thousand images and a minute is sixty
+seconds, so the conversions are arithmetic — but the units stay apart, and since
+`cost_per_task` reads `shape.images` for one and `shape.seconds` for another, a
+cross-modality comparison is unreachable rather than merely forbidden. A test
+asserts that an image price against an images-only shape gives a number and a
+video price against the same shape gives None.
+
+`priceDisplayOverride: "no_api"` skips the row, counted.
+
+### Left open — jobs 2, 3 and 4 of the card
+
+- **Job 2**: `video-editing` is a modality Sieve does not have (9 models, all
+  priced); the music board publishes per-genre elos the API does not; and the
+  image and video boards carry `winRate`, `deprecated`, `ciLower`/`ciUpper`,
+  `openWeightsUrl` and `isCurrent`. `deprecated` is the one that changes an
+  answer — a retired model can currently be recommended.
+- **Job 3**: `fal` and `deepinfra` should ship `enabled = false`, keeping code,
+  tests and recordings. Not done yet; both are still enabled.
+- **Job 4**: the Field's scatter returns on its own, but the part 8C provider
+  and model search is still llm-only and should work on the media scatter with
+  the effort polyline simply not drawn.
+- **Music has no price on its board.** `/music/leaderboard/instrumental` carries
+  no price key at all, so music stays unpriced and keeps the ranking. That is
+  the one place a marketplace is still the only answer.
+- **The with-vocals music board is not at the URL the card gives.**
+  `/music/leaderboard/with-vocals` is a 404; its real path is unfound.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

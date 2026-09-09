@@ -59,6 +59,26 @@ modalities = ["llm"]
 # Price for the media field. Artificial Analysis measures media quality and
 # publishes no media price at all, so cost for image, video and speech comes
 # from here or from nowhere. No key needed.
+# Artificial Analysis prices media on its LEADERBOARDS, though not on the v2
+# data API. Same uuid as the score, so the price lands on the model that was
+# measured with no name matching -- which is why this is the primary media price
+# source and the marketplaces below are the fallback.
+#
+# It reads a page rather than a documented endpoint, so it fails loudly: a board
+# whose shape has moved turns the run red, and `sieve check` errors on an
+# enabled board that has priced nothing while its siblings have.
+[sources.aa_media_prices]
+enabled = true
+modalities = [
+  "text-to-image",
+  "image-editing",
+  "text-to-video",
+  "image-to-video",
+  "text-to-speech",
+  "speech-to-text",
+  "speech-to-speech",
+]
+
 [sources.fal]
 enabled = true
 modalities = [

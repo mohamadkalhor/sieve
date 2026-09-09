@@ -14,6 +14,7 @@ below.
 | 2026-09-08 | Artificial Analysis, with a live key | the ten `artificialanalysis_ai_*` files |
 | 2026-09-08 | fal, no key needed | `fal_ai_api_models__limit_200_page_1.json` |
 | 2026-09-09 | deepinfra, no key needed | `api_deepinfra_com_models_list.json` |
+| 2026-09-09 | Artificial Analysis leaderboard **pages**, no key | the seven `artificialanalysis_ai_*leaderboard*` and speech files |
 
 `RECORDINGS.json` gives, per file, the exact URL it came from, the query
 parameters that were sent, the date, how many rows the endpoint published that
@@ -23,6 +24,8 @@ and 40 are kept. The four free-tier files are whole, being small enough
 (15–67 rows).
 
 The deepinfra file keeps all 116 media rows and four rows of other types, so a test can prove the others are skipped rather than assume it.
+
+The seven leaderboard recordings are **pages**, not JSON endpoints, so the body is HTML. They are trimmed the same way as everything else -- by rows, never by fields -- by cutting each `self.__next_f.push` chunk after about two dozen rows. What remains is AA's own bytes in AA's own escaping, and `RECORDINGS.json` says how many of the published models survived.
 
 They are **response bodies only**. No key, no request header and no
 `Authorization` value is inside any of them. Never commit a recording that

@@ -22,6 +22,7 @@ sieve = "sieve.cli:main"
 [project.entry-points."sieve.sources"]
 aa_llm = "sieve.sources.aa_llm:AALLMSource"
 aa_media = "sieve.sources.aa_media:AAMediaSource"
+aa_media_prices = "sieve.sources.aa_media_prices:AAMediaPricesSource"
 openrouter = "sieve.sources.openrouter:OpenRouterSource"
 fal = "sieve.sources.fal:FalSource"
 deepinfra = "sieve.sources.deepinfra:DeepInfraSource"

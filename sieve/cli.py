@@ -290,6 +290,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     _out(f"profiles: {len(profiles)} loaded from {cfg.profiles_dir}")
 
     problems += _axes_against_the_data(cfg, axes)
+    problems += _boards_that_produced_nothing(cfg)
     for note in _prices_that_disagree(cfg):
         _out(f"  note: {note}")
 
@@ -297,6 +298,51 @@ def cmd_check(args: argparse.Namespace) -> int:
         _out(f"  fail: {problem}")
     _out("check: green" if not problems else f"check: {len(problems)} problem(s)")
     return EXIT_OK if not problems else EXIT_ERROR
+
+
+def _boards_that_produced_nothing(cfg: Config) -> list[str]:
+    """An enabled leaderboard that has priced nothing, while its siblings have.
+
+    `aa_media_prices` reads pages rather than a documented endpoint, so its
+    shape can move under it at any time. It already fails loudly *during* a
+    pull; this catches the other half — a board that quietly stopped producing
+    on some earlier run and has been empty ever since.
+
+    The test is deliberately narrow, so it cannot fire on a fresh install: the
+    source must have priced *something* — proving it has run and can parse —
+    while one of its enabled boards has nothing at all. That is a shape that
+    moved, not a quiet hour.
+    """
+    source = cfg.sources.get("aa_media_prices")
+    if source is None or not source.enabled:
+        return []
+    try:
+        from sieve.sources.aa_media_prices import BOARDS
+    except ImportError:  # pragma: no cover - the source is always installed
+        return []
+
+    store = Store(cfg.db_path)
+    priced: dict[str, int] = {}
+    for row in store.db.execute(
+        "SELECT modality, COUNT(*) AS n FROM prices WHERE source='aa_media_prices'"
+        " GROUP BY modality"
+    ):
+        priced[str(row["modality"])] = int(row["n"])
+    if not priced:
+        return []
+
+    wanted = set(source.modalities or [b.modality for b in BOARDS])
+    out: list[str] = []
+    for board in BOARDS:
+        if board.modality not in wanted or priced.get(board.modality):
+            continue
+        out.append(
+            f"aa_media_prices is enabled for {board.modality} and has priced nothing, while "
+            f"its other boards have. {board.url} publishes {board.key!r}; if it no longer "
+            "does, the page shape has moved and the parser has to be re-read. Disable the "
+            "modality to say that on purpose."
+        )
+    return out
 
 
 #: Two vendors hosting one model rarely charge the same, and nobody needs to
