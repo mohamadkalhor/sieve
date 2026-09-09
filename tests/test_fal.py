@@ -149,9 +149,15 @@ def test_a_single_rate_repeated_is_still_one_rate() -> None:
 
 
 def test_an_id_keeps_the_model_slug_and_drops_the_endpoint() -> None:
-    """`fal-ai/nano-banana-2/edit` is a provider path, not a model name."""
+    """`fal-ai/nano-banana-2/edit` is a provider path, not a model name.
+
+    This test used to assert that `fal-ai/kling-video/v3/standard` became
+    `fal-ai/kling-video`, which was the bug written down as the rule: it puts
+    five different Kling models on one id. `v3/standard` names the model and
+    only an endpoint may be dropped -- see the two tests at the end of this file.
+    """
     assert model_id_of({"id": "fal-ai/nano-banana-2/edit"}) == "fal-ai/nano-banana-2"
-    assert model_id_of({"id": "fal-ai/kling-video/v3/standard"}) == "fal-ai/kling-video"
+    assert model_id_of({"id": "fal-ai/kling-video/v3/standard"}) == "fal-ai/kling-video-v3-standard"
     assert model_id_of({"id": "single-segment"}) is None
     assert model_id_of({}) is None
 
@@ -420,3 +426,69 @@ def test_the_default_tier_is_the_cheapest_and_it_is_named(player: FixturePlayer)
             cheapest = min(p.per_unit or 0.0 for p in mine)
             assert price.per_unit == pytest.approx(cheapest)
             assert price.tier, "and the tier it came from is on the row"
+
+
+def test_a_variant_is_part_of_the_model_id() -> None:
+    """Veo 3.1, Veo 3.1 Fast and Veo3.1 Lite are three models at three prices.
+
+    Taking only the first path segment after the vendor collapsed all three onto
+    `fal-ai/veo3-1`, which then folded onto the catalogue's `veo-3-1-fast` and
+    put the **lite** model's $0.03 a second on the row for a model that costs
+    $0.15. Five endpoints of Kling collapsed the same way, and FLUX schnell onto
+    FLUX dev. That is a wrong recommendation rather than a missing one.
+    """
+    assert model_id_of({"id": "fal-ai/veo3.1/image-to-video"}) == "fal-ai/veo3-1"
+    assert model_id_of({"id": "fal-ai/veo3.1/fast/image-to-video"}) == "fal-ai/veo3-1-fast"
+    assert model_id_of({"id": "fal-ai/veo3.1/lite/image-to-video"}) == "fal-ai/veo3-1-lite"
+    assert model_id_of({"id": "fal-ai/flux/schnell"}) == "fal-ai/flux-schnell"
+    assert model_id_of({"id": "fal-ai/flux/dev"}) == "fal-ai/flux-dev"
+    assert (
+        model_id_of({"id": "fal-ai/kling-video/v3/standard/image-to-video"})
+        == "fal-ai/kling-video-v3-standard"
+    )
+
+
+def test_one_model_asked_two_questions_is_still_one_model() -> None:
+    """The other half of the same rule, and the reason it is not simply "keep
+    every segment": an endpoint names what the model was asked to do, and the
+    modality already records that."""
+    assert (
+        model_id_of({"id": "minimax/h3-max/text-to-video"})
+        == model_id_of({"id": "minimax/h3-max/image-to-video"})
+        == model_id_of({"id": "minimax/h3-max/reference-to-video"})
+        == "minimax/h3-max"
+    )
+    assert (
+        model_id_of({"id": "fal-ai/kling-video/v3/pro/text-to-video"})
+        == model_id_of({"id": "fal-ai/kling-video/v3/pro/image-to-video"})
+        == "fal-ai/kling-video-v3-pro"
+    )
+    # `edit` is an endpoint too, and the one that is not spelled `x-to-y`
+    assert model_id_of({"id": "fal-ai/nano-banana-2/edit"}) == "fal-ai/nano-banana-2"
+    assert model_id_of({"id": "openai/gpt-image-2/edit"}) == "openai/gpt-image-2"
+
+
+def test_no_two_different_models_share_a_fal_id_in_the_recording() -> None:
+    """Asserted over the whole recording, because the failure is a collision and
+    a collision is only visible across the set."""
+    import json as _json
+
+    raw = _json.loads(
+        (FIXTURES / "fal_ai_api_models__limit_200_page_1.json").read_text(encoding="utf-8")
+    )
+    by_id: dict[str, set[str]] = {}
+    for entry in raw.get("body", raw).get("items", []):
+        model_id = model_id_of(entry)
+        if model_id:
+            by_id.setdefault(model_id, set()).add(str(entry.get("title") or ""))
+
+    # what remains is one model under several endpoint names, which is correct
+    allowed = {
+        "minimax/h3-max",
+        "minimax/h3-max-turbo",
+        "fal-ai/kling-video-v3-pro",
+        "fal-ai/hunyuan-3d-v3-1-pro",
+        "sonilo/v1-1",
+    }
+    collided = {k for k, titles in by_id.items() if len(titles) > 1} - allowed
+    assert not collided, f"different models sharing one id: {sorted(collided)}"

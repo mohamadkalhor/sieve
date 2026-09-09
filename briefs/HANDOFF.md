@@ -936,9 +936,8 @@ row. Both numbers are true about *something*; only one is true about that id.
 
 ### Left open
 
-- **The `veo3.1/lite` -> `veo-3-1-fast` fold is wrong** and is now visible. The
-  matcher folded two different endpoints of one family onto one id. Fixing it is
-  a matcher change, not a source change, and it wants its own look.
+- ~~**The `veo3.1/lite` -> `veo-3-1-fast` fold is wrong**~~ -- fixed in the
+  postscript below.
 - **`google/nano-banana-2-lite` is priced 96x apart on input tokens** — fal
   reads Google's own $0.3125/1M, deepinfra charges $30/1M. That is either a real
   vendor difference or another bad fold, and the note says which model to look
@@ -954,6 +953,46 @@ row. Both numbers are true about *something*; only one is true about that id.
 - **The media priced share is 13.3% and the threshold is 25%.** The scatter
   stays hidden. Between them the two jobs roughly doubled it; closing the rest
   needs either a third source or a threshold somebody argues for on the merits.
+
+## Part 9 postscript · a fal id has to keep the variant
+
+Found by the disagreement note that job 2 added, on its first run.
+
+`model_id_of` took the vendor segment and **one** segment after it, so
+`fal-ai/veo3.1/image-to-video`, `.../fast/...` and `.../lite/...` were one id.
+That id folded onto the catalogue's `google/veo-3-1-fast` and put the **lite**
+model's $0.03 a second on a model that costs $0.15 -- a wrong recommendation
+rather than a missing one, which is the class of bug that comes first.
+
+It was not only veo. Five endpoints of Kling collapsed onto `fal-ai/kling-video`
+(v3 Pro, v3 Standard, v2.5-turbo, v2.1, o3 Pro), FLUX schnell onto FLUX dev, and
+three FLUX Pro variants onto each other. The function's own docstring already
+said the variant should be kept; the code never did it.
+
+The rule now: drop the vendor segment, drop **trailing endpoint** segments
+(`x-to-y`, or `edit`), keep everything between. So
+`minimax/h3-max/{text,image,reference}-to-video` stay one model -- one model
+asked three questions, and the modality already records which -- while
+`veo3.1/lite` and `veo3.1/fast` become two.
+
+    before                             after
+    fal-ai/veo3-1 $0.03/s (lite)       google/veo-3-1       $0.40/s
+                                       google/veo-3-1-fast  $0.15/s
+                                       fal-ai/veo3-1-lite   $0.03-$0.08 by tier
+
+fal models rose from 35 to 43 and the 5x disagreement note is gone. A test
+asserts across the whole recording that no two different models share an id,
+with the five legitimate endpoint-collisions named so a sixth cannot creep in.
+
+### Left open
+
+- **`google/nano-banana-2-lite` is priced 96x apart on input tokens**: fal reads
+  Google's own $0.3125/1M and deepinfra charges $30/1M. That is either a real
+  vendor difference or another bad fold, and the note says which model to look
+  at rather than deciding.
+- **`sonilo/v1.1/video-to-sound-effects` and `.../video-to-music` share an id.**
+  Both are `video-to-audio`, which has no Sieve modality, so neither reaches the
+  catalogue; if that modality ever exists, this collision becomes real.
 
 ## Part 1 · Real data replaces the invented fixtures
 

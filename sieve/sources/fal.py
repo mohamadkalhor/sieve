@@ -509,25 +509,43 @@ def parse_price(prose: str) -> tuple[float, Unit] | None:
     return (rates[0].amount, rates[0].unit) if rates else None
 
 
+#: A path segment that names an *endpoint* rather than a model: the thing the
+#: model is being asked to do. `image-to-video`, `video-to-sound-effects`,
+#: `edit`. The modality already records this, so it is not part of an identity.
+_ENDPOINT = re.compile(r"^(?:[a-z0-9]+-to-[a-z0-9-]+|edit)$", re.I)
+
+
 def model_id_of(entry: dict[str, Any]) -> str | None:
     """fal ids are provider paths (`fal-ai/nano-banana-2/edit`), not model names.
 
-    The canonical id has to be the *model*, so the vendor segment and any
-    endpoint segment after it are dropped and the title is preferred where the
-    path carries a variant. Matching to AA then goes through the normal alias
-    machinery.
+    The canonical id has to be the *model*, so the vendor segment goes and the
+    trailing endpoint segments go with it -- `minimax/h3-max/image-to-video` and
+    `minimax/h3-max/text-to-video` are one model asked two questions.
+
+    **Everything between them stays**, which is the part this used to get wrong.
+    Taking only the first segment after the vendor collapsed
+    `fal-ai/veo3.1/image-to-video`, `.../fast/...` and `.../lite/...` onto one
+    id -- three different models at $0.20, $0.15 and $0.05 a second -- and
+    whichever price was written first won. Five models of Kling collapsed the
+    same way, and so did FLUX schnell onto FLUX dev.
+
+    That is not a display problem. The folded id then matched a real model in
+    the catalogue and put a cheaper model's price on it, which is a wrong
+    recommendation rather than a missing one.
     """
     raw = str(entry.get("id") or entry.get("modelId") or "").strip()
     if not raw:
         return None
     parts = [p for p in raw.split("/") if p]
+    while len(parts) > 2 and _ENDPOINT.match(parts[-1]):
+        parts = parts[:-1]
     if len(parts) < 2:
         return None
     # `modelFamily` is the model's own name ("Nano Banana 2"), not its
     # creator, so using it would produce `nano-banana-2/nano-banana-2`. The
     # vendor segment is honest about where the record came from, and the
     # slug -- which is what AA also uses -- is what the matcher folds on.
-    return canonical_id(parts[0], parts[1])
+    return canonical_id(parts[0], "-".join(parts[1:]))
 
 
 def _prices_for(
