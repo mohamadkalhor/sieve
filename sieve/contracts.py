@@ -47,7 +47,16 @@ Unit = Literal[
     "seconds",
     "usd_per_image",
     "usd_per_second",
+    #: Hardware time, not output length. PLAN 2.3: "$0.00111 per compute second"
+    #: and "$0.025 per second of generated video" are not the same unit, and
+    #: comparing them makes an upscaler look cheaper than a video model on a
+    #: number that means something else. Stored, named, never costed.
+    "usd_per_compute_second",
     "usd_per_1m_chars",
+    "usd_per_megapixel",
+    #: One whole request, where a source names no other unit -- "your request
+    #: will cost $0.25 for 512p resolution".
+    "usd_per_request",
     "count",
     #: what one task costs at a profile's shape -- derived from a Price and a
     #: Shape by the engine, not published by any source.
@@ -182,6 +191,11 @@ class Shape(_Model):
     images: int | None = None
     seconds: float | None = None
     chars: int | None = None
+    #: Output area for a model priced per megapixel. A 1024x1024 image is 1.05.
+    megapixels: float | None = None
+    #: How many calls one task makes, for a model priced per request. One,
+    #: unless a task is a batch.
+    requests: int | None = None
 
 
 class Policy(_Model):

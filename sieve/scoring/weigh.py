@@ -102,5 +102,17 @@ def cost_per_task(
     if price.unit == "usd_per_1m_chars":
         chars = shape.chars
         return (chars / 1_000_000) * price.per_unit if chars else None
+    if price.unit == "usd_per_megapixel":
+        megapixels = shape.megapixels
+        return megapixels * price.per_unit if megapixels else None
+    if price.unit == "usd_per_request":
+        requests = shape.requests
+        return requests * price.per_unit if requests else None
 
+    # `usd_per_compute_second` deliberately falls through to None. It is a real
+    # published price and it is stored, but it bills hardware time, which varies
+    # with the job and with nothing a Shape can declare. Costing it against
+    # `shape.seconds` -- the length of the *output* -- would put an upscaler and
+    # a video model on one axis at numbers that do not measure the same thing.
+    # PLAN 2.3. An unmeasured cost is reported as unmeasured, never as free.
     return None

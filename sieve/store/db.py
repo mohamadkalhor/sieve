@@ -326,11 +326,26 @@ class Store:
         return added
 
     def latest_prices(self, modality: Modality) -> dict[str, Price]:
+        """One price per model: the latest pull, and its cheapest tier.
+
+        A tiered model publishes several prices and a ranking needs one, so the
+        choice has to be declared rather than left to insertion order. It is the
+        cheapest -- which on fal's catalogue is always the lowest resolution
+        offered, checked against every tiered model in the recordings -- and the
+        row carries its `tier`, so the screen can say which one it is rather
+        than presenting a floor as the price.
+
+        Rows are visited dearest first and the dict keeps the last, so the
+        cheapest wins. `COALESCE(per_unit, output, input)` compares a flat rate
+        and a token rate on the same expression; for a token price the output
+        rate is the one that decides, which is why it comes before input.
+        """
         rows = self.db.execute(
             "SELECT p.* FROM prices p JOIN models m"
             " ON m.id = p.model_id AND m.modality = ?"
             " WHERE p.modality IS NULL OR p.modality = ?"
-            " ORDER BY (p.modality IS NULL), p.observed_at ASC",
+            " ORDER BY (p.modality IS NULL), p.observed_at ASC,"
+            " COALESCE(p.per_unit, p.output, p.input) DESC",
             (modality, modality),
         )
         out: dict[str, Price] = {}

@@ -788,6 +788,95 @@ holds the two boxes; `Scatter.svelte` draws the line.
   thing that could take media over `MIN_PRICED_SHARE` and bring the scatter
   back rather than leaving it permanently hidden.
 
+
+## Part 9 job 1 · The fal tier parser
+
+Landed. `parse_rates` reads a price sentence as **clauses**, drops the ones that
+are not a rate, and keeps **every** tier of what remains.
+
+    on the recordings          before   after
+    media models priced            14      22
+    media priced share            6.2%    9.8%    (threshold is 25%)
+    price rows written             14      57
+
+The share moved by more than half and the Field's cost scatter is still hidden,
+which is the honest headline. Job 2 (deepinfra) is what could move it further:
+42 more models, 30 of which fal has no price sentence for at all.
+
+### What changed
+
+- **Clause classification.** A sentence is split on `.!?;` and each clause is
+  read or dropped with a named reason: a restatement (`For $1.00, you can run
+  this model 12 times`), a rate for a different time (`after which 480p is
+  $0.05/second`), an add-on (`an additional $0.015 will be charged`), a
+  multiplier (`4K is charged at double the standard rate`), a worked example
+  (`For example, a 5s video will cost $0.70`), or a per-step bill.
+- **Every tier is stored**, not the cheapest. `Store.latest_prices` picks the
+  cheapest and the row names its tier, so a 1080p job is never priced at the
+  480p line without saying so.
+- **Tiers are read in written order** when there are as many as there are
+  amounts. Nearest-first is wrong: `At an output resolution of 480p, every
+  second costs $0.05, and at 720p, every second costs $0.07` puts 720p nearer
+  the first amount than the 480p it belongs to.
+- **Input / cached / output token rates** are one price with three sides, keyed
+  by tier (`text tokens`, `image tokens`).
+- **Three new units.** `usd_per_compute_second` (stored, named, and deliberately
+  not costable against any shape — hardware time is not output length),
+  `usd_per_megapixel`, `usd_per_request`. `Shape` gained `megapixels` and
+  `requests` to cost the last two.
+- **The dollar sign may follow the number** (`0.25 $ for 512p`), and a minute is
+  converted to sixty seconds.
+- **fal's `speech-to-speech` category is mapped.** Sieve gained the modality in
+  part 2 and the category map was written before it existed, so those rows were
+  being skipped as "no Sieve modality" long after there was one.
+
+### Two bugs it found
+
+- **`per 1,000 characters` was stored under the per-million unit at the
+  published number**, understating every such model by a factor of a thousand.
+- **The `prices` uniqueness never fired.** It was
+  `UNIQUE (model_id, source, modality, observed_at)`, and SQLite treats NULLs in
+  a UNIQUE constraint as distinct from each other — so for every single-modality
+  source, which writes `modality = NULL`, re-pulling appended a duplicate row
+  per model instead of being ignored. Migration 0007 makes it a unique index
+  over `COALESCE`d columns, with `tier` in the key.
+
+### The trade this makes, stated plainly
+
+Sixteen models are newly priced and **eleven are no longer priced** — net five.
+The eleven were being read wrongly: `$0.112 (audio off) or $0.168 (audio on)`
+was stored as $0.112, the cheaper of two rates, with nothing recording that a
+choice had been made. Under this project's own rule a wrong price is worse than
+no price, so they are refused and counted. If that trade is wrong, the fix is a
+tier vocabulary that can name "audio on", not a parser that guesses.
+
+### Left open
+
+- **Unnamed alternatives are refused**, and there are two shapes of them: a
+  parenthetical qualifier (`(audio off)`, `(with HD textures)`) and one price
+  covering two tiers (`$0.15 with audio for 720p or 1080p`). The first could be
+  read by widening the tier vocabulary to parentheticals; the second cannot be
+  read at all without asking fal.
+- **`per 1,000 <kind> tokens`** — `You will be charged $0.005 per 1,000 input
+  text tokens` — is refused. It is the per-1M token shape at a different scale
+  and a different layout; two models here, nine on the live catalogue.
+- **A parenthetical decomposition is refused**: `$0.022 per image ($0.02 for
+  image output + $0.002 for image input)`. The parts sum to the total, so it is
+  checkable arithmetic rather than a guess, and it is worth doing if the shape
+  turns out to be common.
+- **Multiplier tiers are not expanded.** `4K outputs will be charged at double
+  the standard rate` gives the base rate the tier `standard` and stops. The 4K
+  price is derivable and is not derived, because pairing `2K and 4K` with `1.5
+  times and 2 times ... respectively` is ordered prose and getting it backwards
+  bills a job at half.
+- **No profile declares `megapixels` or `requests` yet**, so a model priced in
+  those units has a cost the engine reports as unmeasured. That is correct
+  behaviour and it is also a gap: the shapes want filling once a media profile
+  is meant to rank on cost.
+- **Job 2, deepinfra, is not started.** Card `t_bb756a1d` carries the field map:
+  `GET https://api.deepinfra.com/models/list`, no key, 116 media models, every
+  price machine-readable and **in cents**.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

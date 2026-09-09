@@ -104,7 +104,7 @@ const run = (args) => {
   }
 };
 
-run(['pull', 'openrouter', 'aa_llm', 'aa_media', 'gateway']);
+run(['pull', 'openrouter', 'aa_llm', 'aa_media', 'fal', 'gateway']);
 run(['check']);
 
 // A little real traffic, *before* the plan is computed -- see seed-telemetry.py
