@@ -23,7 +23,11 @@ import yaml
 from sieve.contracts import Chain, TargetConfig
 from sieve.targets.litellm import LiteLLMError, LiteLLMTarget, fallbacks_for
 from sieve.targets.ninerouter import (
+    CLI_TOKEN_HEADER,
+    COMBOS_PATH,
     MANAGED_PREFIX,
+    SERVICE_KIND,
+    SERVICE_KINDS,
     NineRouterError,
     NineRouterTarget,
     chain_models,
@@ -181,8 +185,13 @@ def test_the_webhook_says_it_cannot_be_diffed() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def make_9router_db(path: Path, rows: list[tuple[str, list[str]]]) -> Path:
-    """A scratch database with 9router's real `combos` schema."""
+def make_9router_db(path: Path, rows: list[tuple[str, list[str]]], kind: str | None = None) -> Path:
+    """A scratch database with 9router's real `combos` schema.
+
+    `kind` defaults to null, which is how 9router's own combos are stored and
+    what it reads as `"llm"`. Pass `"fallback"` to stand in for a row left
+    behind by the bug that wrote it.
+    """
     db = sqlite3.connect(path)
     with db:
         db.execute(
@@ -192,10 +201,19 @@ def make_9router_db(path: Path, rows: list[tuple[str, list[str]]]) -> Path:
         for index, (name, models) in enumerate(rows):
             db.execute(
                 "INSERT INTO combos VALUES (?,?,?,?,?,?)",
-                (f"id{index}", name, "fallback", json.dumps(models), "t0", "t0"),
+                (f"id{index}", name, kind, json.dumps(models), "t0", "t0"),
             )
     db.close()
     return path
+
+
+def combo_kinds(path: Path) -> dict[str, str | None]:
+    """`{name: kind}` straight out of the table."""
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    rows = db.execute("SELECT name, kind FROM combos").fetchall()
+    db.close()
+    return {str(r["name"]): r["kind"] for r in rows}
 
 
 def test_9router_refuses_when_it_has_no_way_in() -> None:
@@ -284,6 +302,40 @@ def test_a_chain_with_nothing_reachable_is_skipped_and_named(tmp_path: Path) -> 
     assert NineRouterTarget().current(cfg) == {}
 
 
+def test_9router_writes_a_kind_it_will_actually_serve(tmp_path: Path) -> None:
+    """A combo outside 9router's vocabulary is stored and then served to nobody.
+
+    9router filters its catalogue by `kind`, reading a null one as `"llm"`.
+    This target once wrote `"fallback"` -- an accurate description of a chain
+    and not a service kind -- so every combo it wrote was dropped from
+    `/v1/models`, which looks exactly like never having written it.
+    """
+    db = make_9router_db(tmp_path / "9router.db", [])
+    cfg = TargetConfig(name="9r", kind="ninerouter", options={"sqlite_path": str(db)})
+
+    NineRouterTarget().write(cfg, [chain("coder", "a/one")], dry_run=False)
+
+    kind = combo_kinds(db)[f"{MANAGED_PREFIX}coder"]
+    assert kind in SERVICE_KINDS, f"9router would not serve a combo of kind {kind!r}"
+    assert kind == SERVICE_KIND
+
+
+def test_9router_repairs_a_kind_it_wrote_wrong_before(tmp_path: Path) -> None:
+    """Rewriting the models is not enough: the unservable row has to be fixed."""
+    db = make_9router_db(
+        tmp_path / "9router.db",
+        [(f"{MANAGED_PREFIX}coder", ["gw/old"]), ("handmade", ["gw/keep"])],
+        kind="fallback",
+    )
+    cfg = TargetConfig(name="9r", kind="ninerouter", options={"sqlite_path": str(db)})
+
+    NineRouterTarget().write(cfg, [chain("coder", "a/one")], dry_run=False)
+
+    kinds = combo_kinds(db)
+    assert kinds[f"{MANAGED_PREFIX}coder"] == SERVICE_KIND, "the stale kind was rewritten"
+    assert kinds["handmade"] == "fallback", "a combo we did not create is still untouched"
+
+
 def test_chain_models_keeps_fallback_order_and_drops_duplicates() -> None:
     ordered = chain(
         "coder",
@@ -293,6 +345,149 @@ def test_chain_models_keeps_fallback_order_and_drops_duplicates() -> None:
         local={"a/one": ["gw/x"], "a/two": ["gw/y", "gw/x"], "a/three": ["gw/z"]},
     )
     assert chain_models(ordered) == ["gw/x", "gw/y", "gw/z"]
+
+
+class _NineRouter(BaseHTTPRequestHandler):
+    """A stand-in for 9router's admin API, answering the way the real one does.
+
+    Including the part that matters: `/v1/models` lists a combo by name and
+    **without** its models, so a target that reads the chain from there gets an
+    empty answer rather than an error.
+    """
+
+    combos: ClassVar[list[dict[str, Any]]] = []
+    calls: ClassVar[list[tuple[str, str, dict[str, Any] | None]]] = []
+
+    def _json(self, status: int, body: dict[str, Any]) -> None:
+        self.send_response(status)
+        self.send_header("content-type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(body).encode())
+
+    def _body(self) -> dict[str, Any] | None:
+        length = int(self.headers.get("content-length", 0))
+        return json.loads(self.rfile.read(length)) if length else None
+
+    def _authed(self) -> bool:
+        return self.headers.get(CLI_TOKEN_HEADER) == "cli-token"
+
+    def do_GET(self) -> None:
+        type(self).calls.append(("GET", self.path, None))
+        if self.path == "/v1/models":
+            self._json(
+                200,
+                {
+                    "object": "list",
+                    "data": [
+                        {"id": c["name"], "object": "model", "owned_by": "combo"}
+                        for c in type(self).combos
+                    ],
+                },
+            )
+        elif self.path == COMBOS_PATH:
+            if not self._authed():
+                self._json(401, {"error": "Unauthorized"})
+                return
+            self._json(200, {"combos": list(type(self).combos)})
+        else:
+            self._json(404, {"error": "Not found"})
+
+    def do_PUT(self) -> None:
+        body = self._body()
+        type(self).calls.append(("PUT", self.path, body))
+        combo_id = self.path.rsplit("/", 1)[-1]
+        for combo in type(self).combos:
+            if combo["id"] == combo_id and body is not None:
+                combo.update(body)
+                self._json(200, combo)
+                return
+        self._json(404, {"error": "Not found"})
+
+    def do_POST(self) -> None:
+        body = self._body()
+        type(self).calls.append(("POST", self.path, body))
+        if self.path != COMBOS_PATH or body is None:
+            self._json(404, {"error": "Not found"})
+            return
+        combo = {"id": f"new{len(type(self).combos)}", **body}
+        type(self).combos.append(combo)
+        self._json(201, combo)
+
+    def log_message(self, *args: Any) -> None:
+        return
+
+
+@pytest.fixture
+def ninerouter_api(monkeypatch: pytest.MonkeyPatch) -> Any:
+    _NineRouter.combos = [
+        {"id": "held0", "name": f"{MANAGED_PREFIX}coder", "kind": "fallback", "models": ["gw/old"]},
+        {"id": "held1", "name": "handmade", "kind": None, "models": ["gw/keep"]},
+    ]
+    _NineRouter.calls = []
+    monkeypatch.setenv("SIEVE_TEST_9R_TOKEN", "cli-token")
+    server = HTTPServer(("127.0.0.1", 0), _NineRouter)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield server
+    server.shutdown()
+    server.server_close()
+
+
+def _http_cfg(server: Any) -> TargetConfig:
+    host, port = server.server_address[0], server.server_address[1]
+    return TargetConfig(
+        name="9r",
+        kind="ninerouter",
+        url=f"http://{host}:{port}",
+        options={"token_env": "SIEVE_TEST_9R_TOKEN"},
+    )
+
+
+def test_9router_over_http_reads_the_models_not_just_the_names(ninerouter_api: Any) -> None:
+    """`/v1/models` cannot answer `current()`, because it carries no models.
+
+    Reading it returned `{}` for a gateway holding a full chain, and `sieve
+    diff` then reported every profile as new -- an absence rendering as a fact.
+    """
+    current = NineRouterTarget().current(_http_cfg(ninerouter_api))
+
+    assert current == {"coder": ["gw/old"]}, "the live chain came back with its models"
+    assert "handmade" not in current, "only combos this target manages"
+    assert all(path != "/v1/models" for _, path, _ in _NineRouter.calls)
+
+
+def test_9router_over_http_updates_by_id_and_creates_by_post(ninerouter_api: Any) -> None:
+    """The admin API addresses a combo by id; a `POST` of a held name collides."""
+    cfg = _http_cfg(ninerouter_api)
+
+    NineRouterTarget().write(
+        cfg, [chain("coder", "a/one"), chain("reader", "a/two")], dry_run=False
+    )
+
+    writes = [(method, path, body) for method, path, body in _NineRouter.calls if method != "GET"]
+    assert [(m, p) for m, p, _ in writes] == [
+        ("PUT", f"{COMBOS_PATH}/held0"),
+        ("POST", COMBOS_PATH),
+    ], "the held name was updated in place and the new one created"
+    assert all(body["kind"] == SERVICE_KIND for _, _, body in writes)
+
+    after = NineRouterTarget().current(cfg)
+    assert after == {"coder": ["gw/one"], "reader": ["gw/two"]}
+
+
+def test_9router_over_http_names_the_header_it_was_refused_on(ninerouter_api: Any) -> None:
+    """A wrong token is a common misconfiguration; the error should say which one."""
+    cfg = _http_cfg(ninerouter_api)
+    cfg = cfg.model_copy(update={"options": {"token_env": "SIEVE_TEST_9R_BAD"}})
+    import os
+
+    os.environ["SIEVE_TEST_9R_BAD"] = "not-the-cli-token"
+    try:
+        with pytest.raises(NineRouterError) as caught:
+            NineRouterTarget().current(cfg)
+    finally:
+        del os.environ["SIEVE_TEST_9R_BAD"]
+    assert CLI_TOKEN_HEADER in str(caught.value)
 
 
 # --------------------------------------------------------------------------- #
