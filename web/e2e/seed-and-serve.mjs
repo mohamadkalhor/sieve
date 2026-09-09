@@ -106,6 +106,19 @@ const run = (args) => {
 
 run(['pull', 'openrouter', 'aa_llm', 'aa_media', 'gateway']);
 run(['check']);
+
+// A little real traffic, *before* the plan is computed -- see seed-telemetry.py
+// for why the Field's cost-per-task axis is untested without it.
+const seeded = spawnSync(
+  'uv',
+  ['run', 'python', join(repo, 'web', 'e2e', 'seed-telemetry.py'), join(work, 'sieve.db')],
+  { cwd: repo, env, stdio: 'inherit', shell: process.platform === 'win32' }
+);
+if (seeded.status !== 0) {
+  console.error('seeding telemetry failed');
+  process.exit(1);
+}
+
 run(['plan', '--store']);
 
 const server = spawn('uv', ['run', 'sieve', '--config', config, 'serve', '--port', port], {

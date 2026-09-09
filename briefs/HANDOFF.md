@@ -697,6 +697,97 @@ requires, with a test asserting it is actually there.
   multi_image_edit and the rest — are not pulled. They are per-category Elo of
   exactly the kind `aa_media` publishes and would be worth axes.
 
+
+## Part 8 · The Field screen, honestly
+
+Landed in two commits: A and B as `f777a5e`, C here.
+
+### A · the scatter appears only where cost is answerable
+
+The Field plots a quality axis against cost, so a point needs both. Media
+almost never has both — on these recordings 5 of 313 scored media models carry
+a price, against 60 of 60 LLMs; on the live box it was 62 of 775. Either
+population is far below any threshold worth drawing a scatter at.
+
+`MIN_PRICED_SHARE = 0.25` lives in `sieve/scoring/leaderboard.py` and
+`GET /v1/leaderboard` reports `scatter_ok` per modality. The **server** decides,
+because it is the side that knows how many models carry a price, and if media
+ever crosses the threshold the scatter returns with no code change.
+
+### B · the ranking, where the scatter cannot go
+
+One horizontal bar per model, best first, with the metric each modality
+actually publishes. `speech-to-text` gets a sentence instead of a chart:
+`aa_wer_index` is published rounded to one decimal, so 44 of 58 read 0.0, and a
+chart of ties invents an order.
+
+Duplicates collapse on `(creator, value to ~4 significant figures)`. The brief
+said one decimal, which is right for an Elo near 1200 and a tenth of the whole
+range on a 0–1 score — it merged three different speech-to-speech models.
+Absorbed ids are kept and shown as "N duplicates merged".
+
+### C · two searches, and the effort line
+
+`web/src/lib/field.ts` holds the arithmetic, unit-tested; `FieldSearch.svelte`
+holds the two boxes; `Scatter.svelte` draws the line.
+
+- **Provider** lights that provider's models green and dims the rest. Dimmed is
+  still drawn: the greys are what make the green mean anything.
+- **Model** narrows to one family and draws its modes joined in effort order,
+  each node labelled with its **mode** — the model name is identical on all six
+  and would be six copies of one word.
+- **Cost axis is a choice.** `price per million tokens` is the posted rate, and
+  `cost per task` is that mode's own measured output tokens at that rate. A node
+  measured from telemetry is a disc; one falling back to a posted price is a
+  hollow square, and the key sits beside the switch.
+- The screen counts and states, from the data loaded, how many multi-mode
+  families charge one rate for every mode. On these recordings 6 of 10; on the
+  live box 44 of 58.
+
+### Three bugs it found on the way
+
+- **A fold left the family pointer behind.** `merge_pull` rewrote a model's id,
+  aliases, observations, prices and capabilities, but not `family` — so when
+  AA's `openai/gpt-5-6-luna` folded onto OpenRouter's `openai/gpt-5.6-luna`,
+  every mode of that family went on pointing at an id that no longer existed.
+  9 of 33 families, and 4 of the 10 with more than one mode. Nothing could find
+  the family's base row, so `inherit_family_capabilities` (843bb74) reached
+  none of them and every mode stayed excluded by `require`. Measured: tools
+  reached 5 mode rows before, 23 after.
+- **The cost axis was a race.** It merged all nine profiles' rankings and kept
+  whichever `cost_per_task` arrived first, so the same screen reloaded drew
+  different numbers. It now reads one named profile, chosen alphabetically by
+  default and changeable, with the shape printed beside it. This matters more
+  than it sounds: at `cheap_bulk`'s 2k input the astra modes spread over 5.4x,
+  and at `reader`'s 200k they converge to within 6%.
+- **The x domain had a hardcoded floor.** `Math.min(...xs, 0.0001)` folded a
+  fallback into the minimum, so the axis always reached down to $0.0001 whether
+  or not anything was there, and a filtered field stayed squashed against the
+  right edge.
+
+### Left open
+
+- **`per million tokens` blends input and output 3 : 1.** An axis needs one
+  number and a price list has two. The ratio is declared on screen, but it is
+  still a choice, and a profile's own shape would be a better one if the axis
+  ever needs to be exact rather than comparable.
+- **The effort line is drawn for a provider search too**, one per multi-mode
+  family. On a provider with many families that is a lot of lines; `openai` has
+  four and it reads well, but nobody has seen it with twenty.
+- **`data-cost-domain` on the figure** exists so a test can assert the axis
+  rescaled without guessing at canvas pixels. It is inert for a reader, but it
+  is a test affordance in shipped markup and worth knowing about.
+- **Telemetry in the smoke store is seeded by `web/e2e/seed-telemetry.py`**,
+  written straight into the store because `sieve plan --store` computes the
+  ranking the Field reads and telemetry arriving after it is not in it. If the
+  seed ever grows a server-first ordering, that script should post to
+  `/v1/telemetry` instead.
+- **Part 9 is next** (card `t_bb756a1d`): the fal tier parser, then deepinfra.
+  My fal parser still refuses every tiered price, which PLAN §2.3 contradicts —
+  that is 88 more priced media models on Mohamad's measurement, and it is the
+  thing that could take media over `MIN_PRICED_SHARE` and bring the scatter
+  back rather than leaving it permanently hidden.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

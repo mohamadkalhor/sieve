@@ -14,6 +14,14 @@ export type DecisionKind = "switch" | "hold" | "suspend" | "weights" | "policy" 
 export type Scope = "read" | "profiles:write" | "apply" | "telemetry";
 
 
+// --- constants ----------------------------------------------------------
+
+/** Reasoning-effort modes, least effort first. */
+export const EFFORT_ORDER = ["non-reasoning", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+export type Effort = (typeof EFFORT_ORDER)[number];
+
+
 // --- models -------------------------------------------------------------
 
 export interface Axis {

@@ -9,10 +9,12 @@
     Profile,
     Ranking
   } from '$lib/types';
+  import { BLEND_IN, BLEND_OUT, mark, postedPerMillion, sameRateShare } from '$lib/field';
   import Empty from '$lib/components/Empty.svelte';
+  import FieldSearch from '$lib/components/FieldSearch.svelte';
   import Kpi from '$lib/components/Kpi.svelte';
   import Leaderboard from '$lib/components/Leaderboard.svelte';
-  import Scatter, { type Point } from '$lib/components/Scatter.svelte';
+  import Scatter, { type Line, type Point } from '$lib/components/Scatter.svelte';
 
   let modalities = $state<{ modality: Modality; models: number }[]>([]);
   let modality = $state<Modality>('llm');
@@ -25,6 +27,13 @@
   let metric = $state<string | undefined>(undefined);
   let error = $state<ApiError | null>(null);
   let loading = $state(true);
+
+  /** the two searches, and the x axis they are read against */
+  let provider = $state('');
+  let model = $state('');
+  let costAxis = $state<'per_task' | 'per_million'>('per_task');
+  /** whose task the cost axis is costing -- see `costs` below */
+  let shape = $state('');
 
   const DEFAULT_AXIS: Record<string, string> = { llm: 'intelligence' };
 
@@ -42,15 +51,42 @@
     )
   );
 
-  /** cost per task, taken from the ranking that used this profile's shape. */
+  /**
+   * Cost per task, from **one named profile's** ranking.
+   *
+   * There is no such thing as the cost of a task. `reader` sends 200k input
+   * tokens and `cheap_bulk` sends 2k, so the same model differs by two orders
+   * of magnitude between them, and the effort question changes answer with it:
+   * at `reader`'s shape the input swamps everything and every mode costs
+   * within 6% of every other, while at `cheap_bulk`'s the modes spread over 5x.
+   *
+   * This used to merge every profile's ranking and keep whichever arrived
+   * first, which made the axis depend on the order nine fetches happened to
+   * resolve in — the same screen, reloaded, drew different numbers. So it names
+   * one, and the name is on screen beside the axis.
+   */
   const costs = $derived.by(() => {
     const out = new Map<string, number>();
-    for (const ranking of Object.values(rankings)) {
-      for (const rank of ranking.ranks ?? []) {
-        if (rank.cost_per_task != null && !out.has(rank.model_id)) {
-          out.set(rank.model_id, rank.cost_per_task);
-        }
-      }
+    for (const rank of rankings[shape]?.ranks ?? []) {
+      if (rank.cost_per_task != null) out.set(rank.model_id, rank.cost_per_task);
+    }
+    return out;
+  });
+
+  /**
+   * Whether that cost came from the model's own traffic or from the profile's
+   * declared shape.
+   *
+   * This is the whole point of the cost-per-task axis. Effort does not change
+   * the rate, it changes how many tokens come back — so a cost built from a
+   * shape is the *same* number for every mode of a family and its line is
+   * vertical for a second, duller reason. Only telemetry moves it, and the
+   * chart has to say which points those are.
+   */
+  const costFrom = $derived.by(() => {
+    const out = new Map<string, 'shape' | 'telemetry'>();
+    for (const rank of rankings[shape]?.ranks ?? []) {
+      if (rank.cost_from) out.set(rank.model_id, rank.cost_from);
     }
     return out;
   });
@@ -66,18 +102,36 @@
     return out;
   });
 
+  const marked = $derived(mark(models, { provider, model }));
+  const searching = $derived(Boolean(provider.trim() || model.trim()));
+
   const points = $derived<Point[]>(
-    models.map((model) => ({
-      id: model.id,
-      x: costs.get(model.id) ?? fallbackCost(model),
-      y: values.get(model.id) ?? null,
-      reachable: model.reachable,
-      primary: primaries.has(model.id)
+    models.map((row) => ({
+      id: row.id,
+      x: costAxis === 'per_million' ? postedPerMillion(row.price) : perTask(row),
+      y: values.get(row.id) ?? null,
+      reachable: row.reachable,
+      primary: primaries.has(row.id),
+      effort: row.effort,
+      lit: marked.lit.has(row.id),
+      dim: searching && !marked.lit.has(row.id),
+      hidden: marked.drawn !== null && !marked.drawn.has(row.id),
+      // on the price list itself there is nothing to measure, so no claim
+      measured:
+        costAxis === 'per_million' ? undefined : costFrom.get(row.id) === 'telemetry'
     }))
   );
 
-  function fallbackCost(model: ModelRow): number | null {
-    const price = model.price;
+  const lines = $derived<Line[]>(
+    [...marked.lines].map(([family, modes]) => ({ family, ids: modes.map((m) => m.id) }))
+  );
+
+  function perTask(row: ModelRow): number | null {
+    return costs.get(row.id) ?? fallbackCost(row);
+  }
+
+  function fallbackCost(row: ModelRow): number | null {
+    const price = row.price;
     if (!price) return null;
     if (price.input != null || price.output != null) {
       // a nominal 10k in / 1k out, only so an unranked model still has a place
@@ -114,6 +168,10 @@
       })
     );
     rankings = loaded;
+    // alphabetical, so the axis is the same on every reload; changeable, because
+    // which task you are costing is a real question and not ours to answer
+    const named = profiles.map((p) => p.name).sort();
+    shape = named.includes(shape) ? shape : (named[0] ?? '');
     loading = false;
   }
 
@@ -130,9 +188,11 @@
 
   $effect(() => {
     // a modality change resets the metric: `elo:with_vocals` means nothing
-    // outside music
+    // outside music. It resets the search for the same reason.
     void modality;
     metric = undefined;
+    provider = '';
+    model = '';
   });
 
   $effect(() => {
@@ -149,12 +209,24 @@
    * Is a quality-against-cost scatter answerable for this modality?
    *
    * The server decides, against a named threshold, because it is the side that
-   * knows how many models carry a price. Today only `llm` clears it: 5 of 313
-   * scored media models have one.
+   * knows how many models carry a price. Today only `llm` clears it: on these
+   * recordings 5 of 313 scored media models have one.
    */
   const showScatter = $derived(board?.scatter_ok !== false);
 
   const matched = $derived(models.filter((m) => m.reachable).length);
+
+  /**
+   * How many multi-mode families charge one rate for every mode.
+   *
+   * Counted on the data actually loaded, so the sentence is never stale and
+   * never someone else's dataset.
+   */
+  const rates = $derived(sameRateShare(models));
+  const shaped = $derived(profiles.find((p) => p.name === shape));
+  const xLabel = $derived(
+    costAxis === 'per_million' ? 'posted price per 1M tokens (USD)' : 'cost per task (USD)'
+  );
 </script>
 
 <svelte:head><title>Field · Sieve</title></svelte:head>
@@ -199,11 +271,72 @@
   {/if}
 </div>
 
+{#if showScatter}
+  <FieldSearch
+    {models}
+    {provider}
+    {model}
+    matched={marked.lit.size}
+    onchange={(next) => {
+      provider = next.provider;
+      model = next.model;
+    }}
+  />
+
+  <div class="picker cost">
+    <label for="cost-axis">Cost axis</label>
+    <select id="cost-axis" bind:value={costAxis}>
+      <option value="per_task">cost per task</option>
+      <option value="per_million">price per million tokens</option>
+    </select>
+    {#if costAxis === 'per_task' && profiles.length > 1}
+      <label for="shape">of</label>
+      <select id="shape" bind:value={shape}>
+        {#each [...profiles].sort( (a, b) => a.name.localeCompare(b.name) ) as p (p.name)}
+          <option value={p.name}>{p.name}</option>
+        {/each}
+      </select>
+    {/if}
+    <span class="describes">
+      {#if costAxis === 'per_million'}
+        What the provider charges, input and output blended {BLEND_IN / BLEND_OUT} : 1.
+      {:else}
+        One {shape} task — {shaped?.shape?.in_tokens ?? 0} tokens in, {shaped?.shape
+          ?.out_tokens ?? 0} out — measured from the model's own traffic where there is any, a
+        posted price where there is not.
+      {/if}
+    </span>
+    {#if lines.length > 0 && costAxis === 'per_task'}
+      <!--
+        The shapes need naming somewhere, and this is where the reader is
+        already looking. The chart's own legend is hidden while a line is drawn,
+        because it names colours that are not on screen and sits exactly where
+        the top mode labels land.
+      -->
+      <span class="shapes mono">
+        <i class="dot"></i> measured
+        <i class="box"></i> posted price
+      </span>
+    {/if}
+  </div>
+
+  {#if rates.total > 0}
+    <p class="rates" role="note">
+      Of the {rates.total} families here that publish more than one effort mode,
+      <strong>{rates.same}</strong> charge one rate for every mode: effort changes how many
+      tokens come back, not the rate. So on <em>price per million tokens</em> their lines are
+      vertical — the price list, not a fault in the chart.
+    </p>
+  {/if}
+{/if}
+
 {#if loading}
   <p class="muted">Loading…</p>
 {:else if showScatter && points.some((p) => p.y !== null)}
   <Scatter
     {points}
+    {lines}
+    {xLabel}
     yLabel={axisName}
     onselect={(id) => goto(`/rankings?model=${encodeURIComponent(id)}`)}
   />
@@ -298,6 +431,40 @@
   .describes {
     color: var(--muted);
     font-size: 0.78rem;
+    max-width: 62ch;
+  }
+  .shapes {
+    color: var(--muted);
+    font-size: 0.72rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .shapes .dot,
+  .shapes .box {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    background: var(--good);
+  }
+  .shapes .dot {
+    border-radius: 50%;
+  }
+  .shapes .box {
+    background: transparent;
+    border: 1.5px solid var(--good);
+    margin-left: 0.5rem;
+  }
+  .rates {
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.55;
+    max-width: 72ch;
+    margin: 0 0 0.9rem;
+  }
+  .rates strong {
+    color: var(--ink);
+    font-weight: 600;
   }
   .muted {
     color: var(--muted);

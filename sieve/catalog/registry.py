@@ -184,15 +184,25 @@ def merge_pull(
         return result, {}
 
     folded = result.model_copy(deep=True)
+    # `family` is an id like any other, and it is the one that was being left
+    # behind. AA publishes `openai/gpt-5-6-luna` beside five `-low`, `-medium`
+    # ... modes, all carrying `family="openai/gpt-5-6-luna"`. The base row then
+    # folds onto OpenRouter's `openai/gpt-5.6-luna` and the family pointer keeps
+    # naming an id that no longer exists -- so nothing can find the family's
+    # base row, and every mode inherits nothing from it. Measured on the
+    # recordings: 9 of 33 families, and 4 of the 10 that publish more than one
+    # mode. Rewriting it here is the fix, because this is the function that
+    # renames ids.
     folded.models = [
         m.model_copy(
             update={
-                "id": rewrite[m.id],
-                "aliases": sorted({*m.aliases, m.id} - {rewrite[m.id]}),
+                "id": rewrite.get(m.id, m.id),
+                "family": rewrite.get(m.family, m.family) if m.family else m.family,
+                "aliases": (
+                    sorted({*m.aliases, m.id} - {rewrite[m.id]}) if m.id in rewrite else m.aliases
+                ),
             }
         )
-        if m.id in rewrite
-        else m
         for m in folded.models
     ]
     for observation in folded.observations:

@@ -332,3 +332,83 @@ def test_every_shipped_profile_passes_both_guards() -> None:
 
     for profile in profiles.values():
         assert not [p for p in validate_profile(profile) if "prefer_effort" in p]
+
+
+def test_a_fold_rewrites_the_family_pointer_too() -> None:
+    """A merge renames an id, and `family` is an id.
+
+    Artificial Analysis publishes `openai/gpt-5-6-luna` beside its five
+    `-low`, `-medium` ... mode rows, every one of them carrying
+    `family="openai/gpt-5-6-luna"`. The base row then folds onto OpenRouter's
+    `openai/gpt-5.6-luna` -- and before this, the family pointer went on naming
+    an id that no longer existed. Nothing could find the family's base row, so
+    every mode inherited nothing from it and stayed excluded by `require`.
+
+    Measured on the recordings: 9 of 33 families, and 4 of the 10 that publish
+    more than one mode.
+    """
+    from sieve.catalog.registry import merge_pull
+    from sieve.contracts import ModelRef, PullResult
+
+    def mode(model_id: str, effort: str | None) -> ModelRef:
+        return ModelRef(
+            id=model_id,
+            modality="llm",
+            name=f"Luna ({effort})" if effort else "Luna",
+            creator="openai",
+            effort=effort,
+            family="openai/gpt-5-6-luna",
+        )
+
+    pull = PullResult(
+        source="aa_llm",
+        models=[
+            mode("openai/gpt-5-6-luna", "max"),
+            mode("openai/gpt-5-6-luna-high", "high"),
+            mode("openai/gpt-5-6-luna-low", "low"),
+        ],
+    )
+
+    folded, rewrite = merge_pull(pull, ["openai/gpt-5.6-luna"])
+    assert rewrite == {"openai/gpt-5-6-luna": "openai/gpt-5.6-luna"}
+
+    by_id = {m.id: m for m in folded.models}
+    assert set(by_id) == {
+        "openai/gpt-5.6-luna",
+        "openai/gpt-5-6-luna-high",
+        "openai/gpt-5-6-luna-low",
+    }
+    # every row now points at a family key that names a row that exists
+    for model in folded.models:
+        assert model.family == "openai/gpt-5.6-luna"
+    assert by_id["openai/gpt-5.6-luna"].family in by_id
+
+    # and the folded row keeps the id it arrived under, as an alias
+    assert "openai/gpt-5-6-luna" in by_id["openai/gpt-5.6-luna"].aliases
+
+
+def test_inheritance_reaches_a_family_whose_base_row_was_folded() -> None:
+    """The fix above, seen from the end that matters: capabilities arrive."""
+    from sieve.contracts import Capability, ModelRef
+    from sieve.engine import inherit_family_capabilities
+
+    def mode(model_id: str, effort: str | None) -> ModelRef:
+        return ModelRef(
+            id=model_id,
+            modality="llm",
+            name=model_id,
+            creator="openai",
+            effort=effort,
+            family="openai/gpt-5.6-luna",
+        )
+
+    models = [
+        mode("openai/gpt-5.6-luna", "max"),
+        mode("openai/gpt-5-6-luna-high", "high"),
+        mode("openai/gpt-5-6-luna-low", "low"),
+    ]
+    caps = {"openai/gpt-5.6-luna": Capability(tools=True, context_window=400_000)}
+
+    out = inherit_family_capabilities(caps, models)
+    assert out["openai/gpt-5-6-luna-high"].tools is True
+    assert out["openai/gpt-5-6-luna-low"].context_window == 400_000

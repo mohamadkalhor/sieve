@@ -123,6 +123,11 @@ export interface ModelRow {
   name: string;
   creator: string;
   aliases: string[];
+  // Which effort mode this row is, and the family it is a mode of. /v1/models
+  // has always returned both -- ModelRef carries them -- and the Field needs
+  // them to join one model's modes into a line.
+  effort: string | null;
+  family: string | null;
   reachable: boolean;
   local_ids: string[];
   price: {

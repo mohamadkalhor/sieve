@@ -129,7 +129,7 @@ def _key(value: float) -> float:
     """
     if value == 0:
         return 0.0
-    places = max(1, 4 - int(math.floor(math.log10(abs(value)))) - 1)
+    places = max(1, 4 - math.floor(math.log10(abs(value))) - 1)
     return round(value, places)
 
 
