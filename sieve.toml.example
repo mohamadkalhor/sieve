@@ -166,6 +166,30 @@ models = ["anthropic/claude-sonnet-5"]
 kind = "file"
 dir = "out"
 
+# A 9router gateway, which has two ways in. Prefer the admin API: 9router owns
+# that database and is holding it open, and a target that edits another
+# program's live file has to run as whoever owns it -- for 9router that is
+# root, which means an hourly job with a great deal more reach than picking a
+# model needs. Over the API the same job runs as `sieve` and 9router does its
+# own writing.
+#
+# `token_env` names the variable holding 9router's CLI token, which it derives
+# from its own machine id and the secret in `auth/cli-secret`, and expects in
+# an `x-9r-cli-token` header rather than as a bearer key. Whoever can read
+# those two files can compute it once; nothing needs root afterwards.
+#
+# Reaching a chain into a seat also needs the profile to ask: `apply` and the
+# hourly `sieve run` ship a chain only where `policy.auto_apply` is true, so a
+# target added here does not quietly take charge of everything.
+#
+# [targets.gateway]
+# kind = "ninerouter"
+# url = "http://127.0.0.1:20128"
+# token_env = "NINEROUTER_TOKEN"
+#
+# Only where the API is genuinely unavailable, and never from a build:
+# sqlite_path = "/root/.9router/db/data.sqlite"
+
 [schedule]
 pull = "hourly"
 evaluate = "hourly"

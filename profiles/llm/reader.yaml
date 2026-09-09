@@ -12,6 +12,7 @@ shape: {in: 200000, out: 1500, cached: 0.5}
 policy:
   margin: 4.0
   chain: 5
+  auto_apply: true
 
 # Seat the *lowest* effort mode of a family that still clears the floor
 # below. The floor is what makes this safe: without one, cheapest_clearing
