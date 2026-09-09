@@ -133,7 +133,8 @@ def cmd_pull(args: argparse.Namespace) -> int:
         snapshot = store.new_snapshot(source_rows=len(result.observations))
         store.upsert_models(result.models)
         added = store.add_observations(result.observations, snapshot=snapshot)
-        priced = store.add_prices(result.prices)
+        intake = store.add_prices(result.prices)
+        priced = intake.added
         for modality in {m.modality for m in result.models} or set(source_cfg.modalities):
             store.set_capabilities(
                 name,
@@ -152,6 +153,10 @@ def cmd_pull(args: argparse.Namespace) -> int:
             _out(f"  merged: {was} -> {now}")
         if len(folded) > 5:
             _out(f"  ... and {len(folded) - 5} more merged into existing ids")
+        for refusal in intake.refused[:5]:
+            _out(f"  price refused, that unit cannot describe that modality: {refusal}")
+        if len(intake.refused) > 5:
+            _out(f"  ... and {len(intake.refused) - 5} more prices refused")
         for warning in result.warnings:
             _out(f"  warning: {warning}")
         if result.rate_limit.remaining is not None:

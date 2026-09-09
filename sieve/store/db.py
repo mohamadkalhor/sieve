@@ -12,6 +12,7 @@ import threading
 import uuid
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager, suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -28,11 +29,25 @@ from sieve.contracts import (
     Ranking,
     Reachable,
     TelemetryEvent,
+    unit_fits_modality,
 )
 
 MIGRATIONS = Path(__file__).parent / "migrations"
 
 TELEMETRY_RETENTION_DAYS = 30
+
+
+@dataclass(frozen=True)
+class PriceIntake:
+    """What `add_prices` stored, and what it would not.
+
+    A bare count cannot say the difference between "the source published two
+    prices" and "it published three and one of them was nonsense", and a
+    refusal nobody is told about is the same as a silent drop.
+    """
+
+    added: int
+    refused: list[str]
 
 
 def _merge_capability(base: Capability, extra: Capability) -> Capability:
@@ -300,10 +315,21 @@ class Store:
             pulled_at=_dt(r["pulled_at"]),
         )
 
-    def add_prices(self, prices: Iterable[Price]) -> int:
+    def add_prices(self, prices: Iterable[Price]) -> PriceIntake:
+        """Store the prices that could be true, and name the ones that could not.
+
+        Every source funnels through here, so this is the only placement where
+        the check actually holds -- a guard one ingest path can walk around is
+        not a guard. See `unit_fits_modality`: it refuses one thing only, a
+        picture unit on a model that emits sound.
+        """
         added = 0
+        refused: list[str] = []
         with self.tx() as db:
             for p in prices:
+                if not unit_fits_modality(p.modality, p.unit):
+                    refused.append(f"{p.model_id} ({p.source}): {p.unit} on {p.modality}")
+                    continue
                 cur = db.execute(
                     "INSERT OR IGNORE INTO prices (model_id, source, modality, unit, input,"
                     " output, cached_input, per_unit, source_url, tier, observed_at)"
@@ -323,7 +349,7 @@ class Store:
                     ),
                 )
                 added += cur.rowcount if cur.rowcount > 0 else 0
-        return added
+        return PriceIntake(added=added, refused=refused)
 
     def latest_prices(self, modality: Modality) -> dict[str, Price]:
         """One price per model: the latest pull, and its cheapest tier.

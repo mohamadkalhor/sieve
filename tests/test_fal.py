@@ -397,11 +397,12 @@ def test_the_pull_stores_a_row_per_tier(player: FixturePlayer) -> None:
 
     store = Store(":memory:")
     store.upsert_models(result.models)
-    added = store.add_prices(result.prices)
-    assert added == len(result.prices), "every tier survived the write"
+    intake = store.add_prices(result.prices)
+    assert intake.added == len(result.prices), "every tier survived the write"
+    assert intake.refused == [], "and none of them was refused as an impossible unit"
 
     # and a second identical pull adds nothing, rather than duplicating
-    assert store.add_prices(result.prices) == 0
+    assert store.add_prices(result.prices).added == 0
 
 
 def test_the_default_tier_is_the_cheapest_and_it_is_named(player: FixturePlayer) -> None:

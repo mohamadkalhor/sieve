@@ -265,7 +265,7 @@ def test_the_prices_join_the_catalogue_by_uuid(player: FixturePlayer) -> None:
     assert all(len(k) == 36 for k in rewrite), "every fold here is a uuid, never a name"
 
     store.upsert_models(folded.models)
-    assert store.add_prices(folded.prices) == len(folded.prices)
+    assert store.add_prices(folded.prices).added == len(folded.prices)
 
     priced = store.latest_prices("text-to-image")
     scored = {m.id for m in store.models("text-to-image")}

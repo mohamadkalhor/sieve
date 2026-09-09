@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from datetime import date, datetime
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, get_args, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -31,17 +31,10 @@ Modality = Literal[
     "music",
 ]
 
-MODALITIES: tuple[Modality, ...] = (
-    "llm",
-    "text-to-image",
-    "image-editing",
-    "text-to-video",
-    "image-to-video",
-    "video-editing",
-    "text-to-speech",
-    "speech-to-text",
-    "music",
-)
+#: Derived, not retyped. The hand-written tuple had drifted: `speech-to-speech`
+#: was added to `Modality` in part 2 and never added here, so anything that
+#: walked `MODALITIES` skipped a modality the catalogue holds 42 models for.
+MODALITIES: tuple[Modality, ...] = get_args(Modality)
 
 Unit = Literal[
     "index_0_100",
@@ -67,6 +60,32 @@ Unit = Literal[
     #: Shape by the engine, not published by any source.
     "usd_per_task",
 ]
+
+#: Units that can only describe a picture. Nothing audible has a pixel.
+VISUAL_UNITS: frozenset[Unit] = frozenset({"usd_per_image", "usd_per_megapixel"})
+
+#: The modalities whose output is sound.
+AUDIO_MODALITIES: frozenset[Modality] = frozenset(
+    {"text-to-speech", "speech-to-text", "speech-to-speech", "music"}
+)
+
+
+def unit_fits_modality(modality: Modality | None, unit: Unit) -> bool:
+    """Whether a rate in `unit` could describe a model of this modality.
+
+    Deliberately narrow. Almost every unit is defensible somewhere -- an image
+    model really is billed per token by some vendors, and a video model really
+    is billed per megapixel -- so a strict table would refuse real prices, and
+    PLAN 2.3 is clear that a refused real price is its own kind of lie. The one
+    thing no source can mean is a **picture** unit on a model that emits
+    **sound**: a marketplace that lists one endpoint under several categories
+    put a video rate on an audio row, and $0.0024 per megapixel was then served
+    as the price of a music model.
+    """
+    if modality is None:
+        return True
+    return not (modality in AUDIO_MODALITIES and unit in VISUAL_UNITS)
+
 
 Transform = Literal["identity", "neg_log", "log", "invert"]
 

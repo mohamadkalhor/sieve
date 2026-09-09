@@ -270,3 +270,39 @@ def test_one_sources_own_tiers_are_not_a_disagreement(tmp_path: Path) -> None:
         db_path = db
 
     assert _prices_that_disagree(_Cfg()) == []  # type: ignore[arg-type]
+
+
+def test_a_picture_unit_is_refused_on_a_model_that_makes_sound(tmp_path: Path) -> None:
+    """One fal endpoint was listed under several categories, so a video model
+    arrived as a *music* model carrying a $0.0024-per-megapixel rate, and the
+    music board -- which publishes no price at all -- showed one. Megapixels
+    cannot describe audio, so the row is refused and the refusal is named."""
+    from datetime import UTC, datetime
+
+    from sieve.contracts import ModelRef, Price
+    from sieve.store import Store
+
+    store = Store(tmp_path / "sieve.db")
+    store.upsert_models([ModelRef(id="fal-ai/ltx", modality="music", name="Ltx", creator="fal-ai")])
+
+    def price(modality: str, unit: str) -> Price:
+        return Price(
+            model_id="fal-ai/ltx",
+            source="fal",
+            modality=modality,  # type: ignore[arg-type]
+            unit=unit,  # type: ignore[arg-type]
+            per_unit=0.0024075,
+            observed_at=datetime.now(UTC),
+        )
+
+    intake = store.add_prices([price("music", "usd_per_megapixel")])
+    assert intake.added == 0, "the impossible rate was not stored"
+    assert len(intake.refused) == 1
+    assert "fal-ai/ltx" in intake.refused[0] and "usd_per_megapixel" in intake.refused[0]
+
+    # the same rate on the modality it was actually measured for is fine, and so
+    # is a per-second rate on the audio row: the check refuses one thing only
+    kept = store.add_prices([price("text-to-video", "usd_per_megapixel")])
+    assert kept.added == 1 and kept.refused == []
+    audible = store.add_prices([price("music", "usd_per_second")])
+    assert audible.added == 1 and audible.refused == []

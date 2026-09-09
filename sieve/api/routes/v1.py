@@ -884,12 +884,17 @@ def post_pull(
     snapshot = store.new_snapshot(source_rows=len(result.observations))
     store.upsert_models(result.models)
     added = store.add_observations(result.observations, snapshot=snapshot)
-    store.add_prices(result.prices)
+    intake = store.add_prices(result.prices)
+    warnings = list(result.warnings)
+    warnings += [
+        f"price refused, that unit cannot describe that modality: {refusal}"
+        for refusal in intake.refused
+    ]
     log_decision(
         store, name, "pull", token.name, None, {"added": added}, f"pulled {name}: {added} new rows"
     )
     events.publish("pull", {"source": name, "added": added, "job": job})
-    return {"job": job, "source": name, "added": added, "warnings": result.warnings}
+    return {"job": job, "source": name, "added": added, "warnings": warnings}
 
 
 @router.get("/inventory")
