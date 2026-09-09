@@ -877,6 +877,84 @@ tier vocabulary that can name "audio on", not a parser that guesses.
   `GET https://api.deepinfra.com/models/list`, no key, 116 media models, every
   price machine-readable and **in cents**.
 
+
+## Part 9 job 2 · deepinfra, a second price source
+
+Landed. `sieve/sources/deepinfra.py`, registered as `deepinfra`, no key, one
+request, recorded as `api_deepinfra_com_models_list.json` (120 of 372 rows kept:
+all 116 media plus four others so a test can prove the others are skipped).
+
+    on the same store and config     fal only   + deepinfra
+    media models scored                   349          368
+    media models priced                    22           49
+    media priced share                   6.3%        13.3%     threshold 25%
+
+His numbers checked out exactly before anything was built on them: 372 models,
+116 media, and the per-type counts to the model.
+
+### What it reads
+
+`pricing.type` is the discriminator and every rate is in **cents** — the one
+thing about this API that will bite somebody, since reading a rate as dollars
+overstates a model by a hundred and nothing about the resulting ranking looks
+wrong. The scale is asserted against deepinfra's own published price for a model
+anyone can check (`gemma-2-9b-it`, $0.03/1M in).
+
+`pricing.short` and `pricing.full` are ignored: they restate in English what is
+already in the object as a float.
+
+A rate of exactly zero is not a price — three text-to-speech models publish
+`cents_per_input_chars: 0.0` — and `cents_per_frame_unit` is skipped, because a
+frame is not a second without a frame rate and the response publishes none. Both
+are counted in warnings.
+
+### The modality is a claim
+
+deepinfra's `text-to-image` covers `Wan2.6-Image-Edit` and
+`Bria/remove_background` beside `FLUX-1-dev`; its `text-to-video` covers image
+conditioning beside text conditioning. Nothing in the response separates them,
+so PLAN §2.2 applies: the row is offered under both candidates and kept only
+where the catalogue already holds that id **in that modality**. 32 of 116 are
+kept and 60 are dropped with a count.
+
+That surfaced a bug in `confirm_provisional`: it compared ids alone, so an id
+the catalogue held as text-to-image confirmed a claim that it was
+image-editing — the one thing that function exists to prevent, and the thing its
+own docstring already said it did. It now compares `(id, modality)`.
+
+### Two sources, one model, two prices
+
+Both rows are kept, distinguished by `Price.source`, and nothing averages them.
+A ranking uses the cheapest known price. `sieve check` prints a **note** — not a
+failure — for any model the two price more than 3x apart in the same unit,
+comparing input against input and flat rate against flat rate.
+
+It earned its place on the first run. `google/veo-3-1-fast` is priced 5x apart,
+and the reason is not a margin: fal's `veo3.1/lite` endpoint folded onto the
+`veo-3-1-fast` id, so a cheaper model's price is sitting on a dearer model's
+row. Both numbers are true about *something*; only one is true about that id.
+
+### Left open
+
+- **The `veo3.1/lite` -> `veo-3-1-fast` fold is wrong** and is now visible. The
+  matcher folded two different endpoints of one family onto one id. Fixing it is
+  a matcher change, not a source change, and it wants its own look.
+- **`google/nano-banana-2-lite` is priced 96x apart on input tokens** — fal
+  reads Google's own $0.3125/1M, deepinfra charges $30/1M. That is either a real
+  vendor difference or another bad fold, and the note says which model to look
+  at rather than deciding.
+- **60 provisional rows are dropped** because the catalogue does not know them
+  in the claimed modality. Most are genuinely new models that only deepinfra
+  carries; they are unrankable either way, having no quality score, but they
+  would be worth keeping if a source ever scores them.
+- **deepinfra publishes `cents_per_output_token` for 219 text-generation
+  models.** This source ignores `text-generation` entirely, because OpenRouter
+  already covers LLM prices and a second llm price source is a different
+  decision from a second *media* one.
+- **The media priced share is 13.3% and the threshold is 25%.** The scatter
+  stays hidden. Between them the two jobs roughly doubled it; closing the rest
+  needs either a third source or a threshold somebody argues for on the merits.
+
 ## Part 1 · Real data replaces the invented fixtures
 
 Landed. Ten recordings from 2026-09-08 sit in `tests/fixtures/` under the exact

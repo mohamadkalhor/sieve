@@ -61,6 +61,12 @@ free_speech_to_speech = true
 enabled = true
 modalities = ["text-to-image", "image-editing", "text-to-video", "image-to-video"]
 
+# the second price source, so the smoke store exercises two sources pricing one
+# model, which is the case sieve check prints a disagreement note for
+[sources.deepinfra]
+enabled = true
+modalities = ["text-to-image", "image-editing", "text-to-video", "image-to-video"]
+
 [inventories.gateway]
 kind = "list"
 models = [
@@ -104,7 +110,7 @@ const run = (args) => {
   }
 };
 
-run(['pull', 'openrouter', 'aa_llm', 'aa_media', 'fal', 'gateway']);
+run(['pull', 'openrouter', 'aa_llm', 'aa_media', 'fal', 'deepinfra', 'gateway']);
 run(['check']);
 
 // A little real traffic, *before* the plan is computed -- see seed-telemetry.py

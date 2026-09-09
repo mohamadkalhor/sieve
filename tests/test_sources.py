@@ -415,7 +415,7 @@ def test_the_recordings_match_what_the_manifest_claims(player: FixturePlayer) ->
     is then quietly measuring something else.
     """
     manifest = json.loads((FIXTURES / "RECORDINGS.json").read_text(encoding="utf-8"))
-    assert len(manifest) == 15
+    assert len(manifest) == 16
 
     for name, entry in manifest.items():
         body = json.loads((FIXTURES / name).read_text(encoding="utf-8"))

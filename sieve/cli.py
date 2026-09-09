@@ -217,8 +217,16 @@ def confirm_provisional(result: PullResult, store: Store) -> tuple[PullResult, i
     if not result.provisional:
         return result, 0
 
-    known = {m.id for m in store.models()}
-    keep = {model_id for model_id in result.provisional if model_id in known}
+    # (id, modality), not id alone. The paragraph above says "in that modality"
+    # and the check did not: an id the catalogue held as text-to-image confirmed
+    # a claim that it was image-editing, which is the one thing this function
+    # exists to prevent. deepinfra's `text-to-image` spans both, so it offers
+    # the row under each and this decides which the catalogue recognises.
+    known = {(m.id, m.modality) for m in store.models()}
+    claimed = {m.id: m.modality for m in result.models}
+    keep = {
+        model_id for model_id in result.provisional if (model_id, claimed.get(model_id)) in known
+    }
     drop = result.provisional - keep
     if not drop:
         return result, 0
@@ -282,11 +290,64 @@ def cmd_check(args: argparse.Namespace) -> int:
     _out(f"profiles: {len(profiles)} loaded from {cfg.profiles_dir}")
 
     problems += _axes_against_the_data(cfg, axes)
+    for note in _prices_that_disagree(cfg):
+        _out(f"  note: {note}")
 
     for problem in problems:
         _out(f"  fail: {problem}")
     _out("check: green" if not problems else f"check: {len(problems)} problem(s)")
     return EXIT_OK if not problems else EXIT_ERROR
+
+
+#: Two vendors hosting one model rarely charge the same, and nobody needs to
+#: hear about 20%. A factor of three is past "different margins" and into
+#: "somebody is reading a different number".
+PRICE_DISAGREEMENT = 3.0
+
+
+def _prices_that_disagree(cfg: Config) -> list[str]:
+    """Where two sources price one model, in one unit, more than 3x apart.
+
+    A price is one vendor charging to run one model, so two sources are expected
+    to differ and their rows are never merged. But a gap this wide usually means
+    the units differ and one of them is parsed wrong -- fal's `veo3.1/lite`
+    price folded onto `veo-3-1-fast` and sat five times under what deepinfra
+    charges for the model that id really names.
+
+    A note, not a failure: both numbers may be true, and the person who can tell
+    is the one reading the line.
+    """
+    store = Store(cfg.db_path)
+    by_model: dict[tuple[str, str, str], list[tuple[str, float]]] = {}
+    # per field, not per row: one source may publish only an input rate and
+    # another only a flat one, and comparing those two numbers compares nothing.
+    for field in ("per_unit", "input", "output"):
+        rows = store.db.execute(
+            f"SELECT model_id, modality, source, unit, MIN({field}) AS rate"
+            f" FROM prices WHERE {field} > 0"
+            " GROUP BY model_id, modality, source, unit"
+        )
+        for row in rows:
+            label = row["unit"] if field == "per_unit" else f"{row['unit']} ({field})"
+            key = (row["model_id"], row["modality"] or "", label)
+            by_model.setdefault(key, []).append((row["source"], float(row["rate"])))
+
+    out: list[str] = []
+    for (model_id, modality, unit), priced in sorted(by_model.items()):
+        if len(priced) < 2:
+            continue
+        cheap = min(priced, key=lambda pair: pair[1])
+        dear = max(priced, key=lambda pair: pair[1])
+        if dear[1] <= cheap[1] * PRICE_DISAGREEMENT:
+            continue
+        where = f" ({modality})" if modality else ""
+        out.append(
+            f"{model_id}{where} is priced {dear[1] / cheap[1]:.1f}x apart in {unit}: "
+            f"{cheap[0]} {cheap[1]:.6g}, {dear[0]} {dear[1]:.6g}. Both are kept -- a price "
+            "is one vendor charging to run one model -- but a gap this wide is usually a "
+            "unit read wrongly or two different models folded onto one id."
+        )
+    return out
 
 
 def _axes_against_the_data(cfg: Config, axes: list[Any]) -> list[str]:

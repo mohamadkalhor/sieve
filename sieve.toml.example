@@ -74,6 +74,30 @@ modalities = [
   "music",
 ]
 
+# deepinfra: the second price source for media, and a complementary one -- it
+# hosts models fal has no price sentence for at all. No key, one request, and
+# every rate machine-readable.
+#
+# Its `text-to-image` spans our text-to-image and image-editing, and its
+# `text-to-video` spans text-to-video and image-to-video, so a row in either is
+# offered under both and kept only where Artificial Analysis already knows the
+# id in that modality.
+#
+# fal and deepinfra host some of the same models at different rates. Both prices
+# are kept -- a price is one vendor charging to run one model -- and
+# `sieve check` notes any model the two disagree about by more than 3x.
+[sources.deepinfra]
+enabled = true
+modalities = [
+  "text-to-image",
+  "image-editing",
+  "text-to-video",
+  "image-to-video",
+  "text-to-speech",
+  "speech-to-text",
+  "music",
+]
+
 # LMArena: human preference Elo, the one measurement no benchmark makes.
 # CC-BY-4.0 -- see docs/sources.md for the attribution that licence requires.
 #

@@ -1,4 +1,11 @@
 {
+ "api_deepinfra_com_models_list.json": {
+  "params": null,
+  "recorded": "2026-09-08",
+  "rows_kept": 120,
+  "rows_published": 372,
+  "url": "https://api.deepinfra.com/models/list"
+ },
  "artificialanalysis_ai_api_v2_data_llms_models.json": {
   "params": null,
   "recorded": "2026-09-08",

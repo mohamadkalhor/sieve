@@ -12,6 +12,8 @@ below.
 |---|---|---|
 | earlier | OpenRouter, no key needed | `openrouter_ai_api_v1_models.json` |
 | 2026-09-08 | Artificial Analysis, with a live key | the ten `artificialanalysis_ai_*` files |
+| 2026-09-08 | fal, no key needed | `fal_ai_api_models__limit_200_page_1.json` |
+| 2026-09-09 | deepinfra, no key needed | `api_deepinfra_com_models_list.json` |
 
 `RECORDINGS.json` gives, per file, the exact URL it came from, the query
 parameters that were sent, the date, how many rows the endpoint published that
@@ -19,6 +21,8 @@ day, and how many were kept. They are **trimmed**: the LLM endpoint published
 644 models and 60 are kept here, the five arena endpoints published 74–157 each
 and 40 are kept. The four free-tier files are whole, being small enough
 (15–67 rows).
+
+The deepinfra file keeps all 116 media rows and four rows of other types, so a test can prove the others are skipped rather than assume it.
 
 They are **response bodies only**. No key, no request header and no
 `Authorization` value is inside any of them. Never commit a recording that

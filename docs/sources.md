@@ -13,6 +13,7 @@ axis pointed at the wrong source is a confident wrong answer.
 | `aa_media` | Human preference Elo for image, video and speech, per category | yes | terms of use |
 | `openrouter` | Prices, context windows, capabilities for LLMs | no | terms of use |
 | `fal` | **Prices** for media models | no | terms of use |
+| `deepinfra` | **Prices** for media models, machine-readable | no | terms of use |
 | `arena` | **Human preference Elo**, text and media | no | **CC-BY-4.0** |
 | `manual` | Whatever you measured yourself | — | yours |
 
@@ -108,6 +109,64 @@ correctly, and that is the trade this source exists to make.
 Measured on the recordings: **14 media models priced before this rule, 22
 after** — a media priced share of 6.2% rising to 9.8%, still well under the 25%
 the Field needs before it will draw a cost scatter.
+
+### deepinfra — `deepinfra`
+
+<https://api.deepinfra.com/models/list>. No key, one request. Measured on
+2026-09-09: 372 models, 116 of them media, and **every one of the 116 carries a
+machine-readable price**. It is not a rival to fal, it is a complement — the two
+catalogues barely overlap, and deepinfra hosts models fal has no price sentence
+for at all.
+
+**Every rate is in cents.** `cents_per_output_sec: 5.0` is five cents a second,
+not five dollars. Reading one as dollars overstates a model by a hundred and
+nothing about the ranking would look wrong, which is why the scale is asserted
+against deepinfra's own published price for a model anyone can check
+(`gemma-2-9b-it`, $0.03/1M in).
+
+| the field | the unit | how |
+| --- | --- | --- |
+| `cents_per_image_unit` | `usd_per_image` | ÷ 100 |
+| `cents_per_output_sec` | `usd_per_second` | ÷ 100 |
+| `cents_per_sec`, `cents_per_input_sec` | `usd_per_second` | ÷ 100 |
+| `cents_per_input_chars` | `usd_per_1m_chars` | × 10,000 |
+| `cents_per_input_token` | `usd_per_1m_tokens`, as `input` | × 10,000 |
+| `cents_per_frame_unit` | — | skipped and counted |
+
+`pricing.short` and `pricing.full` are English restatements of numbers that are
+already in the object as floats, and they are **ignored**. Parsing prose when a
+float is offered is how a parser earns a wrong price it did not need.
+
+A rate of exactly zero is not a price. Three text-to-speech models publish
+`cents_per_input_chars: 0.0`; stored, that puts them at the top of every cost
+ranking on the strength of a field nobody filled in.
+
+`cents_per_frame_unit` is skipped because a frame is not a second without a
+frame rate and the response publishes none.
+
+**Its categories span our modalities.** `text-to-image` covers
+`Wan2.6-Image-Edit` and `Bria/remove_background` beside `FLUX-1-dev`, and
+nothing in the response separates generation from editing. So PLAN §2.2 applies:
+the row is offered under both candidates and kept only where the catalogue
+already holds that id in that modality. On the recordings that keeps 32 of 116
+and drops 60 with a count.
+
+### Two sources, one model, two prices
+
+A price is **one vendor charging to run one model**, not the price of the model.
+fal and deepinfra host some of the same models at different rates, so:
+
+- both rows are kept, distinguished by `Price.source`, and nothing averages them
+- a ranking uses the cheapest known price
+- `sieve check` prints a **note** — not a failure — for any model the two price
+  more than 3x apart in the same unit, comparing input against input and flat
+  rate against flat rate
+
+That last one earns its place immediately. It reports `google/veo-3-1-fast`
+priced 5x apart, and the reason is not a margin: fal's `veo3.1/lite` endpoint
+folded onto the `veo-3-1-fast` id, so a cheaper model's price is sitting on a
+dearer model's row. Both numbers are true about *something*; only one of them is
+true about that id.
 
 ### LMArena — `arena`
 
