@@ -57,6 +57,7 @@ exact — no name matching at all.
 | `/video/leaderboard/image-to-video` | `pricePerMinute` | `usd_per_second` | 72 |
 | `/text-to-speech` | `pricePer1mCharacters` | `usd_per_1m_chars` | 77 |
 | `/speech-to-text` | `pricePer1kMinutes` | `usd_per_second` | 47 |
+| `/video/leaderboard/video-editing` | `pricePerMinute` | `usd_per_second` | 9 |
 | `/speech-to-speech` | `pricePerHourInput`/`Output` | `usd_per_second` | 32 |
 
 Measured 2026-09-09. Together they take the media priced share from 13.4% to
@@ -94,6 +95,35 @@ construction rather than forbidden by convention.
 `priceDisplayOverride: "no_api"` means the model has no public API. Whatever
 number sits in the price field, nobody can pay it, so the row is skipped and
 counted.
+
+#### It also takes what the v2 API does not publish
+
+`winRate` — the share of head-to-head wins — appears on the image boards and
+nowhere in the API, so it is stored everywhere it is offered, as a fraction.
+
+**Elo is taken from exactly one board: `video-editing`.** Everywhere else
+`aa_media` already stores the same number from the documented endpoint, and one
+organisation's single measurement must not arrive twice under two source names —
+an axis reading both would count it twice. The v2 API has no video-editing arena
+at all, so the page is the only place that Elo exists, which is what makes the
+modality rankable.
+
+`ciDelta` is the **half-width**: a row with Elo 1178.11 carries ciLower 1168.11
+and ciUpper 1188.11 against ciDelta 10. That is the same thing `ci95` means
+elsewhere in the store, so the two agree. Reading it as the full width would
+make every interval twice as wide and every model look half as settled.
+
+#### Music has no price on its board
+
+`/music/leaderboard/instrumental` and `/music/leaderboard/vocals` carry no price
+key at all, so music keeps the ranking and no cost axis. It is the one media
+modality a marketplace is still the only answer for.
+
+Two corrections to what was expected there: the with-vocals board is at
+`/music/leaderboard/vocals`, not `/with-vocals`, and **there are no per-genre
+leaderboards.** No `/music/leaderboard/<genre>` URL resolves, and the payload
+carries no genre split — the repeated Elo blocks are the same nineteen models
+once per sub-board, and the labels that look like genres are creator names.
 
 #### Attribution
 

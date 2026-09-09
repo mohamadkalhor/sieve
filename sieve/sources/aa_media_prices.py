@@ -33,18 +33,20 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, ClassVar
 
 from sieve.contracts import (
     HttpClient,
     Modality,
     ModelRef,
+    Observation,
     Price,
     PullResult,
     SourceConfig,
     Unit,
 )
-from sieve.sources.base import as_float, utcnow
+from sieve.sources.base import as_float, as_int, utcnow
 
 SITE = "https://artificialanalysis.ai"
 
@@ -69,6 +71,13 @@ class Board:
     scale: float
     #: the second rate, where a board publishes an input and an output price
     out_key: str | None = None
+    #: Take the quality measurements from this board too.
+    #:
+    #: Only where the v2 data API does not cover the arena at all. Everywhere
+    #: else `aa_media` already stores the same Elo from the documented endpoint,
+    #: and one organisation's single measurement should not arrive twice under
+    #: two source names -- an axis reading both would double its weight.
+    scores: bool = False
 
     @property
     def url(self) -> str:
@@ -100,7 +109,16 @@ BOARDS: tuple[Board, ...] = (
         "usd_per_second",
         1 / 60,
     ),
-    # a board Sieve has no modality for yet; part 10 job 2 adds `video-editing`
+    # the v2 data API has no video-editing arena at all, so this board is the
+    # only place its Elo exists and the modality is unrankable without it
+    Board(
+        "video-editing",
+        "/video/leaderboard/video-editing",
+        "pricePerMinute",
+        "usd_per_second",
+        1 / 60,
+        scores=True,
+    ),
     Board("text-to-speech", "/text-to-speech", "pricePer1mCharacters", "usd_per_1m_chars", 1.0),
     Board("speech-to-text", "/speech-to-text", "pricePer1kMinutes", "usd_per_second", 1 / 60_000),
     Board(
@@ -215,8 +233,64 @@ def model_of(row: dict[str, Any]) -> tuple[str, str, list[str]] | None:
     return None
 
 
+def measurements(
+    row: dict[str, Any], model_id: str, board: Board, at: datetime
+) -> list[Observation]:
+    """What the board publishes about quality, beside the price.
+
+    `winRate` is the share of head-to-head wins and appears only on the image
+    boards. The v2 data API publishes no such field, so it is taken everywhere
+    it is offered.
+
+    Elo, appearances and the confidence interval are taken **only** where the
+    API does not cover the arena -- `video-editing` -- because everywhere else
+    `aa_media` already stores them and an axis reading both sources would count
+    one measurement twice.
+
+    `ciDelta` is the half-width: a row with elo 1178.11 carries ciLower 1168.11
+    and ciUpper 1188.11 against ciDelta 10. `ci95` here means the same
+    half-width `aa_media` stores, so the two agree.
+    """
+    values = row.get("values")
+    if isinstance(values, dict):
+        row = values
+
+    out: list[Observation] = []
+
+    def add(field: str, raw: Any, unit: Unit) -> None:
+        value = as_float(raw)
+        if value is None:
+            return
+        out.append(
+            Observation(
+                model_id=model_id,
+                modality=board.modality,
+                source="aa_media_prices",
+                field=field,
+                value=value,
+                unit=unit,
+                n=as_int(row.get("appearances")),
+                ci95=as_float(row.get("ciDelta")),
+                observed_at=at,
+                pulled_at=at,
+            )
+        )
+
+    # a fraction, not a percentage: the row publishes 0.65 for 65%
+    add("win_rate", row.get("winRate"), "fraction")
+    if board.scores:
+        add("elo", row.get("elo"), "elo")
+        add("appearances", row.get("appearances"), "count")
+    return out
+
+
 class AAMediaPricesSource:
-    """`Source` for the Artificial Analysis media leaderboards. Prices only."""
+    """`Source` for the Artificial Analysis media leaderboards.
+
+    Prices on every board, plus the measurements the v2 data API does not
+    publish: `winRate` everywhere it is offered, and the whole Elo for
+    `video-editing`, which the API does not cover at all.
+    """
 
     name = "aa_media_prices"
     needs_key = False
@@ -270,9 +344,13 @@ class AAMediaPricesSource:
                     overridden += 1
                     continue
                 rate = price_of(row, board)
-                if rate is None:
+                if rate is None and not board.scores:
                     no_price += 1
                     continue
+                if rate is None:
+                    no_price += 1
+
+                result.observations.extend(measurements(row, uuid, board, at))
 
                 creator = row.get("creator")
                 creator_name = (
@@ -291,6 +369,8 @@ class AAMediaPricesSource:
                         aliases=sorted({*aliases} - {uuid, ""}),
                     )
                 )
+                if rate is None:
+                    continue
                 result.prices.append(
                     Price(
                         model_id=uuid,

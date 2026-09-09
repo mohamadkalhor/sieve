@@ -1,0 +1,14 @@
+# The v2 data API has no video-editing arena at all, so `aa_media_prices` --
+# which reads the leaderboard page -- is the only source of this Elo. That is
+# also why this axis names it: reading `aa_media` here would sit at coverage 0
+# for ever, which `sieve check` would catch and rightly call an error.
+
+name: quality
+modality: video-editing
+label: "Quality"
+describes: "human-preference Elo across the whole video-editing arena"
+fields:
+  - {source: aa_media_prices, field: elo, weight: 1.0}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

@@ -125,6 +125,13 @@
   "rows_published": 95,
   "url": "https://artificialanalysis.ai/video/leaderboard/text-to-video"
  },
+ "artificialanalysis_ai_video_leaderboard_video_editing.json": {
+  "params": null,
+  "recorded": "2026-09-09",
+  "rows_kept": 9,
+  "rows_published": 9,
+  "url": "https://artificialanalysis.ai/video/leaderboard/video-editing"
+ },
  "datasets_server_huggingface_co_filter__config_image_edit_dataset_lmarena_ai_leaderboard_dataset_length_100_offset_0_split_latest_where_category_overall.json": {
   "params": "dataset=lmarena-ai%2Fleaderboard-dataset&config=image_edit&split=latest&offset=0&length=100&where=%22category%22%3D%27overall%27",
   "recorded": "2026-09-08",

@@ -31,6 +31,7 @@ METRIC: dict[Modality, tuple[str, ...]] = {
     "image-editing": ("elo",),
     "text-to-video": ("elo",),
     "image-to-video": ("elo",),
+    "video-editing": ("elo",),
     "text-to-speech": ("elo",),
     # two different contests, and a model good at one can be ordinary at the
     # other. With vocals is the default; instrumental is offered beside it.

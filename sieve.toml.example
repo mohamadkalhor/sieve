@@ -74,6 +74,7 @@ modalities = [
   "image-editing",
   "text-to-video",
   "image-to-video",
+  "video-editing",
   "text-to-speech",
   "speech-to-text",
   "speech-to-speech",

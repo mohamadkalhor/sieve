@@ -220,12 +220,11 @@ def test_the_join_is_a_uuid_on_every_board() -> None:
         )
 
 
-def test_the_pull_prices_every_board_and_measures_nothing(player: FixturePlayer) -> None:
+def test_the_pull_prices_every_board(player: FixturePlayer) -> None:
     result = AAMediaPricesSource().pull(SourceConfig(name="aa_media_prices"), player)
 
     assert AAMediaPricesSource().needs_key is False
     assert result.ok is True
-    assert result.observations == [], "this source measures no quality; aa_media does that"
     assert result.prices
     assert {p.modality for p in result.prices} == {b.modality for b in BOARDS}
     assert all(p.source == "aa_media_prices" for p in result.prices)
@@ -272,3 +271,83 @@ def test_the_prices_join_the_catalogue_by_uuid(player: FixturePlayer) -> None:
     scored = {m.id for m in store.models("text-to-image")}
     landed = set(priced) & scored
     assert landed, "prices must reach models the catalogue already scored"
+
+
+# --------------------------------------------------------------------------- #
+# what the v2 API does not publish
+# --------------------------------------------------------------------------- #
+
+
+def test_elo_is_taken_only_where_the_api_does_not_cover_the_arena(
+    player: FixturePlayer,
+) -> None:
+    """One organisation's single measurement must not arrive twice.
+
+    `aa_media` already stores the Elo for every arena the v2 data API exposes,
+    from the documented endpoint. Taking it from the page as well would put two
+    rows under two source names for one number, and an axis reading both would
+    count it twice.
+
+    `video-editing` is the exception, and the reason this matters: the API has
+    no such arena at all, so the page is the only place its Elo exists and the
+    modality is unrankable without it.
+    """
+    result = AAMediaPricesSource().pull(SourceConfig(name="aa_media_prices"), player)
+    scored = {o.modality for o in result.observations if o.field == "elo"}
+    assert scored == {"video-editing"}
+
+    covered = {b.modality for b in BOARDS if not b.scores}
+    assert "text-to-video" in covered and "text-to-image" in covered
+
+
+def test_win_rate_is_taken_everywhere_it_is_offered(player: FixturePlayer) -> None:
+    """The v2 API publishes no win rate at all, so there is nothing to duplicate.
+
+    It is a fraction, not a percentage: the row carries 0.65 for 65%.
+    """
+    result = AAMediaPricesSource().pull(SourceConfig(name="aa_media_prices"), player)
+    rates = [o for o in result.observations if o.field == "win_rate"]
+    assert rates, "the image boards publish it"
+    assert all(o.unit == "fraction" for o in rates)
+    assert all(0.0 <= o.value <= 1.0 for o in rates)
+    # only the image boards carry it; the video boards do not
+    assert {o.modality for o in rates} <= {"text-to-image", "image-editing"}
+
+
+def test_the_confidence_interval_is_the_half_width_aa_media_also_stores(
+    player: FixturePlayer,
+) -> None:
+    """A row with elo 1178.11 carries ciLower 1168.11, ciUpper 1188.11 and
+    ciDelta 10, so `ciDelta` is the half-width -- which is what `ci95` means
+    everywhere else in this store. Reading it as the full width would make every
+    interval twice as wide and every model look half as settled."""
+    board = next(b for b in BOARDS if b.modality == "video-editing")
+    rows = rows_of(flight(_page(board)), board.key)
+    # `rows_of` finds the object carrying the price key, which on a board page
+    # is the `values` object itself rather than its `{formatted, values}` wrapper
+    row = next(r for r in rows if r.get("ciDelta"))
+    assert row["ciUpper"] - row["ciLower"] == pytest.approx(2 * row["ciDelta"])
+
+    result = AAMediaPricesSource().pull(SourceConfig(name="aa_media_prices"), player)
+    elo = [o for o in result.observations if o.field == "elo"]
+    assert elo and all(o.ci95 is not None and o.n is not None for o in elo)
+
+
+def test_video_editing_is_a_modality_that_ranks(player: FixturePlayer) -> None:
+    """End to end: an arena the v2 API does not expose, made rankable from the
+    page alone. Every one of its nine models carries both an Elo and a price,
+    which is unusual for media and is why this modality works at all."""
+    from sieve.contracts import MODALITIES
+
+    assert "video-editing" in MODALITIES
+
+    result = AAMediaPricesSource().pull(SourceConfig(name="aa_media_prices"), player)
+    priced = {p.model_id for p in result.prices if p.modality == "video-editing"}
+    scored = {o.model_id for o in result.observations if o.modality == "video-editing"}
+    assert priced and scored
+    assert priced == scored, "on this board every scored model is priced"
+
+    repo = Path(__file__).resolve().parents[1]
+    axes = {p.stem for p in (repo / "data" / "axes" / "video-editing").glob("*.yaml")}
+    assert axes == {"quality", "maturity", "cost"}
+    assert (repo / "profiles" / "video-editing" / "video_edit_general.yaml").exists()

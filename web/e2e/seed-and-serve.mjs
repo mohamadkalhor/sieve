@@ -63,7 +63,7 @@ free_speech_to_speech = true
 enabled = true
 modalities = [
   "text-to-image", "image-editing", "text-to-video", "image-to-video",
-  "text-to-speech", "speech-to-text", "speech-to-speech"
+  "video-editing", "text-to-speech", "speech-to-text", "speech-to-speech"
 ]
 
 [sources.fal]

@@ -1,0 +1,15 @@
+name: video_edit_general
+modality: video-editing
+purpose: "editing an existing clip"
+weights:
+  quality: 0.7
+  maturity: 0.2
+  cost: 0.1
+require:
+  min_appearances: 500
+shape: {seconds: 8}
+policy:
+  margin: 15.0
+  max_tenure_days: 30
+  chain: 3
+  min_confidence: 0.5

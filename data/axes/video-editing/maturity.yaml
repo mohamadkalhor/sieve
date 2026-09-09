@@ -1,0 +1,13 @@
+# Not a measure of quality. It is how much to trust the quality number:
+# appearances on a log scale. The arena is nine models deep, so a thin one is
+# thin for a reason and it should be visible rather than averaged away.
+
+name: maturity
+modality: video-editing
+label: "Maturity"
+describes: "how settled the score is: nine models share this arena, so votes matter"
+fields:
+  - {source: aa_media_prices, field: appearances, weight: 1.0, transform: log}
+missing: renormalise
+min_coverage: 0.5
+higher_is_better: true

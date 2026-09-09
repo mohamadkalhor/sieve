@@ -18,6 +18,10 @@ Modality = Literal[
     "image-editing",
     "text-to-video",
     "image-to-video",
+    # Editing an existing video, as distinct from generating one. Artificial
+    # Analysis runs it as its own arena and the v2 data API does not expose it
+    # at all; the leaderboard page does. Added in part 10.
+    "video-editing",
     "text-to-speech",
     "speech-to-text",
     # Voice-to-voice models: one row per model with up to three published
@@ -33,6 +37,7 @@ MODALITIES: tuple[Modality, ...] = (
     "image-editing",
     "text-to-video",
     "image-to-video",
+    "video-editing",
     "text-to-speech",
     "speech-to-text",
     "music",

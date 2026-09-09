@@ -1057,23 +1057,52 @@ video price against the same shape gives None.
 
 `priceDisplayOverride: "no_api"` skips the row, counted.
 
-### Left open — jobs 2, 3 and 4 of the card
+### Jobs 2, 3 and 4
 
-- **Job 2**: `video-editing` is a modality Sieve does not have (9 models, all
-  priced); the music board publishes per-genre elos the API does not; and the
-  image and video boards carry `winRate`, `deprecated`, `ciLower`/`ciUpper`,
-  `openWeightsUrl` and `isCurrent`. `deprecated` is the one that changes an
-  answer — a retired model can currently be recommended.
-- **Job 3**: `fal` and `deepinfra` should ship `enabled = false`, keeping code,
-  tests and recordings. Not done yet; both are still enabled.
-- **Job 4**: the Field's scatter returns on its own, but the part 8C provider
-  and model search is still llm-only and should work on the media scatter with
-  the effort polyline simply not drawn.
-- **Music has no price on its board.** `/music/leaderboard/instrumental` carries
-  no price key at all, so music stays unpriced and keeps the ranking. That is
-  the one place a marketplace is still the only answer.
-- **The with-vocals music board is not at the URL the card gives.**
-  `/music/leaderboard/with-vocals` is a 404; its real path is unfound.
+**Job 3.** `fal` and `deepinfra` ship `enabled = false`, reason in the config
+beside them. Nothing deleted: code, tests and recordings stay, and turning
+either on is one word.
+
+**Job 4.** The cost scatter came back on its own — the threshold was not
+touched, the data crossed it. text-to-image 100%, text-to-video 63.8%,
+image-to-video 60.9%, image-editing 60.0%, speech-to-speech 44.7%,
+text-to-speech 44.2% all draw a scatter; speech-to-text 13.2% and music 0% keep
+the ranking. The part 8C search already worked on media and the effort polyline
+draws nothing there, both now asserted. One wart it exposed: the cost-axis hint
+read "0 tokens in, 0 out" under a video profile, because a `Shape` only fills
+the fields its modality uses. It now names whatever the shape declares.
+
+**Job 2.** `video-editing` is a modality end to end — contracts, axes, profile,
+ranking metric, tabs — and it ranks: nine models, every one with both an Elo and
+a price, which is unusual for media and is exactly why it works. The v2 API has
+no such arena, so the page is the only source of that Elo.
+
+`winRate` is stored everywhere it is offered. Elo is taken from the page for
+`video-editing` **only**, because `aa_media` already has it for every other
+arena and one measurement must not arrive twice under two source names.
+
+Two corrections about music: the with-vocals board is `/music/leaderboard/vocals`
+(not `/with-vocals`), and **there are no per-genre leaderboards** — no
+`/music/leaderboard/<genre>` URL resolves and the payload carries no genre
+split. The repeated Elo blocks are the same nineteen models once per sub-board,
+and the strings that look like genres are creator names.
+
+### Left open
+
+- **`deprecated` does not exist on these boards.** The card asked for it as the
+  field that changes an answer — a retired model must never be recommended — and
+  the image and video boards publish `isCurrent` and `isRecent` instead. Every
+  row in the recordings is `isCurrent: true`, so nothing is flagged today and
+  there is nothing to act on yet. It is read but not stored: a capability field
+  for "retired" is a contract change nobody has asked for.
+- **`openWeightsUrl` is on 51 of 158 image models** and is not stored. It is the
+  only published signal of whether a model can be self-hosted, which is a real
+  `require:` constraint somebody will want.
+- **Music is unpriced**, so it keeps the ranking. The marketplaces are still the
+  only answer there, which is why they are disabled rather than deleted.
+- **`win_rate` is stored and no axis reads it.** That is available data rather
+  than a gap, but an arena where a model wins 65% of its matches is arguably a
+  better quality signal than an Elo, and nobody has decided.
 
 ## Part 1 · Real data replaces the invented fixtures
 
