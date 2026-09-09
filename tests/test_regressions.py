@@ -175,3 +175,98 @@ def test_a_family_with_no_capabilities_anywhere_inherits_nothing() -> None:
     base = ModelRef(id="v/m", modality="llm", name="M", creator="v", family="v/m", effort="max")
     high = base.model_copy(update={"id": "v/m-high", "effort": "high"})
     assert inherit_family_capabilities({}, [base, high]) == {}
+
+
+def test_two_sources_that_disagree_about_one_price_are_surfaced(tmp_path: Path) -> None:
+    """A price is one vendor charging to run one model, so two sources differ.
+
+    A factor of three is past "different margins" and into "somebody is reading
+    a different number" -- which is how the `veo3.1/lite` fold was found, a
+    cheaper model's rate sitting on a dearer model's row.
+
+    It is a note, not a failure: both numbers may be true, and the person who
+    can tell is the one reading the line.
+    """
+    from datetime import UTC, datetime
+
+    from sieve.cli import _prices_that_disagree
+    from sieve.contracts import ModelRef, Price
+    from sieve.store import Store
+
+    db = tmp_path / "sieve.db"
+    store = Store(db)
+    store.upsert_models(
+        [
+            ModelRef(id="acme/one", modality="text-to-video", name="One", creator="acme"),
+            ModelRef(id="acme/two", modality="text-to-video", name="Two", creator="acme"),
+        ]
+    )
+
+    def price(model_id: str, source: str, rate: float, tier: str | None = None) -> Price:
+        return Price(
+            model_id=model_id,
+            source=source,
+            modality="text-to-video",
+            unit="usd_per_second",
+            per_unit=rate,
+            tier=tier,
+            observed_at=datetime.now(UTC),
+        )
+
+    store.add_prices(
+        [
+            # five times apart: reported
+            price("acme/one", "fal", 0.03),
+            price("acme/one", "deepinfra", 0.15),
+            # thirty per cent apart: two vendors, not a bug
+            price("acme/two", "fal", 0.10),
+            price("acme/two", "deepinfra", 0.13),
+        ]
+    )
+
+    class _Cfg:
+        db_path = db
+
+    notes = _prices_that_disagree(_Cfg())  # type: ignore[arg-type]
+    assert len(notes) == 1, notes
+    assert "acme/one" in notes[0]
+    assert "5.0x" in notes[0]
+    assert "fal 0.03" in notes[0] and "deepinfra 0.15" in notes[0]
+    assert "acme/two" not in " ".join(notes)
+
+
+def test_one_sources_own_tiers_are_not_a_disagreement(tmp_path: Path) -> None:
+    """A model priced $0.0125 at 480p and $0.04 at 1080p by *one* source is a
+    tiered price, not two sources contradicting each other. Reporting it would
+    make the note fire on every tiered video model and teach everyone to skip
+    the line."""
+    from datetime import UTC, datetime
+
+    from sieve.cli import _prices_that_disagree
+    from sieve.contracts import ModelRef, Price
+    from sieve.store import Store
+
+    db = tmp_path / "sieve.db"
+    store = Store(db)
+    store.upsert_models(
+        [ModelRef(id="acme/tiered", modality="text-to-video", name="T", creator="acme")]
+    )
+    store.add_prices(
+        [
+            Price(
+                model_id="acme/tiered",
+                source="fal",
+                modality="text-to-video",
+                unit="usd_per_second",
+                per_unit=rate,
+                tier=tier,
+                observed_at=datetime.now(UTC),
+            )
+            for rate, tier in ((0.0125, "480p"), (0.02, "768p"), (0.04, "1080p"))
+        ]
+    )
+
+    class _Cfg:
+        db_path = db
+
+    assert _prices_that_disagree(_Cfg()) == []  # type: ignore[arg-type]

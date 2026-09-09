@@ -318,34 +318,48 @@ def _prices_that_disagree(cfg: Config) -> list[str]:
     is the one reading the line.
     """
     store = Store(cfg.db_path)
-    by_model: dict[tuple[str, str, str], list[tuple[str, float]]] = {}
+    by_model: dict[tuple[str, str, str], list[tuple[str, float, str]]] = {}
     # per field, not per row: one source may publish only an input rate and
     # another only a flat one, and comparing those two numbers compares nothing.
     for field in ("per_unit", "input", "output"):
         rows = store.db.execute(
-            f"SELECT model_id, modality, source, unit, MIN({field}) AS rate"
+            f"SELECT model_id, modality, source, unit, tier, MIN({field}) AS rate"
             f" FROM prices WHERE {field} > 0"
-            " GROUP BY model_id, modality, source, unit"
+            " GROUP BY model_id, modality, source, unit, tier"
         )
         for row in rows:
             label = row["unit"] if field == "per_unit" else f"{row['unit']} ({field})"
             key = (row["model_id"], row["modality"] or "", label)
-            by_model.setdefault(key, []).append((row["source"], float(row["rate"])))
+            by_model.setdefault(key, []).append(
+                (row["source"], float(row["rate"]), row["tier"] or "")
+            )
 
     out: list[str] = []
     for (model_id, modality, unit), priced in sorted(by_model.items()):
-        if len(priced) < 2:
+        if len({source for source, _, _ in priced}) < 2:
             continue
-        cheap = min(priced, key=lambda pair: pair[1])
-        dear = max(priced, key=lambda pair: pair[1])
-        if dear[1] <= cheap[1] * PRICE_DISAGREEMENT:
+        cheap = min(priced, key=lambda row: row[1])
+        dear = max(priced, key=lambda row: row[1])
+        if cheap[0] == dear[0] or dear[1] <= cheap[1] * PRICE_DISAGREEMENT:
             continue
         where = f" ({modality})" if modality else ""
+        # Naming the tiers is what makes the note readable rather than alarming.
+        # `nano-banana-2-lite` is 96x apart because fal separates text tokens
+        # from image tokens and deepinfra publishes one untiered token rate, so
+        # the two numbers are not about the same thing -- and the reader can see
+        # that only if the note says so.
+        tiers = (
+            " The two are quoting different tiers, so they may not be about the same thing."
+            if cheap[2] != dear[2]
+            else ""
+        )
+        named = f" [{cheap[2]}]" if cheap[2] else ""
+        named_dear = f" [{dear[2]}]" if dear[2] else ""
         out.append(
             f"{model_id}{where} is priced {dear[1] / cheap[1]:.1f}x apart in {unit}: "
-            f"{cheap[0]} {cheap[1]:.6g}, {dear[0]} {dear[1]:.6g}. Both are kept -- a price "
-            "is one vendor charging to run one model -- but a gap this wide is usually a "
-            "unit read wrongly or two different models folded onto one id."
+            f"{cheap[0]} {cheap[1]:.6g}{named}, {dear[0]} {dear[1]:.6g}{named_dear}. Both are "
+            "kept -- a price is one vendor charging to run one model -- but a gap this wide is "
+            f"usually a unit read wrongly or two different models folded onto one id.{tiers}"
         )
     return out
 
