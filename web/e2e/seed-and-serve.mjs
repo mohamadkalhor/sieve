@@ -57,14 +57,23 @@ free_speech_to_speech = true
 
 # Prices for media, so the Field can tell "no cost axis here" from "no source
 # for one". Without it the threshold would never be exercised.
-[sources.fal]
+# part 10: AA prices media on the same row as the score, so the marketplaces
+# ship off and this store follows the shipped config
+[sources.aa_media_prices]
 enabled = true
+modalities = [
+  "text-to-image", "image-editing", "text-to-video", "image-to-video",
+  "text-to-speech", "speech-to-text", "speech-to-speech"
+]
+
+[sources.fal]
+enabled = false
 modalities = ["text-to-image", "image-editing", "text-to-video", "image-to-video"]
 
 # the second price source, so the smoke store exercises two sources pricing one
 # model, which is the case sieve check prints a disagreement note for
 [sources.deepinfra]
-enabled = true
+enabled = false
 modalities = ["text-to-image", "image-editing", "text-to-video", "image-to-video"]
 
 [inventories.gateway]
@@ -110,7 +119,7 @@ const run = (args) => {
   }
 };
 
-run(['pull', 'openrouter', 'aa_llm', 'aa_media', 'fal', 'deepinfra', 'gateway']);
+run(['pull', 'openrouter', 'aa_llm', 'aa_media', 'aa_media_prices', 'gateway']);
 run(['check']);
 
 // A little real traffic, *before* the plan is computed -- see seed-telemetry.py

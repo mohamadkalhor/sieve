@@ -108,6 +108,13 @@ Terms of use: <https://artificialanalysis.ai/docs/legal/Terms-of-Use.pdf>
 
 ### fal — `fal`
 
+**Off by default since part 10.** Artificial Analysis prices media on the same
+row as the score, so a marketplace price is only wanted where AA has none. The
+code, the tests and the recordings all stay, and turning it on is one word: it
+is the answer for music, which AA's board does not price at all, and for models
+that never join the catalogue.
+
+
 <https://fal.ai>. No key. 1,494 media models with prices and **no quality score
 whatsoever**, because a generation marketplace never judges quality. Joined with
 Artificial Analysis it makes a media model rankable on both axes; alone, neither
@@ -181,6 +188,9 @@ after** — a media priced share of 6.2% rising to 9.8%, still well under the 25
 the Field needs before it will draw a cost scatter.
 
 ### deepinfra — `deepinfra`
+
+**Off by default since part 10**, for the same reason as fal above.
+
 
 <https://api.deepinfra.com/models/list>. No key, one request. Measured on
 2026-09-09: 372 models, 116 of them media, and **every one of the 116 carries a

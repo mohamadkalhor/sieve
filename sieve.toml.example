@@ -79,8 +79,18 @@ modalities = [
   "speech-to-speech",
 ]
 
+# fal and deepinfra are the FALLBACK now, not the source, and they ship OFF.
+#
+# Artificial Analysis prices the same models on the same row as the score, so a
+# marketplace price is only wanted where AA has none -- music, whose board
+# carries no price at all, and the models that do not join the catalogue.
+#
+# Nothing is deleted: the code, the tests and the recordings all stay, and
+# turning either back on is one word. Two sources pricing one model is fine and
+# expected -- both rows are kept and `sieve check` notes any pair more than 3x
+# apart.
 [sources.fal]
-enabled = true
+enabled = false
 modalities = [
   "text-to-image",
   "image-editing",
@@ -107,7 +117,7 @@ modalities = [
 # are kept -- a price is one vendor charging to run one model -- and
 # `sieve check` notes any model the two disagree about by more than 3x.
 [sources.deepinfra]
-enabled = true
+enabled = false
 modalities = [
   "text-to-image",
   "image-editing",

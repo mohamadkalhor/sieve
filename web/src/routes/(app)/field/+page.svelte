@@ -224,6 +224,28 @@
    */
   const rates = $derived(sameRateShare(models));
   const shaped = $derived(profiles.find((p) => p.name === shape));
+
+  /**
+   * What one task of this profile is, in its own units.
+   *
+   * A `Shape` only fills the fields its modality uses, so an llm profile has
+   * tokens and a video profile has seconds. Printing "0 tokens in, 0 out" under
+   * a video scatter -- which is what this said until media had prices to plot
+   * against -- describes nothing and looks like a bug in the data.
+   */
+  const shapeWords = $derived.by(() => {
+    const s = shaped?.shape;
+    if (!s) return 'no declared shape';
+    const parts: string[] = [];
+    if (s.in_tokens) parts.push(`${s.in_tokens.toLocaleString()} tokens in`);
+    if (s.out_tokens) parts.push(`${s.out_tokens.toLocaleString()} out`);
+    if (s.seconds) parts.push(`${s.seconds}s of output`);
+    if (s.images) parts.push(`${s.images} image${s.images === 1 ? '' : 's'}`);
+    if (s.chars) parts.push(`${s.chars.toLocaleString()} characters`);
+    if (s.megapixels) parts.push(`${s.megapixels} megapixels`);
+    if (s.requests) parts.push(`${s.requests} request${s.requests === 1 ? '' : 's'}`);
+    return parts.length ? parts.join(', ') : 'no declared shape';
+  });
   const xLabel = $derived(
     costAxis === 'per_million' ? 'posted price per 1M tokens (USD)' : 'cost per task (USD)'
   );
@@ -301,9 +323,8 @@
       {#if costAxis === 'per_million'}
         What the provider charges, input and output blended {BLEND_IN / BLEND_OUT} : 1.
       {:else}
-        One {shape} task — {shaped?.shape?.in_tokens ?? 0} tokens in, {shaped?.shape
-          ?.out_tokens ?? 0} out — measured from the model's own traffic where there is any, a
-        posted price where there is not.
+        One {shape} task — {shapeWords} — measured from the model's own traffic where there
+        is any, a posted price where there is not.
       {/if}
     </span>
     {#if lines.length > 0 && costAxis === 'per_task'}

@@ -240,7 +240,7 @@ test('the cost axis names whose task it is costing, and says the shape', async (
     'cheap_bulk'
   );
   await expect(page.locator('.picker.cost .describes')).toContainText(
-    'One cheap_bulk task — 2000 tokens in, 500 out'
+    'One cheap_bulk task — 2,000 tokens in, 500 out'
   );
 
   // and the shape genuinely decides the answer. reader sends 200k input tokens,
@@ -249,7 +249,7 @@ test('the cost axis names whose task it is costing, and says the shape', async (
   await page.getByLabel('Model', { exact: true }).fill('openai/gpt-6-astra');
   const cheap = await span(page);
   await shape.selectOption('reader');
-  await expect(page.locator('.picker.cost .describes')).toContainText('200000 tokens in');
+  await expect(page.locator('.picker.cost .describes')).toContainText('200,000 tokens in');
   const reader = await span(page);
 
   console.log(`astra cost spread — cheap_bulk ${cheap.toFixed(2)}x, reader ${reader.toFixed(2)}x`);
