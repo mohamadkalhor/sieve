@@ -12,7 +12,8 @@
    * So where cost cannot be answered, this answers what can be: which of these
    * is best, in order, with the number.
    */
-  import { sourceWords, type Leaderboard } from '$lib/types';
+  import { sourceWords } from '$lib/sources';
+  import type { Leaderboard } from '$lib/types';
 
   interface Props {
     board: Leaderboard;

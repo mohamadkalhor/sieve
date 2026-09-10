@@ -152,32 +152,7 @@ export interface Leaderboard {
   low?: number | null;
   high?: number | null;
   reason?: string | null;
-  /** which scoreboards the rows came from; more than one is worth showing */
   sources?: string[];
-}
-
-/**
- * A source's name in words.
- *
- * `elo` is Artificial Analysis's own unit for its media arenas, so a board
- * labelled only "ranked by elo" reads as though someone else ranked them.
- */
-export const SOURCE_LABEL: Record<string, string> = {
-  aa_media: 'Artificial Analysis',
-  aa_llm: 'Artificial Analysis',
-  aa_media_prices: 'Artificial Analysis',
-  arena: 'LMArena',
-  openrouter: 'OpenRouter',
-  deepinfra: 'DeepInfra',
-  fal: 'fal',
-  manual: 'a manual drop-in'
-};
-
-export function sourceWords(sources: string[] | undefined): string {
-  const names = [...new Set((sources ?? []).map((s) => SOURCE_LABEL[s] ?? s))];
-  if (names.length === 0) return '';
-  if (names.length === 1) return names[0];
-  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
 }
 
 

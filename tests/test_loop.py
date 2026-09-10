@@ -26,15 +26,24 @@ REACHABLE = ["openai/gpt-5-6-sol-non-reasoning", "alibaba/qwen3-8-flash-next"]
 
 
 def _workspace(tmp_path: Path, auto: dict[str, bool]) -> Path:
-    """A scratch install whose named profiles opt in (or do not) to auto_apply."""
+    """A scratch install whose named profiles opt in (or do not) to auto_apply.
+
+    The setting is **replaced**, not prepended. This used to insert a line after
+    `policy:` and leave any shipped one where it was, so a profile that already
+    said `auto_apply: true` ended up saying it twice and YAML kept the second --
+    the shipped value, not the one the test asked for. The day the deployed
+    profiles opted in, this test started asserting against a file it thought it
+    had written and had not.
+    """
     profiles = tmp_path / "profiles"
     shutil.copytree(REPO / "profiles" / "llm", profiles / "llm")
 
     for name, opted_in in auto.items():
         path = profiles / "llm" / f"{name}.yaml"
-        lines = path.read_text(encoding="utf-8").split("\n")
         out: list[str] = []
-        for line in lines:
+        for line in path.read_text(encoding="utf-8").split("\n"):
+            if line.strip().startswith("auto_apply:"):
+                continue
             out.append(line)
             if line.strip() == "policy:":
                 out.append(f"  auto_apply: {'true' if opted_in else 'false'}")
