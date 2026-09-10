@@ -39,6 +39,33 @@ export function postedPerMillion(price: ModelRow['price']): number | null {
   return price.per_unit ?? null;
 }
 
+/**
+ * One posted number, exactly as published: no blend, no profile, no shape.
+ *
+ * Every other cost axis here is a *derived* number. `per_task` costs one named
+ * profile's declared shape, `per_million` blends input and output at a ratio
+ * this file chose. Both are defensible and both are arithmetic done on the
+ * reader's behalf, which means neither can answer "what does this actually
+ * cost per token". These two can, and they are the only axes on this screen
+ * that owe nothing to a preset.
+ *
+ * `per_unit` is the media case -- an image or a second of video is one posted
+ * number already -- and it is returned for either side, because a model that
+ * charges per image has no separate input rate to be honest about.
+ */
+export type RawSide = 'input' | 'output';
+
+export function rawPerMillion(price: ModelRow['price'], side: RawSide): number | null {
+  if (!price) return null;
+  if (price.input == null && price.output == null) return price.per_unit ?? null;
+  return (side === 'input' ? price.input : price.output) ?? null;
+}
+
+/** Does this population post input and output rates at all? */
+export function hasSidedPrices(models: ModelRow[]): boolean {
+  return models.some((m) => m.price?.input != null || m.price?.output != null);
+}
+
 /** Every family that publishes more than one mode, its modes in effort order. */
 export function familyModes(models: ModelRow[]): Map<string, ModelRow[]> {
   const out = new Map<string, ModelRow[]>();

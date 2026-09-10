@@ -820,6 +820,7 @@ def get_leaderboard(
         low=computed.low,
         high=computed.high,
         reason=computed.reason,
+        sources=computed.sources,
     )
 
 

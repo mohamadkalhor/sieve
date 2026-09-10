@@ -45,6 +45,7 @@
     lines?: Line[];
     xLabel?: string;
     yLabel?: string;
+    /** a fixed height in px; omit to size against the viewport */
     height?: number;
     onselect?: (id: string) => void;
   }
@@ -53,9 +54,46 @@
     lines = [],
     xLabel = 'cost per task (USD)',
     yLabel = 'axis',
-    height = 420,
+    height: fixedHeight,
     onselect
   }: Props = $props();
+
+  /**
+   * How tall the chart is: the room actually left below it, not a constant.
+   *
+   * 420px was one laptop's worth of chart. On a tall monitor it left a third of
+   * the screen empty underneath, and the page still scrolled — by exactly the
+   * container's bottom padding, so the only thing below the fold was 64px of
+   * nothing. Measuring instead means the chart ends where the viewport does and
+   * that scrollbar goes away, while a screen with a ranking under the chart
+   * still scrolls, because there is then something down there to reach.
+   *
+   * Floored so it never becomes a strip, capped so a very tall window does not
+   * stretch 900 points into a wall.
+   */
+  const FLOOR = 300;
+  const CEILING = 640;
+  let room = $state(420);
+  const height = $derived(fixedHeight ?? room);
+
+  function fit() {
+    if (!host) return;
+    const top = host.getBoundingClientRect().top + globalThis.scrollY;
+    const parent = host.parentElement;
+    const below = parent ? parseFloat(getComputedStyle(parent).paddingBottom) || 0 : 0;
+    const free = (globalThis.innerHeight || 860) - top - below;
+    room = Math.round(Math.min(CEILING, Math.max(FLOOR, free)));
+  }
+
+  $effect(() => {
+    // the controls above can wrap to another line and move the chart down, so
+    // re-measure whenever what is drawn changes, not only on resize
+    void [points.length, xLabel, yLabel, width];
+    const run = () => requestAnimationFrame(fit);
+    run();
+    globalThis.addEventListener('resize', run);
+    return () => globalThis.removeEventListener('resize', run);
+  });
 
   let host: HTMLElement | undefined = $state();
   let canvas: HTMLCanvasElement | undefined = $state();
@@ -65,6 +103,31 @@
 
   const PAD = { top: 18, right: 18, bottom: 34, left: 44 };
   const CELL = 24;
+
+  /**
+   * Zoom, held as a window on each axis in **data** units rather than pixels.
+   *
+   * Pixels would have to be recomputed on every resize and would drift against
+   * the log scale. A domain survives both: the same window means the same
+   * models whatever the canvas is doing.
+   *
+   * `null` is the whole field, which is not the same as a window that happens
+   * to contain everything -- it is the state the Reset button returns to and
+   * the one the axis auto-fits in.
+   */
+  type Window = { lo: number; hi: number } | null;
+  let zoomX = $state<Window>(null);
+  let zoomY = $state<Window>(null);
+  const zoomed = $derived(zoomX !== null || zoomY !== null);
+
+  const MAX_ZOOM = 5000;
+  let panning = $state(false);
+  let panFrom: { mx: number; my: number; x: Window; y: Window } | null = null;
+
+  function resetZoom() {
+    zoomX = null;
+    zoomY = null;
+  }
 
   const plotted = $derived(points.filter((p) => p.x !== null && p.y !== null && (p.x as number) > 0));
 
@@ -96,25 +159,138 @@
     // the rescale above did nothing.
     const low = xs.length ? Math.min(...xs) : 0.0001;
     const high = xs.length ? Math.max(...xs) : 0.001;
-    const x = scaleLog()
-      .domain([low * 0.8, high * 1.2])
-      .range([PAD.left, width - PAD.right])
-      .clamp(true);
+    // A zoom window replaces the fitted domain but never the *scale*: the x
+    // axis stays logarithmic when zoomed, because a decade is a decade at any
+    // magnification and switching to linear under the reader would redraw the
+    // same models in a different shape.
+    const fitX: [number, number] = [low * 0.8, high * 1.2];
+    const fitY: [number, number] = [Math.min(0, ...ys), Math.max(1, ...ys)];
+    const domainX: [number, number] = zoomX ? [zoomX.lo, zoomX.hi] : fitX;
+    const domainY: [number, number] = zoomY ? [zoomY.lo, zoomY.hi] : fitY;
+    const x = scaleLog().domain(domainX).range([PAD.left, width - PAD.right]).clamp(true);
     const y = scaleLinear()
-      .domain([Math.min(0, ...ys), Math.max(1, ...ys)])
+      .domain(domainY)
       .range([height - PAD.bottom, PAD.top])
       .clamp(true);
     // the cost range is published on the figure so a test can assert the
     // rescale above happened, without guessing at canvas pixels
-    return { x, y, low: low * 0.8, high: high * 1.2 };
+    return { x, y, low: domainX[0], high: domainX[1], fitX, fitY };
   });
 
+  /**
+   * Wheel to zoom, about the pointer, both axes at once.
+   *
+   * Zooming about the pointer rather than the centre is what makes this usable
+   * without a second control: the model you are pointing at is the one that
+   * stays still, so you steer by aiming rather than by zoom-then-pan.
+   *
+   * The x axis is logarithmic, so it is scaled in log space -- doing it
+   * linearly would zoom the cheap decade to a smear and the expensive one to
+   * nothing.
+   */
+  function onwheel(event: WheelEvent) {
+    event.preventDefault();
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const mx = event.clientX - box.left;
+    const my = event.clientY - box.top;
+    const factor = Math.exp(event.deltaY * 0.0015);
+
+    const cur = scales;
+    const atX = Math.log10(cur.x.invert(mx));
+    const loX = Math.log10(cur.low);
+    const hiX = Math.log10(cur.high);
+    let nextLoX = atX + (loX - atX) * factor;
+    let nextHiX = atX + (hiX - atX) * factor;
+
+    const fitLoX = Math.log10(cur.fitX[0]);
+    const fitHiX = Math.log10(cur.fitX[1]);
+    // Out past the fitted field is not more information, it is more blank, so
+    // zooming out stops where the whole field is on screen.
+    if (nextHiX - nextLoX >= fitHiX - fitLoX) {
+      zoomX = null;
+      zoomY = null;
+      return;
+    }
+    if (10 ** (nextHiX - nextLoX) < 10 ** (fitHiX - fitLoX) / MAX_ZOOM) return;
+    nextLoX = Math.max(nextLoX, fitLoX);
+    nextHiX = Math.min(nextHiX, fitHiX);
+
+    const atY = cur.y.invert(my);
+    const [fitLoY, fitHiY] = cur.fitY;
+    const loY = zoomY ? zoomY.lo : fitLoY;
+    const hiY = zoomY ? zoomY.hi : fitHiY;
+    const nextLoY = Math.max(fitLoY, atY + (loY - atY) * factor);
+    const nextHiY = Math.min(fitHiY, atY + (hiY - atY) * factor);
+
+    zoomX = { lo: 10 ** nextLoX, hi: 10 ** nextHiX };
+    zoomY = nextHiY - nextLoY > 1e-6 ? { lo: nextLoY, hi: nextHiY } : zoomY;
+  }
+
+  /** Drag to pan, but only once zoomed: an unzoomed field has nowhere to go. */
+  function ondown(event: MouseEvent) {
+    if (!zoomed) return;
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    panning = true;
+    panFrom = {
+      mx: event.clientX - box.left,
+      my: event.clientY - box.top,
+      x: zoomX,
+      y: zoomY
+    };
+  }
+
+  function pan(mx: number, my: number) {
+    if (!panFrom || !panFrom.x || !panFrom.y) return;
+    const span = width - PAD.right - PAD.left;
+    const rows = height - PAD.bottom - PAD.top;
+    if (span <= 0 || rows <= 0) return;
+
+    const loX = Math.log10(panFrom.x.lo);
+    const hiX = Math.log10(panFrom.x.hi);
+    const stepX = ((hiX - loX) / span) * (mx - panFrom.mx);
+    const fitLoX = Math.log10(scales.fitX[0]);
+    const fitHiX = Math.log10(scales.fitX[1]);
+    const shiftX = Math.min(Math.max(-stepX, fitLoX - loX), fitHiX - hiX);
+
+    const stepY = ((panFrom.y.hi - panFrom.y.lo) / rows) * (my - panFrom.my);
+    const [fitLoY, fitHiY] = scales.fitY;
+    const shiftY = Math.min(
+      Math.max(stepY, fitLoY - panFrom.y.lo),
+      fitHiY - panFrom.y.hi
+    );
+
+    zoomX = { lo: 10 ** (loX + shiftX), hi: 10 ** (hiX + shiftX) };
+    zoomY = { lo: panFrom.y.lo + shiftY, hi: panFrom.y.hi + shiftY };
+  }
+
+  function onup() {
+    panning = false;
+    panFrom = null;
+  }
+
+  /**
+   * `off` is a point outside the zoom window.
+   *
+   * Both scales clamp, so without this a zoomed chart stacks everything it
+   * excluded against its own borders — two hundred models in a column at the
+   * left edge, which reads as a cluster that is not there. Clamping is right
+   * for the unzoomed field, where it only catches the padding; it is wrong the
+   * moment a window excludes real data. So an excluded point is not drawn, and
+   * not hit-tested either.
+   */
   const placed = $derived(
-    plotted.map((point) => ({
-      point,
-      px: scales.x(point.x as number),
-      py: scales.y(point.y as number)
-    }))
+    plotted.map((point) => {
+      const dx = point.x as number;
+      const dy = point.y as number;
+      return {
+        point,
+        px: scales.x(dx),
+        py: scales.y(dy),
+        off:
+          (zoomX !== null && (dx < zoomX.lo || dx > zoomX.hi)) ||
+          (zoomY !== null && (dy < zoomY.lo || dy > zoomY.hi))
+      };
+    })
   );
 
   const at = $derived(new Map(placed.map((item) => [item.point.id, item])));
@@ -123,7 +299,7 @@
   const index = $derived.by(() => {
     const grid = new Map<string, typeof placed>();
     for (const item of placed) {
-      if (item.point.hidden) continue;
+      if (item.point.hidden || item.off) continue;
       const key = `${Math.floor(item.px / CELL)}:${Math.floor(item.py / CELL)}`;
       const bucket = grid.get(key) ?? [];
       bucket.push(item);
@@ -236,8 +412,8 @@
         Number(a.point.primary) - Number(b.point.primary) ||
         Number(a.point.reachable) - Number(b.point.reachable)
     );
-    for (const { point, px, py } of order) {
-      if (point.hidden) continue;
+    for (const { point, px, py, off } of order) {
+      if (point.hidden || off) continue;
       if (point.dim) {
         // still there, and out of the way: a search greys the field, it does
         // not delete it
@@ -284,7 +460,7 @@
     for (const line of lines) {
       const nodes = line.ids
         .map((id) => at.get(id))
-        .filter((item): item is NonNullable<typeof item> => Boolean(item));
+        .filter((item): item is NonNullable<typeof item> => Boolean(item) && !item?.off);
       if (nodes.length < 2) continue;
 
       ctx.strokeStyle = colour('--good');
@@ -336,10 +512,54 @@
     const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const mx = event.clientX - box.left;
     const my = event.clientY - box.top;
+    if (panning) {
+      pan(mx, my);
+      hovered = null;
+      return;
+    }
     const found = nearest(mx, my);
     hovered = found?.point ?? null;
     pointer = { x: mx, y: my };
   }
+
+  /**
+   * A drag that panned is not a click on a model.
+   *
+   * Without this, releasing the mouse after dragging the field navigates away
+   * to whichever point happens to be under the cursor, which is the most
+   * annoying possible outcome of having just found the region you wanted.
+   */
+  let dragged = false;
+
+  function beginDrag(event: MouseEvent) {
+    dragged = false;
+    ondown(event);
+  }
+
+  function endDrag() {
+    if (panning) dragged = true;
+    onup();
+  }
+
+  function onclick() {
+    if (dragged) {
+      dragged = false;
+      return;
+    }
+    if (hovered) onselect?.(hovered.id);
+  }
+
+  /**
+   * A new population is a new field, so the window goes.
+   *
+   * Switching modality or cost axis while zoomed left a window in the old
+   * data's units over the new data -- on a different axis that is usually
+   * empty, and an empty chart is indistinguishable from no models.
+   */
+  $effect(() => {
+    void [xLabel, yLabel];
+    resetZoom();
+  });
 
   $effect(() => {
     if (!host) return;
@@ -365,12 +585,35 @@
 >
   <canvas
     bind:this={canvas}
+    class:panning
+    class:zoomed
     style:width="100%"
     style:height={`${height}px`}
     onmousemove={onmove}
-    onmouseleave={() => (hovered = null)}
-    onclick={() => hovered && onselect?.(hovered.id)}
+    onmouseleave={() => {
+      hovered = null;
+      onup();
+    }}
+    onwheel={onwheel}
+    onmousedown={beginDrag}
+    onmouseup={endDrag}
+    onclick={onclick}
+    ondblclick={resetZoom}
   ></canvas>
+
+  <!--
+    The control is only offered once there is something to reset. An always-on
+    "Reset zoom" over an unzoomed chart is a button that does nothing, and the
+    hint has to be visible before you would think to scroll on a chart.
+  -->
+  <div class="zoom mono">
+    {#if zoomed}
+      <span class="at">{money(scales.low)}–{money(scales.high)}</span>
+      <button type="button" onclick={resetZoom}>Reset zoom</button>
+    {:else}
+      <span class="hint">scroll to zoom</span>
+    {/if}
+  </div>
 
   {#if hovered}
     <div
@@ -413,6 +656,41 @@
   canvas {
     display: block;
     cursor: crosshair;
+    /* the wheel handler calls preventDefault, and this tells the browser so
+       before the first event, which is what stops the page scrolling once */
+    touch-action: none;
+  }
+  canvas.zoomed {
+    cursor: grab;
+  }
+  canvas.panning {
+    cursor: grabbing;
+  }
+  .zoom {
+    position: absolute;
+    left: 0.6rem;
+    bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.68rem;
+    color: var(--muted);
+  }
+  .zoom .hint {
+    opacity: 0.65;
+  }
+  .zoom .at {
+    color: var(--ink);
+  }
+  .zoom button {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--panel2);
+    color: inherit;
+    font: inherit;
+    font-size: 0.68rem;
+    padding: 0.1rem 0.45rem;
+    cursor: pointer;
   }
   .tip {
     position: absolute;

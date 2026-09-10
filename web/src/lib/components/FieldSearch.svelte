@@ -39,8 +39,13 @@
   }
 </script>
 
+<!--
+  `display: contents` so the two boxes become children of the Field's own
+  control row: they belong to the same one-line question as the axis and the
+  cost axis, and a wrapper of their own would put them on a line of their own.
+-->
 <div class="search">
-  <label class="box">
+  <label class="ctl wide">
     <span>Provider</span>
     <input
       list="field-providers"
@@ -54,7 +59,7 @@
     {#each allProviders as who (who)}<option value={who}></option>{/each}
   </datalist>
 
-  <label class="box">
+  <label class="ctl wide">
     <span>Model</span>
     <input
       list="field-models"
@@ -70,31 +75,25 @@
 
   {#if active}
     <!-- a filter with no way out is a trap -->
-    <button type="button" onclick={() => onchange({ provider: '', model: '' })}>
-      Clear
-    </button>
-    <span class="count" role="status">
-      {matched} lit{#if matched === 0}, nothing matched that{/if}
+    <span class="out">
+      <span class="count" role="status">
+        {matched} lit{#if matched === 0}, no match{/if}
+      </span>
+      <button type="button" onclick={() => onchange({ provider: '', model: '' })}>Clear</button>
     </span>
   {/if}
 </div>
 
 <style>
   .search {
-    display: flex;
-    align-items: flex-end;
-    gap: 0.6rem;
-    flex-wrap: wrap;
-    margin-bottom: 0.7rem;
+    display: contents;
   }
-  .box {
+  /* not a `.ctl`: the count is a reading, not a label over a control */
+  .out {
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
-  }
-  .box span {
-    color: var(--muted);
-    font-size: 0.75rem;
+    flex: 0 0 auto;
   }
   input {
     background: var(--panel2);
@@ -104,7 +103,7 @@
     padding: 0.25rem 0.5rem;
     font: inherit;
     font-size: 0.82rem;
-    min-width: 13rem;
+    min-width: 0;
   }
   button {
     border: 1px solid var(--rule);
@@ -113,22 +112,12 @@
     color: inherit;
     font: inherit;
     font-size: 0.8rem;
-    padding: 0.28rem 0.7rem;
+    padding: 0.25rem 0.7rem;
     cursor: pointer;
   }
   .count {
     color: var(--good);
-    font-size: 0.78rem;
-    padding-bottom: 0.3rem;
-  }
-  @media (max-width: 560px) {
-    .box,
-    input {
-      min-width: 0;
-      width: 100%;
-    }
-    .box {
-      flex: 1 1 100%;
-    }
+    font-size: 0.75rem;
+    white-space: nowrap;
   }
 </style>

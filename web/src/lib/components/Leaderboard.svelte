@@ -12,7 +12,7 @@
    * So where cost cannot be answered, this answers what can be: which of these
    * is best, in order, with the number.
    */
-  import type { Leaderboard } from '$lib/types';
+  import { sourceWords, type Leaderboard } from '$lib/types';
 
   interface Props {
     board: Leaderboard;
@@ -44,6 +44,19 @@
 
   const round = (v: number) => (Math.abs(v) >= 100 ? Math.round(v) : Number(v.toFixed(3)));
   const label = (m: string) => m.replace('elo:', '').replace(/_/g, ' ');
+
+  /**
+   * Who ranked these, in words.
+   *
+   * "Ranked by elo" names a unit and no author, which reads as though some
+   * arena outside this system produced it. Every media score here is
+   * Artificial Analysis's own, and the one case where that would stop being
+   * true — a second scoreboard folded in — is exactly the case the reader
+   * needs to see, so this is derived from what the rows came from rather than
+   * written down as a constant.
+   */
+  const who = $derived(sourceWords(board.sources));
+  const unit = $derived(board.metric.startsWith('elo') ? 'Elo' : label(board.metric));
 </script>
 
 {#if board.reason}
@@ -60,7 +73,10 @@
   <section class="board">
     <header>
       <div>
-        <h3>Ranked by {label(board.metric)}</h3>
+        <h3>
+          {#if who}{who} {unit}{:else}Ranked by {label(board.metric)}{/if}
+          {#if board.metric.includes(':')}<span class="cut">· {label(board.metric)}</span>{/if}
+        </h3>
         <p class="sub">
           {rows.length} model{rows.length === 1 ? '' : 's'}, best first.
           {#if !board.scatter_ok}
@@ -143,6 +159,11 @@
   h3 {
     margin: 0 0 0.2rem;
     font-size: 0.95rem;
+  }
+  /* the sub-board a metric like `elo:anime` names, kept quieter than the author */
+  .cut {
+    color: var(--muted);
+    font-weight: 400;
   }
   .sub {
     margin: 0;

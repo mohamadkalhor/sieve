@@ -78,6 +78,10 @@ class Board:
     low: float | None = None
     high: float | None = None
     reason: str | None = None
+    #: the sources these rows actually came from, in the order `_value` prefers
+    #: them. Usually one. More than one means the board is comparing numbers
+    #: from two scoreboards, which the reader has to be told.
+    sources: list[str] = dataclass_field(default_factory=list)
 
     @property
     def priced_share(self) -> float:
@@ -94,8 +98,15 @@ def metrics_for(modality: Modality) -> tuple[str, ...]:
     return METRIC.get(modality, ())
 
 
-def _value(obs: ObsTable, model_id: str, metric: str) -> float | None:
-    """One model's value for one metric.
+def _value(obs: ObsTable, model_id: str, metric: str) -> tuple[float, str] | None:
+    """One model's value for one metric, **and which source published it**.
+
+    The source is returned rather than discarded because this function falls
+    back through three of them. A board built entirely from Artificial Analysis
+    and a board that quietly mixed in an arena look identical once the number is
+    on screen, and "ranked by elo" reads like a fourth party's metric when it is
+    in fact AA's own unit. `Board.sources` carries this up so the screen can say
+    whose ranking it is showing.
 
     `speech-to-speech` is the exception: its three scores are averaged, and only
     where **all three** are present. They have very different coverage --
@@ -110,12 +121,12 @@ def _value(obs: ObsTable, model_id: str, metric: str) -> float | None:
             if found is None:
                 return None
             parts.append(found.value)
-        return sum(parts) / len(parts)
+        return sum(parts) / len(parts), "aa_media"
 
     for source in ("aa_media", "arena", "aa_llm"):
         found = obs.get(model_id, source, metric)
         if found is not None:
-            return found.value
+            return found.value, source
     return None
 
 
@@ -197,10 +208,13 @@ def board(
 
     by_id = {m.id: m for m in models}
     rows: list[Row] = []
+    from_sources: set[str] = set()
     for model_id, model in sorted(by_id.items()):
-        value = _value(obs, model_id, chosen)
-        if value is None:
+        found = _value(obs, model_id, chosen)
+        if found is None:
             continue
+        value, source = found
+        from_sources.add(source)
         rows.append(
             Row(
                 model_id=model_id,
@@ -223,4 +237,5 @@ def board(
         # the population's own endpoints, so a bar is honest about the spread
         low=min(values) if values else None,
         high=max(values) if values else None,
+        sources=[s for s in ("aa_media", "arena", "aa_llm") if s in from_sources],
     )

@@ -9,7 +9,15 @@
     Profile,
     Ranking
   } from '$lib/types';
-  import { BLEND_IN, BLEND_OUT, mark, postedPerMillion, sameRateShare } from '$lib/field';
+  import {
+    BLEND_IN,
+    BLEND_OUT,
+    hasSidedPrices,
+    mark,
+    postedPerMillion,
+    rawPerMillion,
+    sameRateShare
+  } from '$lib/field';
   import Empty from '$lib/components/Empty.svelte';
   import FieldSearch from '$lib/components/FieldSearch.svelte';
   import Kpi from '$lib/components/Kpi.svelte';
@@ -31,7 +39,17 @@
   /** the two searches, and the x axis they are read against */
   let provider = $state('');
   let model = $state('');
-  let costAxis = $state<'per_task' | 'per_million'>('per_task');
+  /**
+   * Which cost axis, and how much of a preset it owes its number to.
+   *
+   * `per_task` costs one named profile's declared shape and `per_million`
+   * blends input against output at a ratio this app picked. Both are derived.
+   * `input` and `output` are the posted numbers themselves — the axes to reach
+   * for when the question is what a model costs rather than what it costs
+   * *here*.
+   */
+  type CostAxis = 'per_task' | 'per_million' | 'input' | 'output';
+  let costAxis = $state<CostAxis>('per_task');
   /** whose task the cost axis is costing -- see `costs` below */
   let shape = $state('');
 
@@ -105,10 +123,19 @@
   const marked = $derived(mark(models, { provider, model }));
   const searching = $derived(Boolean(provider.trim() || model.trim()));
 
+  /** Only `per_task` is built from telemetry; every other axis is a price list. */
+  const fromPriceList = $derived(costAxis !== 'per_task');
+
+  function costOf(row: ModelRow): number | null {
+    if (costAxis === 'per_task') return perTask(row);
+    if (costAxis === 'per_million') return postedPerMillion(row.price);
+    return rawPerMillion(row.price, costAxis);
+  }
+
   const points = $derived<Point[]>(
     models.map((row) => ({
       id: row.id,
-      x: costAxis === 'per_million' ? postedPerMillion(row.price) : perTask(row),
+      x: costOf(row),
       y: values.get(row.id) ?? null,
       reachable: row.reachable,
       primary: primaries.has(row.id),
@@ -117,8 +144,7 @@
       dim: searching && !marked.lit.has(row.id),
       hidden: marked.drawn !== null && !marked.drawn.has(row.id),
       // on the price list itself there is nothing to measure, so no claim
-      measured:
-        costAxis === 'per_million' ? undefined : costFrom.get(row.id) === 'telemetry'
+      measured: fromPriceList ? undefined : costFrom.get(row.id) === 'telemetry'
     }))
   );
 
@@ -143,13 +169,36 @@
   async function load(which: Modality) {
     loading = true;
     error = null;
-    const [axesResult, profilesResult, modelsResult, boardResult] = await Promise.all([
+
+    /*
+      The board is fetched *beside* this, not inside it.
+
+      `/v1/leaderboard?modality=llm` takes about ten seconds to compute, and it
+      used to sit in the same `Promise.all` as the models — so the whole screen,
+      chart included, waited on a ranking that is drawn underneath the chart or
+      not at all. Ten seconds of "Loading…" is indistinguishable from a broken
+      page. Now the scatter paints as soon as its own data lands and the board
+      arrives when it arrives.
+
+      A board is slow enough that the tab can change while it is in flight, and
+      one for the modality you just left must not replace the one you are
+      looking at — so the answer is checked against the tab still on screen.
+      That comparison is the guard rather than a request counter: a counter
+      would have to be read and written in the same breath here, and this
+      function runs inside an effect, where reading what you just wrote is how
+      you get an infinite loop.
+    */
+    board = null;
+    api.leaderboard(which, metric).then((result) => {
+      if (which !== modality) return;
+      board = result.ok ? result.value : null;
+    });
+
+    const [axesResult, profilesResult, modelsResult] = await Promise.all([
       api.axes(which),
       api.profiles(which),
-      api.models({ modality: which, limit: 1000 }),
-      api.leaderboard(which, metric)
+      api.models({ modality: which, limit: 1000 })
     ]);
-    board = boardResult.ok ? boardResult.value : null;
 
     if (!axesResult.ok) error = axesResult.error;
     axes = axesResult.ok ? axesResult.value : [];
@@ -200,9 +249,11 @@
   });
 
   async function chooseMetric(next: string) {
+    const which = modality;
     metric = next;
-    const again = await api.leaderboard(modality, next);
-    if (again.ok) board = again.value;
+    const again = await api.leaderboard(which, next);
+    // the same guard as `load`: only answer for the tab still on screen
+    if (which === modality && next === metric && again.ok) board = again.value;
   }
 
   /**
@@ -246,9 +297,24 @@
     if (s.requests) parts.push(`${s.requests} request${s.requests === 1 ? '' : 's'}`);
     return parts.length ? parts.join(', ') : 'no declared shape';
   });
-  const xLabel = $derived(
-    costAxis === 'per_million' ? 'posted price per 1M tokens (USD)' : 'cost per task (USD)'
-  );
+  /** Do the posted prices here even have two sides to separate? */
+  const sided = $derived(hasSidedPrices(models));
+
+  const X_LABEL: Record<CostAxis, string> = {
+    per_task: 'cost per task (USD)',
+    per_million: 'posted price per 1M tokens, blended (USD)',
+    input: 'posted input price per 1M tokens (USD)',
+    output: 'posted output price per 1M tokens (USD)'
+  };
+  const xLabel = $derived(X_LABEL[costAxis]);
+
+  /**
+   * A modality with no sided prices cannot offer them, and a stale choice has
+   * to fall back rather than silently plot nothing.
+   */
+  $effect(() => {
+    if (!sided && (costAxis === 'input' || costAxis === 'output')) costAxis = 'per_million';
+  });
 </script>
 
 <svelte:head><title>Field · Sieve</title></svelte:head>
@@ -281,52 +347,72 @@
   <Kpi label="holding a seat" value={primaries.size} tone="accent" />
 </div>
 
-<div class="picker" hidden={!showScatter}>
-  <label for="axis">Axis</label>
-  <select id="axis" bind:value={axisName}>
-    {#each usedAxes as axis (axis.name)}
-      <option value={axis.name}>{axis.label || axis.name}</option>
-    {/each}
-  </select>
-  {#if axisName}
-    <span class="describes">{usedAxes.find((a) => a.name === axisName)?.describes ?? ''}</span>
-  {/if}
-</div>
-
 {#if showScatter}
-  <FieldSearch
-    {models}
-    {provider}
-    {model}
-    matched={marked.lit.size}
-    onchange={(next) => {
-      provider = next.provider;
-      model = next.model;
-    }}
-  />
-
-  <div class="picker cost">
-    <label for="cost-axis">Cost axis</label>
-    <select id="cost-axis" bind:value={costAxis}>
-      <option value="per_task">cost per task</option>
-      <option value="per_million">price per million tokens</option>
-    </select>
-    {#if costAxis === 'per_task' && profiles.length > 1}
-      <label for="shape">of</label>
-      <select id="shape" bind:value={shape}>
-        {#each [...profiles].sort( (a, b) => a.name.localeCompare(b.name) ) as p (p.name)}
-          <option value={p.name}>{p.name}</option>
+  <!--
+    One row, four controls. They used to be three stacked rows -- axis, then the
+    two search boxes, then the cost axis -- which pushed the chart itself below
+    the fold on a laptop. They are one question ("what am I looking at, against
+    what") so they are one line, and the prose that explains the choice sits
+    under the row instead of between the controls, where it was doing the
+    stacking.
+  -->
+  <div class="controls">
+    <label class="ctl">
+      <span>Axis</span>
+      <select id="axis" bind:value={axisName}>
+        {#each usedAxes as axis (axis.name)}
+          <option value={axis.name}>{axis.label || axis.name}</option>
         {/each}
       </select>
+    </label>
+
+    <FieldSearch
+      {models}
+      {provider}
+      {model}
+      matched={marked.lit.size}
+      onchange={(next) => {
+        provider = next.provider;
+        model = next.model;
+      }}
+    />
+
+    <label class="ctl wide">
+      <span>Cost axis</span>
+      <select id="cost-axis" bind:value={costAxis}>
+        <option value="per_task">cost per task</option>
+        <option value="per_million">price per 1M, blended</option>
+        {#if sided}
+          <option value="input">input price per 1M</option>
+          <option value="output">output price per 1M</option>
+        {/if}
+      </select>
+    </label>
+
+    {#if costAxis === 'per_task' && profiles.length > 1}
+      <label class="ctl narrow">
+        <span>of</span>
+        <select id="shape" bind:value={shape}>
+          {#each [...profiles].sort( (a, b) => a.name.localeCompare(b.name) ) as p (p.name)}
+            <option value={p.name}>{p.name}</option>
+          {/each}
+        </select>
+      </label>
     {/if}
-    <span class="describes">
-      {#if costAxis === 'per_million'}
-        What the provider charges, input and output blended {BLEND_IN / BLEND_OUT} : 1.
-      {:else}
-        One {shape} task — {shapeWords} — measured from the model's own traffic where there
-        is any, a posted price where there is not.
-      {/if}
-    </span>
+  </div>
+
+  <p class="describes">
+    {#if axisName}
+      <span class="what">{usedAxes.find((a) => a.name === axisName)?.describes ?? ''}</span>
+    {/if}
+    {#if costAxis === 'per_million'}
+      Cost is what the provider charges, input and output blended {BLEND_IN / BLEND_OUT} : 1.
+    {:else if costAxis === 'input' || costAxis === 'output'}
+      Cost is the posted {costAxis} rate exactly as published — no blend, no profile.
+    {:else}
+      Cost is one {shape} task — {shapeWords} — measured from the model's own traffic where
+      there is any, a posted price where there is not.
+    {/if}
     {#if lines.length > 0 && costAxis === 'per_task'}
       <!--
         The shapes need naming somewhere, and this is where the reader is
@@ -339,7 +425,7 @@
         <i class="box"></i> posted price
       </span>
     {/if}
-  </div>
+  </p>
 
   {#if rates.total > 0}
     <p class="rates" role="note">
@@ -429,12 +515,42 @@
     margin-bottom: 1rem;
     padding-bottom: 0.2rem;
   }
-  .picker {
+  /*
+    One row that wraps rather than four that stack. Each control is a column of
+    (label, input) so the labels line up across the row, and every control has
+    the same `flex` rule so a wrap puts whole controls on the next line instead
+    of orphaning a label from its select.
+  */
+  .controls {
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    margin-bottom: 0.7rem;
+    align-items: flex-end;
+    gap: 0.55rem 0.7rem;
     flex-wrap: wrap;
+    margin-bottom: 0.55rem;
+  }
+  .controls :global(.ctl) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    flex: 1 1 9rem;
+    min-width: 0;
+  }
+  .controls :global(.ctl > span) {
+    color: var(--muted);
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+  .controls :global(.ctl > select),
+  .controls :global(.ctl > input) {
+    width: 100%;
+    min-width: 0;
+  }
+  /* the two search boxes earn more room than a select, and `of` needs least */
+  .controls :global(.ctl.wide) {
+    flex: 1 1 12rem;
+  }
+  .controls :global(.ctl.narrow) {
+    flex: 0 1 7rem;
   }
   label {
     color: var(--muted);
@@ -452,7 +568,13 @@
   .describes {
     color: var(--muted);
     font-size: 0.78rem;
-    max-width: 62ch;
+    line-height: 1.5;
+    max-width: 88ch;
+    margin: 0 0 0.7rem;
+  }
+  .describes .what::after {
+    content: ' ·';
+    opacity: 0.5;
   }
   .shapes {
     color: var(--muted);

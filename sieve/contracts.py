@@ -374,6 +374,12 @@ class Leaderboard(_Model):
     high: float | None = None
     #: set when there is no ranking to draw, and says why in a sentence
     reason: str | None = None
+    #: which scoreboards these rows came from. `elo` is Artificial Analysis's
+    #: own unit for its media arenas, and a screen that only prints the unit
+    #: reads as though some fourth party ranked them -- so the source is named.
+    #: More than one entry means two scoreboards are being compared, which is a
+    #: thing the reader must be able to see.
+    sources: list[str] = Field(default_factory=list)
 
 
 class HealthRow(_Model):
