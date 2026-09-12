@@ -147,6 +147,9 @@ export interface StatusRow {
   /** the configured cadence, e.g. `hourly` */
   schedule: string;
   sources_enabled: number;
+  /** every call telemetry holds (pruned to thirty days), and the newest one */
+  telemetry_calls: number;
+  telemetry_at: string | null;
 }
 
 export interface SourceRow {
@@ -155,7 +158,12 @@ export interface SourceRow {
   registered: boolean;
   needs_key: boolean;
   key_present: boolean;
+  /** observations written */
   rows: number;
+  /** price rows written: a source may supply these and no observations at all */
+  prices: number;
+  last_price: string | null;
+  /** the later of the two; null only when the source never wrote either */
   last_pull: string | null;
   modalities: Modality[];
 }

@@ -860,11 +860,17 @@ def get_status(request: Request, _: Read = None) -> dict[str, Any]:
     any_decision = store.decisions(limit=1)
     ran_at = scheduled["at"] if scheduled else (any_decision[0].at if any_decision else None)
     pulled_at = store.latest_snapshot_at()
+    # Pulse needs to tell "no calls in this window" from "no calls ever". Its
+    # empty state used to say "nothing has reported a call yet" over a store
+    # holding four thousand calls, because none of them were from the last day.
+    calls = store.db.execute("SELECT COUNT(*) AS n, MAX(at) AS last FROM telemetry").fetchone()
     return {
         "pulled_at": pulled_at.isoformat() if pulled_at else None,
         "ran_at": ran_at.isoformat() if isinstance(ran_at, datetime) else ran_at,
         "schedule": cfg.schedule.pull,
         "sources_enabled": sum(1 for s in cfg.sources.values() if s.enabled),
+        "telemetry_calls": calls["n"],
+        "telemetry_at": calls["last"],
     }
 
 
@@ -874,12 +880,29 @@ def get_sources(request: Request, _: Read = None) -> list[dict[str, Any]]:
 
     cfg, store = config_of(request), store_of(request)
     available = set(plugins.names(plugins.SOURCES))
+
+    # One pass over each table rather than one query per source. A price is a
+    # pull too: `openrouter` supplies prices and no observations, and counting
+    # observations alone printed "0 observations, last pull never" beside a
+    # source that had pulled forty-eight thousand prices an hour earlier.
+    observed = {
+        r["source"]: r
+        for r in store.db.execute(
+            "SELECT source, COUNT(*) AS rows, MAX(pulled_at) AS last FROM observations"
+            " GROUP BY source"
+        )
+    }
+    priced = {
+        r["source"]: r
+        for r in store.db.execute(
+            "SELECT source, COUNT(*) AS rows, MAX(observed_at) AS last FROM prices GROUP BY source"
+        )
+    }
+
     rows: list[dict[str, Any]] = []
     for name, source_cfg in cfg.sources.items():
-        row = store.db.execute(
-            "SELECT COUNT(*) AS rows, MAX(pulled_at) AS last FROM observations WHERE source=?",
-            (name,),
-        ).fetchone()
+        obs, price = observed.get(name), priced.get(name)
+        stamps = [s for s in (obs and obs["last"], price and price["last"]) if s]
         rows.append(
             {
                 "name": name,
@@ -887,8 +910,11 @@ def get_sources(request: Request, _: Read = None) -> list[dict[str, Any]]:
                 "registered": name in available,
                 "needs_key": bool(source_cfg.key_env),
                 "key_present": source_cfg.key() is not None,
-                "rows": row["rows"],
-                "last_pull": row["last"],
+                "rows": obs["rows"] if obs else 0,
+                "prices": price["rows"] if price else 0,
+                "last_price": price["last"] if price else None,
+                # whichever table it last wrote to; `None` only if it never wrote to either
+                "last_pull": max(stamps, key=datetime.fromisoformat) if stamps else None,
                 "modalities": source_cfg.modalities,
             }
         )

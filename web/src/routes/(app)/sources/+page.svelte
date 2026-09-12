@@ -69,7 +69,16 @@
             {busy === source.name ? 'pulling…' : 'Pull now'}
           </button>
         </header>
-        <div class="rows num">{source.rows.toLocaleString()} observations</div>
+        <!--
+          Prices count as a pull. A source that supplies prices and no
+          observations used to read "0 observations, last pull never" on the
+          morning it had pulled forty-eight thousand prices, so "never" now
+          means it wrote to neither.
+        -->
+        <div class="rows num">
+          {source.rows.toLocaleString()} observations{#if source.prices}
+            · {source.prices.toLocaleString()} prices{/if}
+        </div>
         <div class="when">last pull {when(source.last_pull)}</div>
         <div class="chips">
           <Chip label="enabled" value={source.enabled} tone={source.enabled ? 'reach' : 'warn'} />

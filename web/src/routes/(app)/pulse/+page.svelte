@@ -12,9 +12,31 @@
    * healthy. A flat line of ones would claim a model worked on a day nobody
    * tried it.
    */
-  import { api, type ApiError } from '$lib/api/client';
+  import { api, type ApiError, type StatusRow } from '$lib/api/client';
   import type { HealthRow } from '$lib/types';
   import Empty from '$lib/components/Empty.svelte';
+
+  /**
+   * Whether telemetry has *ever* arrived, and when it last did.
+   *
+   * An empty window is not an empty store. This screen used to answer both with
+   * "nothing has reported a call yet", which was false for four days while the
+   * store held thousands of calls that were simply older than a day.
+   */
+  let status = $state<StatusRow | null>(null);
+  $effect(() => {
+    api.status().then((result) => {
+      if (result.ok) status = result.value;
+    });
+  });
+  const lastCall = $derived(
+    status?.telemetry_at
+      ? new Date(status.telemetry_at).toLocaleString(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short'
+        })
+      : null
+  );
 
   let rows = $state<HealthRow[]>([]);
   let error = $state<ApiError | null>(null);
@@ -89,11 +111,18 @@
   <Empty {error} title="Could not read /v1/health" />
 {:else if loading && rows.length === 0}
   <p class="muted">Reading telemetry…</p>
-{:else if called.length === 0}
+{:else if called.length === 0 && lastCall}
+  <Empty
+    title={`No calls to a reachable model in the last ${window}`}
+    hint={`The newest call on record is from ${lastCall} (${status?.telemetry_calls.toLocaleString()} held). Health only reflects calls inside the window, so until more arrive these models are judged on benchmarks alone.`}
+  />
+{:else if called.length === 0 && status}
   <Empty
     title="Nothing has reported a call yet"
     hint="Health stays at 1.00 until a gateway posts to /v1/telemetry. Until then every model is judged on benchmarks alone, which is what every other screen already shows."
   />
+{:else if called.length === 0}
+  <p class="muted">Reading telemetry…</p>
 {:else}
   <p class="muted count">
     {totalEvents.toLocaleString()} call{totalEvents === 1 ? '' : 's'} across {called.length} model{called.length ===
