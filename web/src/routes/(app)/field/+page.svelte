@@ -4,6 +4,7 @@
   import { api, type ApiError, type ModelRow } from '$lib/api/client';
   import type {
     Axis,
+    Chain,
     Leaderboard as LeaderboardData,
     Modality,
     Profile,
@@ -15,8 +16,7 @@
     hasSidedPrices,
     mark,
     postedPerMillion,
-    rawPerMillion,
-    sameRateShare
+    rawPerMillion
   } from '$lib/field';
   import Empty from '$lib/components/Empty.svelte';
   import FieldSearch from '$lib/components/FieldSearch.svelte';
@@ -36,22 +36,34 @@
   let error = $state<ApiError | null>(null);
   let loading = $state(true);
 
-  /** the two searches, and the x axis they are read against */
+  /** the two searches */
   let provider = $state('');
   let model = $state('');
+
   /**
-   * Which cost axis, and how much of a preset it owes its number to.
+   * Whose eyes the Field is looking through.
    *
-   * `per_task` costs one named profile's declared shape and `per_million`
-   * blends input against output at a ratio this app picked. Both are derived.
-   * `input` and `output` are the posted numbers themselves — the axes to reach
-   * for when the question is what a model costs rather than what it costs
-   * *here*.
+   * `raw` is the data as published. Every quality score is the same number
+   * whichever profile computed it -- checked on 952 models across 11 axes,
+   * identical in all nine profiles -- and the cost is the posted price. Nothing
+   * on the chart owes anything to a preset.
+   *
+   * A profile name is that profile at work: the cost of one of *its* tasks, its
+   * own final score as the vertical axis, and the chain it chose ringed. This
+   * used to be a quiet "of cheap_bulk" beside the cost axis, on by default, so
+   * the chart moved when a profile was picked and nothing on screen said the
+   * raw data had never been showing in the first place.
    */
-  type CostAxis = 'per_task' | 'per_million' | 'input' | 'output';
-  let costAxis = $state<CostAxis>('per_task');
-  /** whose task the cost axis is costing -- see `costs` below */
-  let shape = $state('');
+  const RAW = 'raw';
+  let view = $state<string>(RAW);
+  const profileView = $derived(view !== RAW);
+
+  /** Raw view only: which posted number is the cost. */
+  type Price = 'blended' | 'input' | 'output';
+  let price = $state<Price>('blended');
+
+  /** The vertical axis a profile view adds: that profile's own weighted verdict. */
+  const SCORE = '__score__';
 
   const DEFAULT_AXIS: Record<string, string> = { llm: 'intelligence' };
 
@@ -61,6 +73,7 @@
     return axes.filter((axis) => weighted.has(axis.name));
   });
 
+  /** The #1 of every profile: what "holding a seat" counts, in any view. */
   const primaries = $derived(
     new Set(
       Object.values(rankings)
@@ -69,41 +82,45 @@
     )
   );
 
+  /** The chain the chosen profile holds, fetched when a profile is picked. */
+  let chain = $state<Chain | null>(null);
+  $effect(() => {
+    const which = view;
+    chain = null;
+    if (which === RAW) return;
+    api.chain(which).then((result) => {
+      if (which === view) chain = result.ok ? result.value : null;
+    });
+  });
+
+  /** Ringed on the chart: every profile's #1 in raw view, one profile's pick otherwise. */
+  const seats = $derived(profileView ? new Set(chain ? [chain.primary] : []) : primaries);
+  const fallbacks = $derived(new Set(profileView ? (chain?.fallbacks ?? []) : []));
+
   /**
-   * Cost per task, from **one named profile's** ranking.
+   * Cost per task, from **the chosen profile's** ranking.
    *
    * There is no such thing as the cost of a task. `reader` sends 200k input
    * tokens and `cheap_bulk` sends 2k, so the same model differs by two orders
-   * of magnitude between them, and the effort question changes answer with it:
-   * at `reader`'s shape the input swamps everything and every mode costs
-   * within 6% of every other, while at `cheap_bulk`'s the modes spread over 5x.
+   * of magnitude between them.
    *
-   * This used to merge every profile's ranking and keep whichever arrived
-   * first, which made the axis depend on the order nine fetches happened to
-   * resolve in — the same screen, reloaded, drew different numbers. So it names
-   * one, and the name is on screen beside the axis.
+   * A model that profile did not cost is left off, not placed at a nominal
+   * 10k-in / 1k-out. That nominal shape belonged to no profile, so in a view
+   * named after one it would have been a number presented as that profile's
+   * when it was nobody's.
    */
   const costs = $derived.by(() => {
     const out = new Map<string, number>();
-    for (const rank of rankings[shape]?.ranks ?? []) {
+    for (const rank of rankings[view]?.ranks ?? []) {
       if (rank.cost_per_task != null) out.set(rank.model_id, rank.cost_per_task);
     }
     return out;
   });
 
-  /**
-   * Whether that cost came from the model's own traffic or from the profile's
-   * declared shape.
-   *
-   * This is the whole point of the cost-per-task axis. Effort does not change
-   * the rate, it changes how many tokens come back — so a cost built from a
-   * shape is the *same* number for every mode of a family and its line is
-   * vertical for a second, duller reason. Only telemetry moves it, and the
-   * chart has to say which points those are.
-   */
+  /** Whether that cost came from the model's own traffic or the declared shape. */
   const costFrom = $derived.by(() => {
     const out = new Map<string, 'shape' | 'telemetry'>();
-    for (const rank of rankings[shape]?.ranks ?? []) {
+    for (const rank of rankings[view]?.ranks ?? []) {
       if (rank.cost_from) out.set(rank.model_id, rank.cost_from);
     }
     return out;
@@ -111,6 +128,11 @@
 
   const values = $derived.by(() => {
     const out = new Map<string, number>();
+    if (axisName === SCORE) {
+      for (const rank of rankings[view]?.ranks ?? []) out.set(rank.model_id, rank.final);
+      return out;
+    }
+    // identical in every ranking (see `view`), so taking the first is not a choice
     for (const ranking of Object.values(rankings)) {
       for (const rank of ranking.ranks ?? []) {
         const axis = rank.axes?.find((a) => a.axis === axisName);
@@ -123,13 +145,10 @@
   const marked = $derived(mark(models, { provider, model }));
   const searching = $derived(Boolean(provider.trim() || model.trim()));
 
-  /** Only `per_task` is built from telemetry; every other axis is a price list. */
-  const fromPriceList = $derived(costAxis !== 'per_task');
-
   function costOf(row: ModelRow): number | null {
-    if (costAxis === 'per_task') return perTask(row);
-    if (costAxis === 'per_million') return postedPerMillion(row.price);
-    return rawPerMillion(row.price, costAxis);
+    if (profileView) return costs.get(row.id) ?? null;
+    if (price === 'blended') return postedPerMillion(row.price);
+    return rawPerMillion(row.price, price);
   }
 
   const points = $derived<Point[]>(
@@ -138,13 +157,14 @@
       x: costOf(row),
       y: values.get(row.id) ?? null,
       reachable: row.reachable,
-      primary: primaries.has(row.id),
+      primary: seats.has(row.id),
+      fallback: fallbacks.has(row.id),
       effort: row.effort,
       lit: marked.lit.has(row.id),
       dim: searching && !marked.lit.has(row.id),
       hidden: marked.drawn !== null && !marked.drawn.has(row.id),
-      // on the price list itself there is nothing to measure, so no claim
-      measured: fromPriceList ? undefined : costFrom.get(row.id) === 'telemetry'
+      // a price list has nothing to measure, so it makes no claim either way
+      measured: profileView ? costFrom.get(row.id) === 'telemetry' : undefined
     }))
   );
 
@@ -152,18 +172,14 @@
     [...marked.lines].map(([family, modes]) => ({ family, ids: modes.map((m) => m.id) }))
   );
 
-  function perTask(row: ModelRow): number | null {
-    return costs.get(row.id) ?? fallbackCost(row);
-  }
-
-  function fallbackCost(row: ModelRow): number | null {
-    const price = row.price;
-    if (!price) return null;
-    if (price.input != null || price.output != null) {
-      // a nominal 10k in / 1k out, only so an unranked model still has a place
-      return ((price.input ?? 0) * 10_000 + (price.output ?? 0) * 1_000) / 1_000_000 || null;
+  function chooseView(next: string) {
+    view = next;
+    if (next === RAW) {
+      if (axisName === SCORE) axisName = DEFAULT_AXIS[modality] ?? usedAxes[0]?.name ?? '';
+    } else {
+      // a profile view opens on the profile's own verdict: that is what it is for
+      axisName = SCORE;
     }
-    return price.per_unit ?? null;
   }
 
   async function load(which: Modality) {
@@ -171,22 +187,9 @@
     error = null;
 
     /*
-      The board is fetched *beside* this, not inside it.
-
-      `/v1/leaderboard?modality=llm` takes about ten seconds to compute, and it
-      used to sit in the same `Promise.all` as the models — so the whole screen,
-      chart included, waited on a ranking that is drawn underneath the chart or
-      not at all. Ten seconds of "Loading…" is indistinguishable from a broken
-      page. Now the scatter paints as soon as its own data lands and the board
-      arrives when it arrives.
-
-      A board is slow enough that the tab can change while it is in flight, and
-      one for the modality you just left must not replace the one you are
-      looking at — so the answer is checked against the tab still on screen.
-      That comparison is the guard rather than a request counter: a counter
-      would have to be read and written in the same breath here, and this
-      function runs inside an effect, where reading what you just wrote is how
-      you get an infinite loop.
+      The board is fetched beside this, not inside it: it is slow, and it is
+      drawn under the chart or not at all, so the chart does not wait on it.
+      An answer for a tab that has since been left is dropped.
     */
     board = null;
     api.leaderboard(which, metric).then((result) => {
@@ -207,7 +210,9 @@
     if (!modelsResult.ok) error = modelsResult.error;
 
     const wanted = usedAxes.map((a) => a.name);
-    axisName = wanted.includes(axisName) ? axisName : (DEFAULT_AXIS[which] ?? wanted[0] ?? '');
+    if (axisName !== SCORE || view === RAW) {
+      axisName = wanted.includes(axisName) ? axisName : (DEFAULT_AXIS[which] ?? wanted[0] ?? '');
+    }
 
     const loaded: Record<string, Ranking> = {};
     await Promise.all(
@@ -217,10 +222,6 @@
       })
     );
     rankings = loaded;
-    // alphabetical, so the axis is the same on every reload; changeable, because
-    // which task you are costing is a real question and not ours to answer
-    const named = profiles.map((p) => p.name).sort();
-    shape = named.includes(shape) ? shape : (named[0] ?? '');
     loading = false;
   }
 
@@ -236,12 +237,15 @@
   });
 
   $effect(() => {
-    // a modality change resets the metric: `elo:with_vocals` means nothing
-    // outside music. It resets the search for the same reason.
+    // A modality change resets everything that belonged to the last one: the
+    // metric (`elo:with_vocals` means nothing outside music), the search, and
+    // the view -- a text profile has nothing to say about video.
     void modality;
     metric = undefined;
     provider = '';
     model = '';
+    view = RAW;
+    price = 'blended';
   });
 
   $effect(() => {
@@ -260,60 +264,33 @@
    * Is a quality-against-cost scatter answerable for this modality?
    *
    * The server decides, against a named threshold, because it is the side that
-   * knows how many models carry a price. Today only `llm` clears it: on these
-   * recordings 5 of 313 scored media models have one.
+   * knows how many models carry a price.
    */
   const showScatter = $derived(board?.scatter_ok !== false);
 
   const matched = $derived(models.filter((m) => m.reachable).length);
 
-  /**
-   * How many multi-mode families charge one rate for every mode.
-   *
-   * Counted on the data actually loaded, so the sentence is never stale and
-   * never someone else's dataset.
-   */
-  const rates = $derived(sameRateShare(models));
-  const shaped = $derived(profiles.find((p) => p.name === shape));
-
-  /**
-   * What one task of this profile is, in its own units.
-   *
-   * A `Shape` only fills the fields its modality uses, so an llm profile has
-   * tokens and a video profile has seconds. Printing "0 tokens in, 0 out" under
-   * a video scatter -- which is what this said until media had prices to plot
-   * against -- describes nothing and looks like a bug in the data.
-   */
-  const shapeWords = $derived.by(() => {
-    const s = shaped?.shape;
-    if (!s) return 'no declared shape';
-    const parts: string[] = [];
-    if (s.in_tokens) parts.push(`${s.in_tokens.toLocaleString()} tokens in`);
-    if (s.out_tokens) parts.push(`${s.out_tokens.toLocaleString()} out`);
-    if (s.seconds) parts.push(`${s.seconds}s of output`);
-    if (s.images) parts.push(`${s.images} image${s.images === 1 ? '' : 's'}`);
-    if (s.chars) parts.push(`${s.chars.toLocaleString()} characters`);
-    if (s.megapixels) parts.push(`${s.megapixels} megapixels`);
-    if (s.requests) parts.push(`${s.requests} request${s.requests === 1 ? '' : 's'}`);
-    return parts.length ? parts.join(', ') : 'no declared shape';
-  });
   /** Do the posted prices here even have two sides to separate? */
   const sided = $derived(hasSidedPrices(models));
+  /** what a media price is counted in, for the axis title */
+  const unit = $derived(models.find((m) => m.price?.unit)?.price?.unit ?? 'unit');
 
-  const X_LABEL: Record<CostAxis, string> = {
-    per_task: 'cost per task (USD)',
-    per_million: 'posted price per 1M tokens, blended (USD)',
-    input: 'posted input price per 1M tokens (USD)',
-    output: 'posted output price per 1M tokens (USD)'
-  };
-  const xLabel = $derived(X_LABEL[costAxis]);
+  const xLabel = $derived.by(() => {
+    if (profileView) return `cost of one ${view} task (USD)`;
+    if (!sided) return `posted price per ${unit} (USD)`;
+    if (price === 'blended') return `posted price per 1M tokens, ${BLEND_IN / BLEND_OUT}:1 in:out (USD)`;
+    return `posted ${price} price per 1M tokens (USD)`;
+  });
 
-  /**
-   * A modality with no sided prices cannot offer them, and a stale choice has
-   * to fall back rather than silently plot nothing.
-   */
+  const yLabel = $derived(
+    axisName === SCORE
+      ? `${view} score`
+      : (usedAxes.find((a) => a.name === axisName)?.label ?? axisName)
+  );
+
+  /** A choice this population cannot offer falls back rather than plotting nothing. */
   $effect(() => {
-    if (!sided && (costAxis === 'input' || costAxis === 'output')) costAxis = 'per_million';
+    if (!sided && price !== 'blended') price = 'blended';
   });
 </script>
 
@@ -349,22 +326,48 @@
 
 {#if showScatter}
   <!--
-    One row, four controls. They used to be three stacked rows -- axis, then the
-    two search boxes, then the cost axis -- which pushed the chart itself below
-    the fold on a laptop. They are one question ("what am I looking at, against
-    what") so they are one line, and the prose that explains the choice sits
-    under the row instead of between the controls, where it was doing the
-    stacking.
+    One row: what you look through, what you measure, what it costs, and who.
+    The sentences that used to sit under it -- what the axis describes, how the
+    cost was built, how many families charge one rate -- are gone. They were
+    true and they buried the chart; the axis titles now sit on the chart itself.
   -->
   <div class="controls">
     <label class="ctl">
-      <span>Axis</span>
+      <span>View</span>
+      <select id="view" value={view} onchange={(e) => chooseView(e.currentTarget.value)}>
+        <option value={RAW}>Raw data</option>
+        {#if profiles.length}
+          <optgroup label="As a profile sees it">
+            {#each [...profiles].sort((a, b) => a.name.localeCompare(b.name)) as p (p.name)}
+              <option value={p.name}>{p.name}</option>
+            {/each}
+          </optgroup>
+        {/if}
+      </select>
+    </label>
+
+    <label class="ctl">
+      <span>Quality</span>
       <select id="axis" bind:value={axisName}>
+        {#if profileView}
+          <option value={SCORE}>{view} score</option>
+        {/if}
         {#each usedAxes as axis (axis.name)}
           <option value={axis.name}>{axis.label || axis.name}</option>
         {/each}
       </select>
     </label>
+
+    {#if !profileView && sided}
+      <label class="ctl">
+        <span>Price</span>
+        <select id="price" bind:value={price}>
+          <option value="blended">blended per 1M</option>
+          <option value="input">input per 1M</option>
+          <option value="output">output per 1M</option>
+        </select>
+      </label>
+    {/if}
 
     <FieldSearch
       {models}
@@ -376,65 +379,7 @@
         model = next.model;
       }}
     />
-
-    <label class="ctl wide">
-      <span>Cost axis</span>
-      <select id="cost-axis" bind:value={costAxis}>
-        <option value="per_task">cost per task</option>
-        <option value="per_million">price per 1M, blended</option>
-        {#if sided}
-          <option value="input">input price per 1M</option>
-          <option value="output">output price per 1M</option>
-        {/if}
-      </select>
-    </label>
-
-    {#if costAxis === 'per_task' && profiles.length > 1}
-      <label class="ctl narrow">
-        <span>of</span>
-        <select id="shape" bind:value={shape}>
-          {#each [...profiles].sort( (a, b) => a.name.localeCompare(b.name) ) as p (p.name)}
-            <option value={p.name}>{p.name}</option>
-          {/each}
-        </select>
-      </label>
-    {/if}
   </div>
-
-  <p class="describes">
-    {#if axisName}
-      <span class="what">{usedAxes.find((a) => a.name === axisName)?.describes ?? ''}</span>
-    {/if}
-    {#if costAxis === 'per_million'}
-      Cost is what the provider charges, input and output blended {BLEND_IN / BLEND_OUT} : 1.
-    {:else if costAxis === 'input' || costAxis === 'output'}
-      Cost is the posted {costAxis} rate exactly as published — no blend, no profile.
-    {:else}
-      Cost is one {shape} task — {shapeWords} — measured from the model's own traffic where
-      there is any, a posted price where there is not.
-    {/if}
-    {#if lines.length > 0 && costAxis === 'per_task'}
-      <!--
-        The shapes need naming somewhere, and this is where the reader is
-        already looking. The chart's own legend is hidden while a line is drawn,
-        because it names colours that are not on screen and sits exactly where
-        the top mode labels land.
-      -->
-      <span class="shapes mono">
-        <i class="dot"></i> measured
-        <i class="box"></i> posted price
-      </span>
-    {/if}
-  </p>
-
-  {#if rates.total > 0}
-    <p class="rates" role="note">
-      Of the {rates.total} families here that publish more than one effort mode,
-      <strong>{rates.same}</strong> charge one rate for every mode: effort changes how many
-      tokens come back, not the rate. So on <em>price per million tokens</em> their lines are
-      vertical — the price list, not a fault in the chart.
-    </p>
-  {/if}
 {/if}
 
 {#if loading}
@@ -444,7 +389,8 @@
     {points}
     {lines}
     {xLabel}
-    yLabel={axisName}
+    {yLabel}
+    seatLabel={profileView ? `${view}'s pick` : 'current #1'}
     onselect={(id) => goto(`/rankings?model=${encodeURIComponent(id)}`)}
   />
   {#if board && (board.rows ?? []).length > 0}
@@ -564,50 +510,6 @@
     padding: 0.2rem 0.5rem;
     font: inherit;
     font-size: 0.82rem;
-  }
-  .describes {
-    color: var(--muted);
-    font-size: 0.78rem;
-    line-height: 1.5;
-    max-width: 88ch;
-    margin: 0 0 0.7rem;
-  }
-  .describes .what::after {
-    content: ' ·';
-    opacity: 0.5;
-  }
-  .shapes {
-    color: var(--muted);
-    font-size: 0.72rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
-  .shapes .dot,
-  .shapes .box {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    background: var(--good);
-  }
-  .shapes .dot {
-    border-radius: 50%;
-  }
-  .shapes .box {
-    background: transparent;
-    border: 1.5px solid var(--good);
-    margin-left: 0.5rem;
-  }
-  .rates {
-    color: var(--muted);
-    font-size: 0.78rem;
-    line-height: 1.55;
-    max-width: 72ch;
-    margin: 0 0 0.9rem;
-  }
-  .rates strong {
-    color: var(--ink);
-    font-weight: 600;
   }
   .muted {
     color: var(--muted);

@@ -32,6 +32,8 @@
      * price list and the distinction does not exist.
      */
     measured?: boolean;
+    /** in the chain of the profile being viewed, after its pick */
+    fallback?: boolean;
   }
 
   /** One model's effort modes, already in effort order. */
@@ -48,6 +50,8 @@
     /** a fixed height in px; omit to size against the viewport */
     height?: number;
     onselect?: (id: string) => void;
+    /** what the solid ring means in this view, for the legend */
+    seatLabel?: string;
   }
   let {
     points,
@@ -55,7 +59,8 @@
     xLabel = 'cost per task (USD)',
     yLabel = 'axis',
     height: fixedHeight,
-    onselect
+    onselect,
+    seatLabel = 'current #1'
   }: Props = $props();
 
   /**
@@ -101,7 +106,8 @@
   let hovered: Point | null = $state(null);
   let pointer = $state({ x: 0, y: 0 });
 
-  const PAD = { top: 18, right: 18, bottom: 34, left: 44 };
+  // room above and below for the axis titles drawn by `titles`
+  const PAD = { top: 26, right: 18, bottom: 44, left: 44 };
   const CELL = 24;
 
   /**
@@ -450,10 +456,38 @@
         ctx.arc(px, py, 8, 0, Math.PI * 2);
         ctx.stroke();
         ctx.globalAlpha = 1;
+      } else if (point.fallback) {
+        // the rest of the chain: ringed too, but dashed, so the pick stays the pick
+        ctx.strokeStyle = colour('--accent');
+        ctx.globalAlpha = 0.55;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.arc(px, py, 7, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
       }
     }
 
     drawLines(ctx, colour);
+    titles(ctx, colour);
+  }
+
+  /**
+   * The axis titles, on the chart.
+   *
+   * They used to live only in the sentences under the controls, which were
+   * removed to give the chart the room. A chart whose axes do not say what they
+   * are is not cleaner, it is unreadable -- so the names moved onto the figure.
+   */
+  function titles(ctx: CanvasRenderingContext2D, colour: (name: string) => string) {
+    ctx.fillStyle = colour('--muted');
+    ctx.font = '10px "IBM Plex Mono", monospace';
+    ctx.globalAlpha = 0.9;
+    ctx.fillText(`↑ ${yLabel}`, PAD.left + 6, 13);
+    const text = `${xLabel} →`;
+    ctx.fillText(text, width - PAD.right - ctx.measureText(text).width, height - 8);
+    ctx.globalAlpha = 1;
   }
 
   function drawLines(ctx: CanvasRenderingContext2D, colour: (name: string) => string) {
@@ -639,7 +673,10 @@
     land -- so it goes.
   -->
   <div class="legend mono" hidden={lines.length > 0}>
-    <span><i class="sw accent"></i>current #1</span>
+    <span><i class="sw accent"></i>{seatLabel}</span>
+    {#if points.some((p) => p.fallback)}
+      <span><i class="sw ring"></i>fallback</span>
+    {/if}
     <span><i class="sw reach"></i>reachable</span>
     <span><i class="sw faint"></i>measured</span>
   </div>
@@ -738,6 +775,10 @@
   }
   .sw.reach {
     background: var(--reach);
+  }
+  .sw.ring {
+    background: transparent;
+    border: 1px dashed var(--accent);
   }
   .sw.faint {
     background: var(--muted);

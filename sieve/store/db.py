@@ -498,6 +498,17 @@ class Store:
         row = self.db.execute("SELECT id FROM snapshots ORDER BY at DESC LIMIT 1").fetchone()
         return str(row["id"]) if row else None
 
+    def latest_snapshot_at(self) -> datetime | None:
+        """When a source was last pulled, whether or not it brought anything new.
+
+        Not `MAX(observations.pulled_at)`: an observation that is already stored
+        is not written again, so a pull that found nothing new leaves that
+        maximum where it was, and a loop running perfectly every hour would read
+        as stuck. Every pull makes a snapshot, changed data or not.
+        """
+        row = self.db.execute("SELECT at FROM snapshots ORDER BY at DESC LIMIT 1").fetchone()
+        return _dt(row["at"]) if row else None
+
     def put_ranking(self, ranking: Ranking) -> None:
         with self.tx() as db:
             db.execute(

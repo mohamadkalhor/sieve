@@ -836,6 +836,38 @@ def get_decisions(
     return store_of(request).decisions(profile=profile, kind=kind, since=since, limit=limit)
 
 
+@router.get("/status")
+def get_status(request: Request, _: Read = None) -> dict[str, Any]:
+    """When Sieve last looked, and how often it looks. Cheap enough for every page.
+
+    Three times, because they answer different questions and collapse badly:
+
+    - `pulled_at` -- the last pull of any source (a snapshot is written for
+      every pull, including one that found nothing new).
+    - `ran_at` -- the last decision the hourly loop recorded. `sieve run`
+      writes one per profile on every run, a hold included, precisely so that
+      "running and changing nothing" is visible and distinct from "not running".
+    - `schedule` -- what the config says the cadence is.
+
+    `/v1/sources` could not serve this: it takes `MAX(pulled_at)` over every
+    observation of every source, which is seconds of scanning on a large store,
+    and it does not move on a pull that added nothing.
+    """
+    cfg, store = config_of(request), store_of(request)
+    scheduled = store.db.execute(
+        "SELECT at FROM decisions WHERE actor = 'schedule' ORDER BY at DESC LIMIT 1"
+    ).fetchone()
+    any_decision = store.decisions(limit=1)
+    ran_at = scheduled["at"] if scheduled else (any_decision[0].at if any_decision else None)
+    pulled_at = store.latest_snapshot_at()
+    return {
+        "pulled_at": pulled_at.isoformat() if pulled_at else None,
+        "ran_at": ran_at.isoformat() if isinstance(ran_at, datetime) else ran_at,
+        "schedule": cfg.schedule.pull,
+        "sources_enabled": sum(1 for s in cfg.sources.values() if s.enabled),
+    }
+
+
 @router.get("/sources")
 def get_sources(request: Request, _: Read = None) -> list[dict[str, Any]]:
     from sieve import plugins

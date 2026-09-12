@@ -138,6 +138,17 @@ export interface ModelRow {
   } | null;
 }
 
+/** `GET /v1/status`: when Sieve last looked, and how often it looks. */
+export interface StatusRow {
+  /** the last pull of any source, new data or not */
+  pulled_at: string | null;
+  /** the last decision the scheduled loop recorded */
+  ran_at: string | null;
+  /** the configured cadence, e.g. `hourly` */
+  schedule: string;
+  sources_enabled: number;
+}
+
 export interface SourceRow {
   name: string;
   enabled: boolean;
@@ -165,6 +176,8 @@ const q = (params: Record<string, string | number | boolean | undefined>): strin
 };
 
 export const api = {
+  status: (o?: RequestOptions) => request<StatusRow>('/v1/status', o),
+
   modalities: (o?: RequestOptions) => request<ModalityCount[]>('/v1/modalities', o),
 
   axes: (modality?: Modality, o?: RequestOptions) => request<Axis[]>(`/v1/axes${q({ modality })}`, o),

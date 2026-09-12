@@ -144,61 +144,46 @@ test('a model outside the chosen provider does not widen the search', async ({ p
   await expect(page.locator('.count[role="status"]')).toHaveText(anthropic);
 });
 
-test('the screen says in words that effort usually does not change the rate', async ({
-  page,
-  request
+test('the Field opens on raw data, with no prose between the controls and the chart', async ({
+  page
 }) => {
-  const models = await (await request.get('/v1/models?modality=llm&limit=1000')).json();
-
-  const byFamily = new Map<string, number[]>();
-  for (const m of models.items) {
-    if (!m.family || !m.price) continue;
-    const rate = (m.price.input ?? 0) * 0.75 + (m.price.output ?? 0) * 0.25;
-    byFamily.set(m.family, [...(byFamily.get(m.family) ?? []), Math.round(rate * 1e6) / 1e6]);
-  }
-  let same = 0;
-  let total = 0;
-  for (const rates of byFamily.values()) {
-    if (rates.length < 2) continue;
-    total += 1;
-    if (new Set(rates).size === 1) same += 1;
-  }
-  expect(total, 'these recordings must contain multi-mode families').toBeGreaterThan(0);
-
   await page.goto('/field');
-  const note = page.locator('.rates');
-  await expect(note).toBeVisible();
-  await expect(note).toContainText(`${total} families`);
-  await expect(note.locator('strong')).toHaveText(String(same));
-  // and it really is the majority, or the sentence is a lie
-  expect(same * 2).toBeGreaterThan(total);
+  await expect(page.locator('canvas')).toBeVisible();
+
+  await expect(page.locator('#view'), 'raw data unless someone asks for a profile').toHaveValue(
+    'raw'
+  );
+  // the posted price, named on the chart, and no profile anywhere in the title
+  const label = (await page.locator('figure.field').getAttribute('aria-label')) ?? '';
+  expect(label).toContain('posted price per 1M tokens');
+  expect(label).not.toMatch(/cheap_bulk|task/);
+
+  // the sentences that used to sit under the controls are gone
+  await expect(page.locator('.describes')).toHaveCount(0);
+  await expect(page.locator('.rates')).toHaveCount(0);
 });
 
-test('the two cost axes disagree, and the pixels show it', async ({ page }) => {
+test('raw data and a profile view disagree, and the pixels show it', async ({ page }) => {
   await page.goto('/field');
   await expect(page.locator('canvas')).toBeVisible();
   await page.getByLabel('Model', { exact: true }).fill('openai/gpt-6-astra');
   await expect(page.locator('.count[role="status"]')).toContainText('lit');
 
-  const axis = page.locator('#cost-axis');
-  await expect(axis).toHaveValue('per_task');
+  // the price list: one rate for every mode, so the modes sit over one x
+  const posted = await litSpread(page);
+  expect(posted.pixels).toBeGreaterThan(0);
 
-  // cost per task: each mode burns a different number of tokens, so the modes
-  // spread across the axis and the line between them slopes
+  // a profile's task: each mode burns a different number of tokens, so they spread
+  await page.locator('#view').selectOption('reasoner');
+  await expect(page.locator('#axis'), 'a profile view opens on its own score').toHaveValue(
+    '__score__'
+  );
   const perTask = await litSpread(page);
   expect(perTask.pixels).toBeGreaterThan(0);
 
-  await axis.selectOption('per_million');
-  await expect(page.locator('#cost-axis')).toHaveValue('per_million');
-  await expect(page.locator('.picker.cost .describes')).toContainText('blended 3 : 1');
-
-  // the price list: one rate for every mode, so six dots over one x
-  const perMillion = await litSpread(page);
-  expect(perMillion.pixels).toBeGreaterThan(0);
-
-  console.log(`astra span — per task ${perTask.span}px, per million ${perMillion.span}px`);
-  expect(perMillion.span, 'astra charges one rate for every mode').toBeLessThan(24);
-  expect(perTask.span, 'telemetry separates the modes').toBeGreaterThan(perMillion.span * 2);
+  console.log(`astra span — posted ${posted.span}px, reasoner task ${perTask.span}px`);
+  expect(posted.span, 'astra charges one rate for every mode').toBeLessThan(24);
+  expect(perTask.span, 'telemetry separates the modes').toBeGreaterThan(posted.span * 2);
 });
 
 test('telemetry is what separates them, and the ranking says which points it has', async ({
@@ -214,7 +199,7 @@ test('telemetry is what separates them, and the ranking says which points it has
   expect(measured.length, 'the smoke store seeds traffic for every astra mode').toBeGreaterThan(1);
 
   // those costs differ even though the posted rate is identical, which is the
-  // whole claim the cost-per-task axis makes
+  // whole claim a profile's cost-per-task axis makes
   const costs = new Set(measured.map((r: { cost_per_task: number }) => r.cost_per_task));
   expect(costs.size).toBe(measured.length);
 });
@@ -231,25 +216,21 @@ test('no horizontal scroll at 390px with both searches on screen', async ({ page
   expect(overflow).toBe(false);
 });
 
-test('the cost axis names whose task it is costing, and says the shape', async ({ page }) => {
+test('a profile view costs that profile task, and the shape decides the answer', async ({
+  page
+}) => {
   await page.goto('/field');
   await expect(page.locator('canvas')).toBeVisible();
-
-  const shape = page.locator('#shape');
-  await expect(shape, 'alphabetically first, so it is the same every load').toHaveValue(
-    'cheap_bulk'
-  );
-  await expect(page.locator('.picker.cost .describes')).toContainText(
-    'One cheap_bulk task — 2,000 tokens in, 500 out'
-  );
-
-  // and the shape genuinely decides the answer. reader sends 200k input tokens,
-  // so the input swamps the output and the effort modes almost converge; at
-  // cheap_bulk's 2k they spread out.
   await page.getByLabel('Model', { exact: true }).fill('openai/gpt-6-astra');
+
+  // reader sends 200k input tokens, so the input swamps the output and the
+  // effort modes almost converge; at cheap_bulk's 2k they spread out
+  await page.locator('#view').selectOption('cheap_bulk');
+  await expect(page.locator('figure.field')).toHaveAttribute('aria-label', /one cheap_bulk task/);
   const cheap = await span(page);
-  await shape.selectOption('reader');
-  await expect(page.locator('.picker.cost .describes')).toContainText('200,000 tokens in');
+
+  await page.locator('#view').selectOption('reader');
+  await expect(page.locator('figure.field')).toHaveAttribute('aria-label', /one reader task/);
   const reader = await span(page);
 
   console.log(`astra cost spread — cheap_bulk ${cheap.toFixed(2)}x, reader ${reader.toFixed(2)}x`);
