@@ -76,8 +76,7 @@
           means it wrote to neither.
         -->
         <div class="rows num">
-          {source.rows.toLocaleString()} observations{#if source.prices}
-            · {source.prices.toLocaleString()} prices{/if}
+          {source.rows.toLocaleString()} observations{#if source.prices}{` · ${source.prices.toLocaleString()} prices`}{/if}
         </div>
         <div class="when">last pull {when(source.last_pull)}</div>
         <div class="chips">
