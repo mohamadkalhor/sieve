@@ -11,6 +11,7 @@ same path a person would and never touches the network.
 from __future__ import annotations
 
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -236,6 +237,27 @@ def test_controlled_profile_settings_status_experience_preview_and_crud(workspac
         assert preview.json()["models"][0] == model
         assert len(preview.json()["models"]) <= 2
         assert client.get("/v1/profiles/judge/settings").json()["list_length"] == 3
+
+        # Preview reweights the latest persisted axis scores instead of rebuilding
+        # the observation table. A changed weight must therefore still change rank.
+        cached = app.state.store.ranking("judge")
+        assert cached is not None
+        inverted = client.post(
+            "/v1/profiles/judge/preview",
+            json={
+                "weights": {
+                    "instruction": {"value": 0.0},
+                    "reasoning": {"value": 1.0},
+                    "intelligence": {"value": 0.0},
+                }
+            },
+        )
+        assert inverted.status_code == 200
+        returned_at = datetime.fromisoformat(
+            inverted.json()["ranking"]["computed_at"].replace("Z", "+00:00")
+        )
+        assert returned_at == cached.computed_at
+
 
         created = client.post(
             "/v1/profiles", json={"name": "judge-copy", "from": "judge"}, headers=headers

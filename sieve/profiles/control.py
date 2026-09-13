@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sieve.contracts import Outcome, Profile, ProfileSettings, WeightSetting
+from sieve.contracts import Outcome, Profile, ProfileSettings, Ranking, WeightSetting
 from sieve.profiles.load import load_profiles
 from sieve.store import Store
 
@@ -236,6 +236,56 @@ def experience(store: Store, name: str, at: datetime | None = None) -> list[dict
     ]
 
 
+def rerank_cached(
+    ranking: Ranking,
+    weights: dict[str, WeightSetting],
+    experience_weight: float,
+    observed_experience: dict[str, float],
+) -> Ranking:
+    """Reweight cached axis values without rebuilding the observation table."""
+    ranks = []
+    for row in ranking.ranks:
+        axes = {axis.axis: axis for axis in row.axes}
+        contributions: dict[str, float] = {}
+        confidence = 0.0
+        score = 0.0
+        for axis, setting in weights.items():
+            cached = axes.get(axis)
+            value = cached.value if cached else None
+            coverage = cached.coverage if cached else 0.0
+            contribution = setting.value * (value if value is not None else 0.0)
+            contributions[axis] = contribution
+            score += contribution
+            if value is not None:
+                confidence += setting.value * coverage
+        if experience_weight:
+            value = observed_experience.get(row.model_id, 0.5)
+            contributions["experience"] = experience_weight * value
+            score = (1.0 - experience_weight) * score + experience_weight * value
+        updated_axes = [
+            axis.model_copy(update={"contribution": contributions.get(axis.axis, 0.0)})
+            for axis in row.axes
+        ]
+        ranks.append(
+            row.model_copy(
+                update={
+                    "position": 0,
+                    "score": score,
+                    "confidence": confidence,
+                    "final": score * row.health,
+                    "axes": updated_axes,
+                }
+            )
+        )
+    eligible = [row for row in ranks if not row.excluded_by and not row.dominated_by]
+    eligible.sort(key=lambda row: (-row.final, row.model_id))
+    for position, row in enumerate(eligible, start=1):
+        row.position = position
+    return ranking.model_copy(
+        update={"ranks": eligible + [row for row in ranks if row.excluded_by or row.dominated_by]}
+    )
+
+
 def controlled_ids(
     store: Store, name: str, ranked: list[Any], limit: int, floor: float
 ) -> list[str]:
@@ -257,7 +307,7 @@ def controlled_ids(
     return out[:limit]
 
 
-def chain_for(store: Store, name: str, ranked: list[Any], at: datetime | None = None):
+def chain_for(store: Store, name: str, ranked: list[Any], at: datetime | None = None) -> Any:
     from sieve.contracts import Chain
 
     cfg = settings(store, name)

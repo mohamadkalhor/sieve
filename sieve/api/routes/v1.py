@@ -619,10 +619,17 @@ def preview(
         proposed = control.update_settings(current, body)
     except (ValidationError, ValueError) as exc:
         return error(400, "bad_settings", str(exc))
-    weights = {axis: item.value for axis, item in proposed.weights.items()}
-    candidate = found.model_copy(update={"weights": weights})
-    ranking = rank_profile(
-        cfg, store, candidate, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
+    ranking = store.ranking(name)
+    if ranking is None:
+        weights = {axis: item.value for axis, item in proposed.weights.items()}
+        candidate = found.model_copy(update={"weights": weights})
+        ranking = rank_profile(
+            cfg, store, candidate, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
+        )
+        store.put_ranking(ranking)
+    observed = {row["model_id"]: row["experience"] for row in control.experience(store, name)}
+    ranking = control.rerank_cached(
+        ranking, proposed.weights, proposed.experience_weight, observed
     )
     ids = control.controlled_ids(
         store, name, ranking.ranks, proposed.list_length, proposed.floor_score
