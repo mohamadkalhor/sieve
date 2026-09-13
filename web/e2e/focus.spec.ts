@@ -25,12 +25,12 @@ import { expect, test, type Page } from '@playwright/test';
  * than passing on an empty list.
  */
 
+// Profiles, Rankings and Chains are one screen now: the list, and the list
+// with one row opened, which is where every control the other two had lives.
 const SCREENS = [
   { path: '/field', name: 'Field' },
   { path: '/profiles', name: 'Profiles' },
-  { path: '/profiles/coder', name: 'Profile editor' },
-  { path: '/rankings/coder', name: 'Rankings' },
-  { path: '/chains', name: 'Chains' },
+  { path: '/profiles?open=coder', name: 'Profiles, one row opened' },
   { path: '/sources', name: 'Sources' }
 ];
 

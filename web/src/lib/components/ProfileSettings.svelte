@@ -221,7 +221,7 @@
     margin-top: 1rem;
   }
   .block {
-    border: 1px solid var(--line);
+    border: 1px solid var(--rule);
     border-radius: 8px;
     padding: 0.85rem 0.9rem 1rem;
     min-width: 0;
@@ -257,9 +257,9 @@
   input[type='number'] {
     width: 6.5rem;
     padding: 0.25rem 0.4rem;
-    border: 1px solid var(--line);
+    border: 1px solid var(--rule);
     border-radius: 5px;
-    background: var(--bg);
+    background: var(--panel);
     color: inherit;
     font: inherit;
     font-size: 0.82rem;
@@ -278,7 +278,7 @@
     margin-top: 0.7rem;
     width: 100%;
     padding: 0.35rem 0.6rem;
-    border: 1px solid var(--line);
+    border: 1px solid var(--rule);
     border-radius: 6px;
     background: var(--panel2);
     color: inherit;

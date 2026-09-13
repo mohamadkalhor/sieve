@@ -130,9 +130,11 @@ interface Timings {
  */
 async function measure(page: Page, runs: number): Promise<Timings> {
   return page.evaluate(async (count: number) => {
-    const slider = document.querySelector<HTMLInputElement>('#w-cost');
-    const list = document.querySelector<HTMLOListElement>('ol.live');
-    if (!slider || !list) throw new Error('the editor did not render a slider and a list');
+    // scoped to one row: the Profiles screen shows every profile's sliders and
+    // every profile's list at once, so a bare `ol.live` is somebody else's
+    const slider = document.querySelector<HTMLInputElement>('#w-coder-cost');
+    const list = slider?.closest('li.row')?.querySelector<HTMLOListElement>('ol.live') ?? null;
+    if (!slider || !list) throw new Error('the coder row did not render a slider and a list');
 
     // frames over 50 ms during the burst, as a cross-check on the per-input number
     let longFrames = 0;
@@ -219,6 +221,21 @@ async function measure(page: Page, runs: number): Promise<Timings> {
   }, runs);
 }
 
+/**
+ * Open the Profiles list and make the coder row show `rows` models.
+ *
+ * The row ships `policy.chain` models by default -- five -- because that is
+ * what the seat actually sends. The list length is a control on the row, so
+ * the measurement sets it rather than needing a different screen.
+ */
+async function openCoder(page: Page, rows: number) {
+  await page.goto('/profiles');
+  const length = page.locator('#len-coder');
+  await expect(length).toBeVisible();
+  await length.fill(String(rows));
+  await length.dispatchEvent('change');
+}
+
 function quantile(sorted: number[], q: number): number {
   const at = Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1));
   return sorted[at];
@@ -245,8 +262,9 @@ function report(label: string, timings: Timings) {
 }
 
 test('one input re-ranks well inside a frame, on the data that ships', async ({ page }) => {
-  await page.goto('/profiles/coder');
-  await expect(page.locator('.live li').first()).toBeVisible();
+  await openCoder(page, 60);
+  await expect(page.locator('#w-coder-cost')).toBeVisible();
+  await expect(page.locator('li.row ol.live li').first()).toBeVisible();
 
   const timings = await measure(page, SAMPLES);
   const { median, p95 } = report('shipped fixture data', timings);
@@ -279,8 +297,8 @@ test('one input on a 60-row list costs most of a frame', async ({ page }) => {
     });
   });
 
-  await page.goto('/profiles/coder');
-  await expect(page.locator('.live li')).toHaveCount(60);
+  await openCoder(page, 60);
+  await expect(page.locator('#w-coder-cost')).toBeVisible();
 
   const timings = await measure(page, SAMPLES);
   const { median, p95 } = report('60 synthetic rows (stubbed ranking)', timings);
@@ -323,8 +341,8 @@ test('at 60 rows the cost is the DOM, not the animation', async ({ page }) => {
     });
   });
 
-  await page.goto('/profiles/coder');
-  await expect(page.locator('.live li')).toHaveCount(60);
+  await openCoder(page, 60);
+  await expect(page.locator('#w-coder-cost')).toBeVisible();
 
   const timings = await measure(page, SAMPLES);
   const { median, p95 } = report('60 synthetic rows, motion reduced (stubbed ranking)', timings);

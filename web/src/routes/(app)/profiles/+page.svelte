@@ -1,57 +1,84 @@
 <script lang="ts">
-  import { api, type ApiError } from '$lib/api/client';
-  import type { Chain, Profile } from '$lib/types';
+  /**
+   * Profiles: every seat your agents play, managed from one list.
+   *
+   * This screen replaces three. Profiles was a grid of cards you clicked into;
+   * Rankings was the list one of those cards produced; Chains was what that
+   * list had last shipped. They were the same object seen three times, and
+   * answering "is this seat right?" meant holding all three in your head.
+   *
+   * Here a profile is one row: the card, its controls, and the list those
+   * controls produce, side by side. Moving a weight re-ranks the list beside
+   * it; the card says whether what you are looking at is what the gateway is
+   * actually serving. The old URLs redirect here with the profile opened.
+   */
+  import { page } from '$app/stores';
+  import { api, explainError, type ApiError } from '$lib/api/client';
+  import type { Modality, Profile } from '$lib/types';
   import Empty from '$lib/components/Empty.svelte';
+  import ProfileRow from '$lib/components/ProfileRow.svelte';
 
   let profiles = $state<Profile[]>([]);
-  let chains = $state<Record<string, Chain>>({});
   let error = $state<ApiError | null>(null);
   let loading = $state(true);
-
-  // New profile, cloned. Starting from nothing means assembling weights that
-  // sum to 1 over axes that exist for a modality you have not chosen yet;
-  // starting from the seat next to it and changing two numbers is how anybody
-  // actually makes one.
-  let cloning = $state(false);
-  let cloneFrom = $state('');
-  let cloneName = $state('');
-  let clonePurpose = $state('');
+  let notice = $state('');
   let token = $state('');
-  let busy = $state(false);
 
-  async function clone(event: SubmitEvent) {
-    event.preventDefault();
-    busy = true;
-    const result = await api.createProfile(
-      { name: cloneName.trim(), from: cloneFrom, purpose: clonePurpose.trim() || undefined },
-      { token: token || undefined }
-    );
-    busy = false;
-    if (!result.ok) {
-      error = result.error;
+  /** the defaults from `/v1/cost-multipliers`; null where the route is absent */
+  let defaults = $state<Record<string, number> | null>(null);
+  let modalities = $state<Modality[]>([]);
+
+  /** which row is opened to its deeper settings; only ever one */
+  let opened = $state<string | null>(null);
+  let collapsed = $state<Set<string>>(new Set());
+
+  /** one ticker for the whole screen, rather than one per row */
+  let now = $state(new Date());
+  $effect(() => {
+    const tick = setInterval(() => (now = new Date()), 30_000);
+    return () => clearInterval(tick);
+  });
+
+  /*
+    `/rankings/coder` and `/chains/coder` redirect to `/profiles?open=coder`,
+    so a bookmark from either of the screens this one replaced still lands on
+    the thing it was pointing at.
+  */
+  $effect(() => {
+    const wanted = $page.url.searchParams.get('open');
+    if (wanted) opened = wanted;
+  });
+
+  async function load() {
+    loading = true;
+    const [found, defaulted, counted] = await Promise.all([
+      api.profiles(),
+      api.costMultipliers(),
+      api.modalities()
+    ]);
+    loading = false;
+
+    if (!found.ok) {
+      error = found.error;
       return;
     }
     error = null;
-    window.location.href = `/profiles/${encodeURIComponent(result.value.name)}`;
+    profiles = Array.isArray(found.value) ? found.value : [];
+
+    // absent, rather than broken: the route lands with the settings module
+    defaults =
+      defaulted.ok && defaulted.value && typeof defaulted.value === 'object'
+        ? defaulted.value
+        : null;
+
+    modalities =
+      counted.ok && Array.isArray(counted.value)
+        ? counted.value.map((row) => row.modality)
+        : [...new Set(profiles.map((p) => p.modality))];
   }
 
   $effect(() => {
-    (async () => {
-      const found = await api.profiles();
-      if (!found.ok) {
-        error = found.error;
-        loading = false;
-        return;
-      }
-      profiles = found.value;
-      const results = await Promise.all(
-        found.value.map(async (p) => [p.name, await api.chain(p.name)] as const)
-      );
-      const held: Record<string, Chain> = {};
-      for (const [name, result] of results) if (result.ok) held[name] = result.value;
-      chains = held;
-      loading = false;
-    })();
+    void load();
   });
 
   const byModality = $derived.by(() => {
@@ -59,8 +86,72 @@
     for (const profile of profiles) {
       grouped.set(profile.modality, [...(grouped.get(profile.modality) ?? []), profile]);
     }
+    for (const [, group] of grouped) group.sort((a, b) => a.name.localeCompare(b.name));
     return [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b));
   });
+
+  function toggleGroup(modality: string) {
+    const next = new Set(collapsed);
+    if (next.has(modality)) next.delete(modality);
+    else next.add(modality);
+    collapsed = next;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* a new profile                                                           */
+  /* ---------------------------------------------------------------------- */
+
+  let adding = $state(false);
+  let newName = $state('');
+  let newModality = $state<Modality>('llm');
+  let copyFrom = $state('');
+  let creating = $state(false);
+  let formError = $state('');
+
+  const choices = $derived(
+    modalities.length ? modalities : ([...new Set(profiles.map((p) => p.modality))] as Modality[])
+  );
+
+  /**
+   * Create, in whichever shape this server takes.
+   *
+   * `POST /v1/profiles` used to mean "clone this one and give it that name",
+   * and now means "make one of this modality, optionally copying another". A
+   * server may have either, so the new body goes first and the older one is
+   * tried when the body is refused -- which is the only failure that says
+   * "wrong shape" rather than "no" or "not allowed".
+   */
+  async function create(event: SubmitEvent) {
+    event.preventDefault();
+    const name = newName.trim();
+    if (!name) {
+      formError = 'Give it a name.';
+      return;
+    }
+    creating = true;
+    formError = '';
+    const options = { token: token || undefined };
+
+    let result = await api.newProfile(
+      { name, modality: newModality, copy_from: copyFrom || undefined },
+      options
+    );
+    if (!result.ok && (result.error.status === 400 || result.error.status === 422) && copyFrom) {
+      result = await api.createProfile({ name, from: copyFrom }, options);
+    }
+    creating = false;
+
+    if (!result.ok) {
+      formError = explainError(result.error);
+      return;
+    }
+    adding = false;
+    newName = '';
+    copyFrom = '';
+    notice = `${name} created.`;
+    opened = name;
+    await load();
+  }
 </script>
 
 <svelte:head><title>Profiles · Sieve</title></svelte:head>
@@ -69,49 +160,59 @@
   <div>
     <h1>Profiles</h1>
     <p class="lede">
-      One per role your agents play. Open one to move its weights and watch the list re-rank.
+      One row per seat your agents play: what it is, the controls that shape it, and the list those
+      controls would ship. Move a weight and the list beside it moves; click a card for everything
+      else.
     </p>
   </div>
-  <button type="button" class="new" onclick={() => (cloning = !cloning)} aria-expanded={cloning}>
-    {cloning ? 'Cancel' : 'New profile'}
+  <button type="button" class="new" onclick={() => (adding = !adding)} aria-expanded={adding}>
+    {adding ? 'Cancel' : 'New profile'}
   </button>
 </header>
 
-{#if cloning}
-  <form class="clone" onsubmit={clone}>
-    <p class="hint">
-      Cloned from an existing seat: weights, constraints, shape and policy come across, and you
-      change what differs.
-    </p>
+<label class="token">
+  <span>Token (needed to change anything)</span>
+  <input
+    type="password"
+    bind:value={token}
+    placeholder="a token with profiles:write and apply"
+    autocomplete="off"
+  />
+</label>
+
+{#if adding}
+  <form class="add" onsubmit={create}>
     <div class="fields">
       <label>
-        <span>Clone from</span>
-        <select bind:value={cloneFrom} required>
-          <option value="" disabled>choose a profile</option>
-          {#each profiles as p (p.name)}
-            <option value={p.name}>{p.name} ({p.modality})</option>
+        <span>Name</span>
+        <input bind:value={newName} placeholder="coder_cheap" pattern="[A-Za-z0-9_\-]+" required />
+      </label>
+      <label>
+        <span>Modality</span>
+        <select bind:value={newModality}>
+          {#each choices as modality (modality)}
+            <option value={modality}>{modality}</option>
           {/each}
         </select>
       </label>
       <label>
-        <span>New name</span>
-        <input bind:value={cloneName} placeholder="coder_cheap" required pattern="[A-Za-z0-9_\-]+" />
-      </label>
-      <label>
-        <span>Purpose</span>
-        <input bind:value={clonePurpose} placeholder="what this seat is for" />
-      </label>
-      <label>
-        <span>Token</span>
-        <input type="password" bind:value={token} placeholder="profiles:write" autocomplete="off" />
+        <span>Copy from <small>optional</small></span>
+        <select bind:value={copyFrom}>
+          <option value="">nothing — start empty</option>
+          {#each profiles as profile (profile.name)}
+            <option value={profile.name}>{profile.name} ({profile.modality})</option>
+          {/each}
+        </select>
       </label>
     </div>
-    <button type="submit" class="primary" disabled={busy || !cloneFrom || !cloneName.trim()}>
-      {busy ? 'Creating…' : 'Create'}
+    {#if formError}<p class="error">{formError}</p>{/if}
+    <button type="submit" class="primary" disabled={creating || !newName.trim()}>
+      {creating ? 'Creating…' : 'Create'}
     </button>
-    {#if error}<p class="error">{error.message}</p>{/if}
   </form>
 {/if}
+
+{#if notice}<p class="notice">{notice}</p>{/if}
 
 {#if loading}
   <p class="muted">Loading…</p>
@@ -121,26 +222,37 @@
 
 {#each byModality as [modality, group] (modality)}
   <section>
-    <h2>{modality}</h2>
-    <div class="grid">
-      {#each group as profile (profile.name)}
-        {@const total = Object.values(profile.weights).reduce((a, b) => a + b, 0) || 1}
-        <a class="card" href={`/profiles/${encodeURIComponent(profile.name)}`}>
-          <div class="name">{profile.name}</div>
-          <div class="purpose">{profile.purpose}</div>
-          <div class="mini" role="img" aria-label="weight vector">
-            {#each Object.entries(profile.weights).sort( ([a], [b]) => a.localeCompare(b) ) as [axis, weight] (axis)}
-              <span
-                class="seg"
-                style:flex={weight / total}
-                title={`${axis} ${weight.toFixed(2)}`}
-              ></span>
-            {/each}
-          </div>
-          <div class="primary mono">{chains[profile.name]?.primary ?? 'no chain yet'}</div>
-        </a>
-      {/each}
-    </div>
+    <h2>
+      <button
+        type="button"
+        class="group"
+        aria-expanded={!collapsed.has(modality)}
+        onclick={() => toggleGroup(modality)}
+      >
+        <span class="caret" aria-hidden="true">{collapsed.has(modality) ? '▸' : '▾'}</span>
+        {modality}
+        <span class="count">{group.length}</span>
+      </button>
+    </h2>
+    {#if !collapsed.has(modality)}
+      <ul class="rows">
+        {#each group as profile (profile.name)}
+          <ProfileRow
+            {profile}
+            {token}
+            {defaults}
+            {now}
+            open={opened === profile.name}
+            ontoggle={() => (opened = opened === profile.name ? null : profile.name)}
+            onchanged={(message) => {
+              notice = message;
+              opened = null;
+              void load();
+            }}
+          />
+        {/each}
+      </ul>
+    {/if}
   </section>
 {/each}
 
@@ -152,136 +264,136 @@
     justify-content: space-between;
     flex-wrap: wrap;
   }
-  .new {
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--panel2);
-    color: inherit;
-    font: inherit;
-    font-size: 0.82rem;
-    padding: 0.35rem 0.8rem;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .clone {
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 0.9rem 1rem 1rem;
-    margin: 0.5rem 0 1.2rem;
-  }
-  .clone .hint {
-    margin: 0 0 0.8rem;
-    color: var(--muted);
-    font-size: 0.78rem;
-    line-height: 1.5;
-    max-width: 60ch;
-  }
-  .fields {
-    display: grid;
-    gap: 0.7rem;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  }
-  .fields label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.78rem;
-    min-width: 0;
-  }
-  .fields span {
-    color: var(--muted);
-  }
-  .fields input,
-  .fields select {
-    padding: 0.32rem 0.45rem;
-    border: 1px solid var(--line);
-    border-radius: 5px;
-    background: var(--bg);
-    color: inherit;
-    font: inherit;
-    font-size: 0.82rem;
-    min-width: 0;
-  }
-  .clone button.primary {
-    margin-top: 0.9rem;
-    padding: 0.35rem 1rem;
-    border: 1px solid var(--ink);
-    border-radius: 6px;
-    background: var(--ink);
-    color: var(--bg);
-    font: inherit;
-    font-size: 0.82rem;
-    cursor: pointer;
-  }
-  .clone button.primary:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .error {
-    margin: 0.6rem 0 0;
-    color: #c53030;
-    font-size: 0.8rem;
-  }
   h1 {
     font-size: 1.6rem;
     margin: 0;
   }
   .lede {
     color: var(--muted);
-    margin: 0.25rem 0 1.25rem;
-    max-width: 62ch;
+    margin: 0.25rem 0 1rem;
+    max-width: 64ch;
+  }
+  .new {
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: var(--panel2);
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.3rem 0.8rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .token {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.76rem;
+    color: var(--muted);
+    max-width: 22rem;
+    margin-bottom: 0.8rem;
+  }
+  .token input {
+    background: var(--panel2);
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    color: var(--ink);
+    padding: 0.3rem 0.5rem;
+    font: inherit;
+  }
+  .add {
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--panel);
+    padding: 0.8rem 0.9rem 0.9rem;
+    margin-bottom: 1rem;
+  }
+  .fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 0.6rem 0.8rem;
+  }
+  .fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.76rem;
+    color: var(--muted);
+    min-width: 0;
+  }
+  .fields input,
+  .fields select {
+    background: var(--panel2);
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    color: var(--ink);
+    padding: 0.3rem 0.5rem;
+    font: inherit;
+    font-size: 0.8rem;
+    min-width: 0;
+  }
+  .primary {
+    margin-top: 0.7rem;
+    background: var(--panel2);
+    border: 1px solid var(--accent);
+    border-radius: 7px;
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.25rem 0.9rem;
+    cursor: pointer;
+  }
+  .primary:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  h2 {
+    margin: 1.2rem 0 0.5rem;
+  }
+  .group {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    background: none;
+    border: none;
+    padding: 0.1rem 0.2rem;
+    color: var(--muted);
+    font-family: var(--ui);
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+  }
+  .group:hover {
+    color: var(--ink);
+  }
+  .caret {
+    font-size: 0.7rem;
+  }
+  .count {
+    color: var(--muted);
+    opacity: 0.7;
+    letter-spacing: 0;
+  }
+  .rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
   }
   .muted {
     color: var(--muted);
   }
-  h2 {
+  .notice {
+    color: var(--good);
     font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-    font-family: var(--ui);
-    margin: 1.25rem 0 0.5rem;
   }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-    gap: 0.6rem;
-  }
-  .card {
-    display: block;
-    padding: 0.8rem 0.9rem;
-    border: 1px solid var(--rule);
-    border-radius: var(--radius);
-    background: var(--panel);
-  }
-  .card:hover {
-    border-color: var(--accent);
-  }
-  .name {
-    font-family: var(--display);
-    font-size: 1.05rem;
-  }
-  .purpose {
-    color: var(--muted);
-    font-size: 0.78rem;
-    min-height: 2.4em;
-  }
-  .mini {
-    display: flex;
-    gap: 1px;
-    height: 5px;
-    margin: 0.5rem 0 0.4rem;
-  }
-  .seg {
-    background: var(--reach);
-    border-radius: 1px;
-  }
-  .seg:first-child {
-    background: var(--accent);
-  }
-  .primary {
-    color: var(--muted);
-    font-size: 0.72rem;
+  .error {
+    color: var(--bad);
+    font-size: 0.8rem;
+    margin: 0.5rem 0 0;
     overflow-wrap: anywhere;
   }
 </style>

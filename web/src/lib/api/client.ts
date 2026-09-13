@@ -220,6 +220,89 @@ export interface ConnectorProbe {
   error: string | null;
 }
 
+/* -------------------------------------------------------------------------- */
+/* one profile, as the Profiles screen manages it                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One weight, with the room it is allowed to move in.
+ *
+ * `min`/`max` are not decoration: a seat may be allowed to care about cost
+ * between 0.1 and 0.4 and nowhere else, and a slider that can be dragged
+ * outside that range is offering something the server will refuse.
+ */
+export interface WeightControl {
+  value: number;
+  min: number;
+  max: number;
+  locked: boolean;
+}
+
+/**
+ * Every control behind one profile row: `GET/PUT /v1/profiles/{name}/settings`.
+ *
+ * Until that route lands the screen builds this same shape out of `Profile` --
+ * the weights with an open 0..1 range and nothing locked, the list length and
+ * the floor from `policy` -- so the sliders still move and the list still
+ * re-ranks. Only the two fields that have no older equivalent, price
+ * sensitivity and experience weight, are disabled while that is true.
+ */
+export interface ProfileSettings {
+  list_length: number;
+  floor_score: number;
+  price_sensitivity: number;
+  experience_weight: number;
+  auto_apply: boolean;
+  weights: Record<string, WeightControl>;
+  /** per-profile overrides; a prefix absent here uses the default */
+  cost_multipliers: Record<string, number>;
+}
+
+/** What a model is doing on a profile's list. */
+export type ModelStatus = 'active' | 'pinned' | 'removed';
+
+/** One row of the list a draft would ship. */
+export interface PreviewRow {
+  rank: number;
+  id: string;
+  local_ids: string[];
+  score: number;
+  status: ModelStatus;
+}
+
+export interface PreviewResult {
+  models: PreviewRow[];
+}
+
+/** What `apply` says it did, and where it went. */
+export interface ApplyOutcome {
+  ok: boolean;
+  shipped_to: string[];
+}
+
+/** `GET /v1/profiles/{name}/history`: who changed what, from what to what. */
+export interface HistoryRow {
+  who: string;
+  when: string;
+  what: string;
+  before?: unknown;
+  after?: unknown;
+}
+
+/** `GET /v1/profiles/{name}/experience`: your own traffic, per model. */
+export interface ExperienceRow {
+  model_id: string;
+  rate: number;
+  n: number;
+}
+
+/** What the Profiles screen sends to `POST /v1/profiles`. */
+export interface NewProfileBody {
+  name: string;
+  modality: Modality;
+  copy_from?: string;
+}
+
 const q = (params: Record<string, string | number | boolean | undefined>): string => {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -306,6 +389,81 @@ export const api = {
   connectorModels: (id: string, o?: RequestOptions) =>
     request<string[]>(`/v1/connectors/${encodeURIComponent(id)}/models`, o),
 
+
+  /* ---- one profile, as the Profiles screen manages it ------------------ */
+
+  /**
+   * Every control behind one row. A 404 here is not the user's mistake: the
+   * route arrives with the settings module, and until it does the screen falls
+   * back to the profile's own weights and policy.
+   */
+  profileSettings: (name: string, o?: RequestOptions) =>
+    request<ProfileSettings>(`/v1/profiles/${encodeURIComponent(name)}/settings`, o),
+
+  saveProfileSettings: (name: string, body: Partial<ProfileSettings>, o?: RequestOptions) =>
+    request<ProfileSettings>(`/v1/profiles/${encodeURIComponent(name)}/settings`, {
+      ...o,
+      method: 'PUT',
+      body
+    }),
+
+  /**
+   * Pin or remove one model on one profile. Written through the moment it is
+   * clicked, because a pin that looks set and is only in a draft is a lie
+   * about what the seat will ship.
+   */
+  setModelStatus: (name: string, modelId: string, status: ModelStatus, o?: RequestOptions) =>
+    request<{ status: ModelStatus }>(
+      `/v1/profiles/${encodeURIComponent(name)}/models/${encodeURIComponent(modelId)}/status`,
+      { ...o, method: 'PUT', body: { status } }
+    ),
+
+  /**
+   * The list a draft would ship, without shipping it. Meant to be fast and
+   * called often: a row debounces 250 ms and sends whatever its controls hold.
+   */
+  preview: (name: string, settings: Partial<ProfileSettings>, o?: RequestOptions) =>
+    request<PreviewResult>(`/v1/profiles/${encodeURIComponent(name)}/preview`, {
+      ...o,
+      method: 'POST',
+      body: settings
+    }),
+
+  applyProfile: (name: string, o?: RequestOptions) =>
+    request<ApplyOutcome>(`/v1/profiles/${encodeURIComponent(name)}/apply`, {
+      ...o,
+      method: 'POST'
+    }),
+
+  history: (name: string, o?: RequestOptions) =>
+    request<HistoryRow[]>(`/v1/profiles/${encodeURIComponent(name)}/history`, o),
+
+  experience: (name: string, o?: RequestOptions) =>
+    request<ExperienceRow[]>(`/v1/profiles/${encodeURIComponent(name)}/experience`, o),
+
+  /**
+   * A profile from nothing, or copied from one that already works.
+   *
+   * `createProfile` above is the older shape (`from`, `purpose`) that phase 1
+   * shipped. Both are kept because a server may have either: the screen sends
+   * this one and falls back to that one when the body is refused.
+   */
+  newProfile: (body: NewProfileBody, o?: RequestOptions) =>
+    request<Profile>('/v1/profiles', { ...o, method: 'POST', body }),
+
+  renameProfile: (name: string, next: string, o?: RequestOptions) =>
+    request<Profile>(`/v1/profiles/${encodeURIComponent(name)}`, {
+      ...o,
+      method: 'PATCH',
+      body: { name: next }
+    }),
+
+  removeProfile: (name: string, o?: RequestOptions) =>
+    request<null>(`/v1/profiles/${encodeURIComponent(name)}`, { ...o, method: 'DELETE' }),
+
+  /** The cost multipliers every profile inherits, by local-id prefix. */
+  costMultipliers: (o?: RequestOptions) =>
+    request<Record<string, number>>('/v1/cost-multipliers', o),
 
   inventory: (unmatched?: boolean, o?: RequestOptions) =>
     request<Reachable[]>(`/v1/inventory${q({ unmatched })}`, o),

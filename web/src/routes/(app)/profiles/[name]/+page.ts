@@ -1,7 +1,13 @@
-// A route with a parameter has no build-time list of values to crawl, so it is
-// not prerendered. The SPA fallback in `index.html` serves it: FastAPI answers
-// any deep link with the shell, and the page reads its own data from `/v1`.
+// The per-profile editor is now a row on the Profiles list, opened in place.
+// This URL keeps working and opens that row.
 //
-// The parent layout prerenders every route that *does* have a fixed path, which
-// is where the paint-time win is -- those are the screens someone lands on.
+// A route with a parameter has no build-time list of values to crawl, so it is
+// not prerendered; the SPA fallback in `index.html` serves it.
+import { redirect } from '@sveltejs/kit';
+import type { PageLoad } from './$types';
+
 export const prerender = false;
+
+export const load: PageLoad = ({ params }) => {
+  redirect(307, `/profiles?open=${encodeURIComponent(params.name)}`);
+};
