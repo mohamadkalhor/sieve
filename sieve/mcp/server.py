@@ -231,6 +231,17 @@ def build_server(bridge: Bridge | None = None) -> Any:
         """Write the current chains to their targets. Needs the apply scope."""
         return await hub.call("apply", {"profiles": profiles, "targets": targets})
 
+    @server.resource(
+        "sieve://operating-guide",
+        name="Sieve operating guide",
+        description="Complete operating guide for an autonomous Sieve agent.",
+        mime_type="text/markdown",
+    )
+    def operating_guide() -> str:
+        from pathlib import Path
+
+        return (Path(__file__).resolve().parents[2] / "OPERATING.md").read_text()
+
     for fn in (
         list_profiles,
         get_profile,

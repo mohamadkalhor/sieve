@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from sieve import __version__
+from sieve.api.routes.config import router as config_router
 from sieve.api.routes.connectors import router as connectors_router
 from sieve.api.routes.v1 import router as v1_router
 from sieve.axes import control as axis_control
@@ -102,6 +103,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     app.include_router(v1_router)
     app.include_router(connectors_router)
+    app.include_router(config_router)
 
     # Anything under /v1 that no route claims is an API call that went wrong,
     # and it has to say so in JSON. The SPA catch-all below would hand it the
