@@ -98,3 +98,13 @@ spacexai/grok-imagine-image:
   - xai/grok-imagine-image
 spacexai/grok-imagine-video:
   - xai/grok-imagine-video
+
+# --- opencode-go (ocg) shorthand names ---------------------------------
+# AMS-13: the native opencode-go provider (prefix ocg) serves 28 models;
+# 27 fold onto their canonical id through the slug rule (`ocg/glm-5.3` ->
+# `zai/glm-5-3`, etc). `deepseek-flash` is the one exception -- opencode-go
+# calls DeepSeek V4 Flash by its short name with no version, which shares no
+# shape with `deepseek-v4-flash` under any fold, so the matcher leaves it
+# unmatched without this entry.
+deepseek/deepseek-v4-flash:
+  - ocg/deepseek-flash
