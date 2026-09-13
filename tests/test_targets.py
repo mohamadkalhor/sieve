@@ -469,7 +469,7 @@ def test_9router_over_http_updates_by_id_and_creates_by_post(ninerouter_api: Any
         ("PUT", f"{COMBOS_PATH}/held0"),
         ("POST", COMBOS_PATH),
     ], "the held name was updated in place and the new one created"
-    assert all(body["kind"] == SERVICE_KIND for _, _, body in writes)
+    assert all(body is not None and body["kind"] == SERVICE_KIND for _, _, body in writes)
 
     after = NineRouterTarget().current(cfg)
     assert after == {"coder": ["gw/one"], "reader": ["gw/two"]}
