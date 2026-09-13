@@ -240,6 +240,71 @@
     value
       ? new Date(value).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
       : 'never';
+
+  /* ---------------------------------------------------------------------- */
+  /* the default cost multipliers                                            */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * What an id from one gateway really costs you, against its published price.
+   *
+   * It belongs here because a prefix *is* a connector: the local ids a gateway
+   * serves are `oc-go/glm-5.3`, and the number in front of the slash is the
+   * thing being paid for. Every profile inherits these; a seat that pays
+   * differently overrides one on its own page.
+   *
+   * The prefixes are Sieve's own -- it derives them from the inventory it has
+   * seen -- so this screen offers the ones that come back and never invents
+   * one.
+   */
+  let multipliers = $state<Record<string, number> | null>(null);
+  let multipliersLoading = $state(true);
+  let multiplierSaid = $state<Record<string, { ok: boolean; text: string }>>({});
+  let savingPrefix = $state('');
+
+  $effect(() => {
+    void (async () => {
+      const result = await api.costMultipliers();
+      multipliersLoading = false;
+      // Same absence as everywhere else on this screen: a route that is not
+      // mounted comes back as the SPA shell, which is a 200 with a null body.
+      multipliers =
+        result.ok && result.value && typeof result.value === 'object' && !Array.isArray(result.value)
+          ? result.value
+          : null;
+    })();
+  });
+
+  const prefixes = $derived(Object.keys(multipliers ?? {}).sort());
+
+  async function setMultiplier(prefix: string, raw: string, box: HTMLInputElement) {
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) {
+      multiplierSaid = {
+        ...multiplierSaid,
+        [prefix]: { ok: false, text: 'a multiplier is a number, and never below zero' }
+      };
+      box.value = String(multipliers?.[prefix] ?? 1);
+      return;
+    }
+    savingPrefix = prefix;
+    // Merged by the server, so only the prefix that changed is sent.
+    const result = await api.saveCostMultipliers({ [prefix]: value }, options);
+    savingPrefix = '';
+    if (!result.ok) {
+      multiplierSaid = {
+        ...multiplierSaid,
+        [prefix]: { ok: false, text: explainError(result.error) }
+      };
+      box.value = String(multipliers?.[prefix] ?? 1);
+      return;
+    }
+    multipliers =
+      result.value && typeof result.value === 'object'
+        ? result.value
+        : { ...(multipliers ?? {}), [prefix]: value };
+    multiplierSaid = { ...multiplierSaid, [prefix]: { ok: true, text: 'saved' } };
+  }
 </script>
 
 {#snippet formCard()}
@@ -322,7 +387,12 @@
 
 <label class="token">
   <span>Token (needed to change anything)</span>
-  <input type="password" bind:value={token} placeholder="a token with apply" autocomplete="off" />
+  <input
+    type="password"
+    bind:value={token}
+    placeholder="a token with apply and profiles:write"
+    autocomplete="off"
+  />
 </label>
 
 {#if absent}
@@ -430,7 +500,89 @@
   </ul>
 {/if}
 
+<section class="defaults">
+  <h2>Default cost multipliers</h2>
+  <p class="lede">
+    Multiplies the list price for every id with this prefix; 0.1 means a flat-rate subscription you
+    barely pay for. Every profile inherits these, and a seat that pays differently overrides one on
+    its own page.
+  </p>
+
+  {#if multipliersLoading}
+    <p class="muted">Loading…</p>
+  {:else if multipliers === null}
+    <p class="banner" role="status">Cost multipliers API not available on this server yet.</p>
+  {:else if prefixes.length === 0}
+    <p class="muted">
+      No prefixes yet. Sieve reads them from the local ids your connectors serve — pull one and they
+      appear here.
+    </p>
+  {:else}
+    <ul class="prefixes">
+      {#each prefixes as prefix (prefix)}
+        {@const last = multiplierSaid[prefix]}
+        <li>
+          <label for={`mult-${prefix}`} class="mono">{prefix}</label>
+          <input
+            id={`mult-${prefix}`}
+            type="number"
+            min="0"
+            step="0.05"
+            value={multipliers?.[prefix] ?? 1}
+            disabled={savingPrefix === prefix}
+            onchange={(e) => void setMultiplier(prefix, e.currentTarget.value, e.currentTarget)}
+          />
+          <span class={last && !last.ok ? 'error one-line' : 'note'}>
+            {savingPrefix === prefix ? 'saving…' : last ? last.text : 'default 1.0'}
+          </span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</section>
+
 <style>
+  .defaults {
+    margin-top: 1.6rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 0.9rem;
+  }
+  .defaults h2 {
+    font-family: var(--ui);
+    font-size: 1rem;
+    margin: 0;
+  }
+  .prefixes {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+    gap: 0.3rem 0.8rem;
+  }
+  .prefixes li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 6rem minmax(0, 8rem);
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.22rem 0;
+    border-bottom: 1px solid var(--rule);
+    font-size: 0.8rem;
+  }
+  .prefixes input {
+    background: var(--panel2);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.2rem 0.35rem;
+    min-width: 0;
+  }
+  .note {
+    color: var(--muted);
+    font-size: 0.7rem;
+  }
   h1 {
     font-size: 1.6rem;
     margin: 0;

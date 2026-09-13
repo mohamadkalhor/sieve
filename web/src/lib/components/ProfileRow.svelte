@@ -13,12 +13,20 @@
    * look at. Until a row is engaged its right column shows what that seat is
    * shipping now, dim, which is a true answer and free.
    *
-   * Touching a control, or opening the card, engages it: one `preview` comes
-   * back with the list *and* the ranking behind it, so from then on the row
-   * re-ranks in the browser on every input with the same arithmetic the server
-   * uses (`$lib/rank/weigh`, a port asserted against the Python to 1e-6). The
-   * list tracks the finger, and 250 ms after the last input the server's own
-   * answer replaces it.
+   * Touching a control engages it: one `preview` comes back with the list
+   * *and* the ranking behind it, so from then on the row re-ranks in the
+   * browser on every input with the same arithmetic the server uses
+   * (`$lib/rank/weigh`, a port asserted against the Python to 1e-6). The list
+   * tracks the finger, and 250 ms after the last input the server's own answer
+   * replaces it.
+   *
+   * WHAT IS NOT HERE
+   *
+   * The deeper half of a seat -- every axis, adding and removing one, the
+   * bounds, the description, the per-axis detail, the history, the experience,
+   * the cost overrides -- is `/profiles/<name>`, its own page. It used to
+   * unfold inside this row, which made the list as long as the deepest thing
+   * open on it.
    *
    * WHAT HAPPENS ON A SERVER THAT IS HALF WAY THROUGH THIS FEATURE
    *
@@ -41,7 +49,6 @@
     type WeightControl
   } from '$lib/api/client';
   import type { Chain, Profile, Ranking } from '$lib/types';
-  import ProfileDetail from '$lib/components/ProfileDetail.svelte';
   import WeightSlider from '$lib/components/WeightSlider.svelte';
   import { ago } from '$lib/freshness';
   import { duration, reducedMotion } from '$lib/motion/reduced';
@@ -52,16 +59,10 @@
     profile: Profile;
     /** a token with `profiles:write` and `apply`, shared by the whole screen */
     token: string;
-    open: boolean;
-    /** the defaults from `/v1/cost-multipliers`, or null where it is absent */
-    defaults: Record<string, number> | null;
     /** ticks once a minute, so "shipped 51 min ago" keeps counting */
     now: Date;
-    ontoggle: () => void;
-    /** the profile was renamed or deleted: the screen has to reload its list */
-    onchanged: (message: string) => void;
   }
-  let { profile, token, open, defaults, now, ontoggle, onchanged }: Props = $props();
+  let { profile, token, now }: Props = $props();
 
   /** how many weights a row shows before it asks to be expanded */
   const SHOWN_WEIGHTS = 5;
@@ -89,7 +90,6 @@
    * the statuses, so the button label is only ever what this page did.
    */
   let statuses = $state<Record<string, ModelStatus>>({});
-  let allWeights = $state(false);
   let busy = $state('');
   let said = $state<{ ok: boolean; text: string } | null>(null);
 
@@ -153,11 +153,6 @@
         .map(([axis]) => axis);
       loading = false;
     })();
-  });
-
-  /** opening the card is engagement: the detail wants the ranking too */
-  $effect(() => {
-    if (open && !loading) void engage();
   });
 
   /* ---------------------------------------------------------------------- */
@@ -304,7 +299,7 @@
       .filter((pair): pair is readonly [string, WeightControl] => pair[1] !== undefined)
   );
   const axesShown = $derived(
-    axesSorted.length <= SHOWN_WEIGHTS || allWeights ? axesSorted : axesSorted.slice(0, SHOWN_WEIGHTS)
+    axesSorted.length <= SHOWN_WEIGHTS ? axesSorted : axesSorted.slice(0, SHOWN_WEIGHTS)
   );
   const moreWeights = $derived(axesSorted.length - axesShown.length);
 
@@ -514,21 +509,21 @@
   }
 </script>
 
-<li class="row" class:open>
+<li class="row">
   <div class="three">
     <!-- LEFT: what this seat is ------------------------------------------ -->
     <div class="card">
-      <button
-        type="button"
-        class="cardhit"
-        aria-expanded={open}
-        onclick={ontoggle}
-        title={open ? 'close the deeper settings' : 'open the deeper settings'}
-      >
+      <!--
+        A link, not a disclosure. The rest of a seat -- every axis, what
+        carried each score, the history, the experience -- is its own page, so
+        the list stays a list and a seat can be opened in a tab, bookmarked and
+        linked to from the decision log.
+      -->
+      <a class="cardhit" href={`/profiles/${encodeURIComponent(profile.name)}`}>
         <span class="name">{profile.name}</span>
         <span class="purpose">{profile.purpose}</span>
         <span class="modality">{profile.modality}</span>
-      </button>
+      </a>
       <span class="chip" data-tone={chip.tone}>{chip.text}</span>
     </div>
 
@@ -550,13 +545,10 @@
           />
         {/each}
         {#if moreWeights > 0}
-          <button type="button" class="more" onclick={() => (allWeights = true)}>
-            +{moreWeights} more
-          </button>
-        {:else if allWeights && axesSorted.length > SHOWN_WEIGHTS}
-          <button type="button" class="more" onclick={() => (allWeights = false)}>
-            show the largest {SHOWN_WEIGHTS}
-          </button>
+          <!-- the rest of the axes, and adding or removing one, are on its page -->
+          <a class="more" href={`/profiles/${encodeURIComponent(profile.name)}`}>
+            +{moreWeights} more on its page
+          </a>
         {/if}
 
         <p class="sum mono">
@@ -718,20 +710,11 @@
     </div>
   </div>
 
-  {#if open && draft && settings}
-    <ProfileDetail
-      {profile}
-      {draft}
-      {settingsAbsent}
-      {ranking}
-      {token}
-      {defaults}
-      onchange={touched}
-      onsaved={(message) => (said = { ok: true, text: message })}
-      onfailed={(message) => (said = { ok: false, text: message })}
-      {onchanged}
-    />
-  {/if}
+  <p class="deeper">
+    <a href={`/profiles/${encodeURIComponent(profile.name)}`}>
+      Open {profile.name} — every axis, what carried each score, history, experience
+    </a>
+  </p>
 </li>
 
 <style>
@@ -742,8 +725,17 @@
     padding: 0.7rem 0.85rem;
     list-style: none;
   }
-  .row.open {
-    border-color: var(--accent);
+  .deeper {
+    margin: 0.5rem 0 0;
+    font-size: 0.73rem;
+  }
+  .deeper a {
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .deeper a:hover {
+    color: var(--accent);
+    text-decoration: underline;
   }
   .three {
     display: grid;
@@ -764,12 +756,8 @@
     flex-direction: column;
     gap: 0.1rem;
     text-align: left;
-    background: none;
-    border: none;
-    padding: 0;
     color: inherit;
-    font: inherit;
-    cursor: pointer;
+    text-decoration: none;
     min-width: 0;
   }
   .name {
@@ -813,13 +801,10 @@
     min-width: 0;
   }
   .more {
-    background: none;
-    border: none;
+    display: inline-block;
     color: var(--accent);
-    font: inherit;
     font-size: 0.72rem;
     padding: 0.15rem 0;
-    cursor: pointer;
     text-decoration: underline;
   }
   .sum {

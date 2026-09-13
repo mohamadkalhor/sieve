@@ -10,8 +10,11 @@
    * Here a profile is one row: the card, its controls, and the list those
    * controls produce, side by side. Moving a weight re-ranks the list beside
    * it; the card says whether what you are looking at is what the gateway is
-   * actually serving. The old URLs redirect here with the profile opened.
+   * actually serving. The name opens `/profiles/<name>`, where the rest of
+   * that seat is: every axis, adding and removing one, the description, the
+   * per-axis detail, the history, the experience, the cost overrides.
    */
+  import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { api, explainError, type ApiError } from '$lib/api/client';
   import type { Modality, Profile } from '$lib/types';
@@ -24,12 +27,7 @@
   let notice = $state('');
   let token = $state('');
 
-  /** the defaults from `/v1/cost-multipliers`; null where the route is absent */
-  let defaults = $state<Record<string, number> | null>(null);
   let modalities = $state<Modality[]>([]);
-
-  /** which row is opened to its deeper settings; only ever one */
-  let opened = $state<string | null>(null);
   let collapsed = $state<Set<string>>(new Set());
 
   /** one ticker for the whole screen, rather than one per row */
@@ -40,22 +38,18 @@
   });
 
   /*
-    `/rankings/coder` and `/chains/coder` redirect to `/profiles?open=coder`,
-    so a bookmark from either of the screens this one replaced still lands on
-    the thing it was pointing at.
+    `/profiles?open=coder` is where `/rankings/coder` and `/chains/coder` used
+    to land, back when the deeper half of a seat unfolded inside its row. That
+    half is a page now, so the old query is answered by going to it.
   */
   $effect(() => {
     const wanted = $page.url.searchParams.get('open');
-    if (wanted) opened = wanted;
+    if (wanted) void goto(`/profiles/${encodeURIComponent(wanted)}`, { replaceState: true });
   });
 
   async function load() {
     loading = true;
-    const [found, defaulted, counted] = await Promise.all([
-      api.profiles(),
-      api.costMultipliers(),
-      api.modalities()
-    ]);
+    const [found, counted] = await Promise.all([api.profiles(), api.modalities()]);
     loading = false;
 
     if (!found.ok) {
@@ -64,12 +58,6 @@
     }
     error = null;
     profiles = Array.isArray(found.value) ? found.value : [];
-
-    // absent, rather than broken: the route lands with the settings module
-    defaults =
-      defaulted.ok && defaulted.value && typeof defaulted.value === 'object'
-        ? defaulted.value
-        : null;
 
     modalities =
       counted.ok && Array.isArray(counted.value)
@@ -150,8 +138,8 @@
     newName = '';
     copyFrom = '';
     notice = `${name} created.`;
-    opened = name;
-    await load();
+    // straight onto its own page, which is where the axes it needs are set
+    await goto(`/profiles/${encodeURIComponent(name)}`);
   }
 </script>
 
@@ -162,8 +150,8 @@
     <h1>Profiles</h1>
     <p class="lede">
       One row per seat your agents play: what it is, the controls that shape it, and the list those
-      controls would ship. Move a weight and the list beside it moves; click a card for everything
-      else.
+      controls would ship. Move a weight and the list beside it moves; open a seat by its name for
+      everything else — every axis, what carried each score, its history.
     </p>
   </div>
   <button type="button" class="new" onclick={() => (adding = !adding)} aria-expanded={adding}>
@@ -238,19 +226,7 @@
     {#if !collapsed.has(modality)}
       <ul class="rows">
         {#each group as profile (profile.name)}
-          <ProfileRow
-            {profile}
-            {token}
-            {defaults}
-            {now}
-            open={opened === profile.name}
-            ontoggle={() => (opened = opened === profile.name ? null : profile.name)}
-            onchanged={(message) => {
-              notice = message;
-              opened = null;
-              void load();
-            }}
-          />
+          <ProfileRow {profile} {token} {now} />
         {/each}
       </ul>
     {/if}

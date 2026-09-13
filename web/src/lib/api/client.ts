@@ -494,6 +494,21 @@ export const api = {
   newProfile: (body: NewProfileBody, o?: RequestOptions) =>
     request<Profile>('/v1/profiles', { ...o, method: 'POST', body }),
 
+  /**
+   * The whole profile back, as `PUT /v1/profiles/{name}`.
+   *
+   * This is the only route that writes a profile's `purpose` -- the sentence
+   * under its name -- so the editable description sends the profile it just
+   * read with that one field changed, rather than a patch the server has no
+   * route for.
+   */
+  saveProfile: (name: string, profile: Profile, o?: RequestOptions) =>
+    request<Profile>(`/v1/profiles/${encodeURIComponent(name)}`, {
+      ...o,
+      method: 'PUT',
+      body: profile
+    }),
+
   renameProfile: (name: string, next: string, o?: RequestOptions) =>
     request<Profile>(`/v1/profiles/${encodeURIComponent(name)}`, {
       ...o,
@@ -515,6 +530,20 @@ export const api = {
   /** The cost multipliers every profile inherits, by local-id prefix. */
   costMultipliers: (o?: RequestOptions) =>
     request<Record<string, number>>('/v1/cost-multipliers', o),
+
+  /**
+   * Set the defaults, by prefix. Merged: send only the prefixes that changed.
+   *
+   * The prefixes themselves are Sieve's own -- it derives them from the local
+   * ids the connectors serve -- so a screen offers the ones that come back and
+   * never invents one.
+   */
+  saveCostMultipliers: (values: Record<string, number>, o?: RequestOptions) =>
+    request<Record<string, number>>('/v1/cost-multipliers', {
+      ...o,
+      method: 'PUT',
+      body: values
+    }),
 
   inventory: (unmatched?: boolean, o?: RequestOptions) =>
     request<Reachable[]>(`/v1/inventory${q({ unmatched })}`, o),
