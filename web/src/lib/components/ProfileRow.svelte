@@ -27,7 +27,7 @@
     explainError,
     type ApiError,
     type ModelStatus,
-    type PreviewRow,
+    type PreviewResult,
     type ProfileSettings,
     type Result,
     type WeightControl
@@ -71,8 +71,13 @@
   /** the status route is not on this server yet: pin and remove are off */
   let statusAbsent = $state(false);
 
-  let preview = $state<PreviewRow[] | null>(null);
+  let preview = $state<PreviewResult | null>(null);
   let previewing = $state(false);
+  /**
+   * Pins and removals this session made. The server holds the truth and proves
+   * it by where the ids come back in `preview.models`; there is no bulk read of
+   * the statuses, so the button label is only ever what this page did.
+   */
   let statuses = $state<Record<string, ModelStatus>>({});
   let allWeights = $state(false);
   let busy = $state('');
@@ -108,7 +113,7 @@
       floor_score: p.policy?.min_confidence ?? 0,
       // Not guessed at. There is no older field that means either of these, so
       // they read zero and their controls are disabled until the route lands.
-      price_sensitivity: 0,
+      price_sensitivity: 1,
       experience_weight: 0,
       auto_apply: p.policy?.auto_apply ?? false,
       weights,
@@ -200,10 +205,29 @@
     }))
   );
 
-  const rows = $derived(arrange(preview ?? localRows));
+  /**
+   * The server's answer, turned into rows.
+   *
+   * `models` is already the whole decision -- pinned first, then everything
+   * active and reachable above the floor, cut to the list length -- so it is
+   * not re-sorted or re-cut here. The ranking beside it only supplies the
+   * score and the local ids to print against each id.
+   */
+  const previewRows = $derived.by(() => {
+    if (!preview) return null;
+    const scored = new Map((preview.ranking?.ranks ?? []).map((rank) => [rank.model_id, rank]));
+    return preview.models.map((id, index) => ({
+      rank: index + 1,
+      id,
+      local_ids: scored.get(id)?.local_ids ?? localIds[id] ?? [],
+      score: scored.get(id)?.final ?? 0,
+      status: statuses[id] ?? ('active' as ModelStatus)
+    }));
+  });
+
   const cut = $derived(Math.max(1, draft?.list_length ?? 5));
   /** the bright list: what this draft would ship */
-  const shipping = $derived(rows.slice(0, cut));
+  const shipping = $derived(previewRows ?? arrange(localRows).slice(0, cut));
 
   const shippedIds = $derived.by(() => {
     if (!chain) return [] as string[];
@@ -317,10 +341,7 @@
       said = { ok: false, text: explainError(result.error) };
       return;
     }
-    preview = result.value.models ?? [];
-    const seen: Record<string, ModelStatus> = {};
-    for (const row of preview) seen[row.id] = row.status;
-    statuses = seen;
+    preview = result.value;
   }
 
   $effect(() => () => {
@@ -421,7 +442,8 @@
         said = { ok: false, text: explainError(result.error) };
         return;
       }
-      where = result.value.shipped_to ?? [];
+      where = (result.value.results ?? []).map((target) => target.target);
+      if (result.value.chain) chain = result.value.chain;
     }
 
     said = { ok: true, text: where.length ? `Shipped to ${where.join(', ')}.` : 'Shipped.' };

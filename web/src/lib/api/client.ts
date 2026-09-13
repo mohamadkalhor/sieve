@@ -261,23 +261,25 @@ export interface ProfileSettings {
 /** What a model is doing on a profile's list. */
 export type ModelStatus = 'active' | 'pinned' | 'removed';
 
-/** One row of the list a draft would ship. */
-export interface PreviewRow {
-  rank: number;
-  id: string;
-  local_ids: string[];
-  score: number;
-  status: ModelStatus;
-}
-
+/**
+ * What a draft would ship, and the ranking behind it.
+ *
+ * `models` is already the answer: pinned first, then everything active and
+ * reachable above the floor, cut to `list_length`. The `ranking` alongside it
+ * is what those ids scored, so a screen can show a number next to each without
+ * a second request.
+ */
 export interface PreviewResult {
-  models: PreviewRow[];
+  profile: string;
+  models: string[];
+  settings: ProfileSettings;
+  ranking: Ranking;
 }
 
-/** What `apply` says it did, and where it went. */
+/** What `apply` shipped, and to which connectors. */
 export interface ApplyOutcome {
-  ok: boolean;
-  shipped_to: string[];
+  chain: Chain;
+  results: TargetResult[];
 }
 
 /** `GET /v1/profiles/{name}/history`: who changed what, from what to what. */
@@ -289,17 +291,29 @@ export interface HistoryRow {
   after?: unknown;
 }
 
-/** `GET /v1/profiles/{name}/experience`: your own traffic, per model. */
+/**
+ * `GET /v1/profiles/{name}/experience`: your own traffic, per model, over the
+ * last thirty days. `experience` is smoothed -- (successes + 1) / (calls + 2)
+ * -- so one lucky call does not read as a perfect record.
+ */
 export interface ExperienceRow {
   model_id: string;
-  rate: number;
-  n: number;
+  successes: number;
+  outcomes: number;
+  experience: number;
 }
 
-/** What the Profiles screen sends to `POST /v1/profiles`. */
+/**
+ * What the Profiles screen sends to `POST /v1/profiles`.
+ *
+ * The profile to copy is spelled `from` by the server and `copy_from` in the
+ * design note this screen was built to; both are sent, because an unknown key
+ * is ignored either way and a missing one silently starts an empty profile.
+ */
 export interface NewProfileBody {
   name: string;
   modality: Modality;
+  from?: string;
   copy_from?: string;
 }
 
@@ -458,8 +472,16 @@ export const api = {
       body: { name: next }
     }),
 
-  removeProfile: (name: string, o?: RequestOptions) =>
-    request<null>(`/v1/profiles/${encodeURIComponent(name)}`, { ...o, method: 'DELETE' }),
+  /**
+   * Delete. Refused with 409 `in_use` while a write connector may still be
+   * holding this profile's combo; `force` is the second ask, which the screen
+   * only sends after showing what the first refusal said.
+   */
+  removeProfile: (name: string, force = false, o?: RequestOptions) =>
+    request<{ deleted: string; actor: string }>(
+      `/v1/profiles/${encodeURIComponent(name)}${force ? '?force=1' : ''}`,
+      { ...o, method: 'DELETE' }
+    ),
 
   /** The cost multipliers every profile inherits, by local-id prefix. */
   costMultipliers: (o?: RequestOptions) =>

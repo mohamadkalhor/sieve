@@ -113,13 +113,12 @@
   );
 
   /**
-   * Create, in whichever shape this server takes.
+   * Create.
    *
-   * `POST /v1/profiles` used to mean "clone this one and give it that name",
-   * and now means "make one of this modality, optionally copying another". A
-   * server may have either, so the new body goes first and the older one is
-   * tried when the body is refused -- which is the only failure that says
-   * "wrong shape" rather than "no" or "not allowed".
+   * Cloning rather than starting empty is what anybody actually does: a
+   * profile is weights that sum to 1 over axes that exist for its modality,
+   * plus constraints, a shape and a policy, and assembling that from nothing
+   * is an exercise in reading error messages.
    */
   async function create(event: SubmitEvent) {
     event.preventDefault();
@@ -132,13 +131,15 @@
     formError = '';
     const options = { token: token || undefined };
 
-    let result = await api.newProfile(
-      { name, modality: newModality, copy_from: copyFrom || undefined },
+    const result = await api.newProfile(
+      {
+        name,
+        modality: newModality,
+        from: copyFrom || undefined,
+        copy_from: copyFrom || undefined
+      },
       options
     );
-    if (!result.ok && (result.error.status === 400 || result.error.status === 422) && copyFrom) {
-      result = await api.createProfile({ name, from: copyFrom }, options);
-    }
     creating = false;
 
     if (!result.ok) {

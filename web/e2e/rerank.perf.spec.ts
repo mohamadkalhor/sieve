@@ -229,6 +229,20 @@ async function measure(page: Page, runs: number): Promise<Timings> {
  * the measurement sets it rather than needing a different screen.
  */
 async function openCoder(page: Page, rows: number) {
+  /*
+    The row asks the server for the authoritative list 250 ms after the last
+    input, and would replace its own with that. What is being measured here is
+    the local re-rank -- the thing that has to fit in a frame while a finger is
+    moving -- so the preview is answered 404 and the local answer stands, which
+    is exactly what the row does on a server without that route.
+  */
+  await page.route('**/v1/profiles/coder/preview', async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'not_found', message: 'no preview here' } })
+    });
+  });
   await page.goto('/profiles');
   const length = page.locator('#len-coder');
   await expect(length).toBeVisible();

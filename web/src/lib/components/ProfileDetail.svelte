@@ -186,15 +186,31 @@
     onchanged(`${profile.name} is now ${next}.`);
   }
 
-  async function remove() {
+  /**
+   * Delete, and the second ask.
+   *
+   * The server refuses while a write connector may still be holding this
+   * profile's combo. That refusal is worth showing rather than routing around,
+   * so the forced delete is a second button that only appears once the first
+   * has said why.
+   */
+  let forcing = $state(false);
+
+  async function remove(force = false) {
     busy = 'delete';
-    const result = await api.removeProfile(profile.name, options);
+    const result = await api.removeProfile(profile.name, force, options);
     busy = '';
     confirming = false;
     if (!result.ok) {
+      if (result.error.code === 'in_use') {
+        forcing = true;
+        onfailed(`${result.error.message} — delete anyway?`);
+        return;
+      }
       onfailed(explainError(result.error));
       return;
     }
+    forcing = false;
     onchanged(`${profile.name} deleted.`);
   }
 
@@ -337,6 +353,13 @@
           </button>
           <button type="button" onclick={() => (confirming = false)}>Keep</button>
         </span>
+      {:else if forcing}
+        <span class="confirm">
+          <button type="button" class="danger" onclick={() => void remove(true)} disabled={busy === 'delete'}>
+            {busy === 'delete' ? 'Deleting…' : 'Delete anyway'}
+          </button>
+          <button type="button" onclick={() => (forcing = false)}>Keep it</button>
+        </span>
       {:else}
         <button type="button" onclick={() => (confirming = true)}>Delete</button>
       {/if}
@@ -457,8 +480,10 @@
       {#each experience as row (row.model_id)}
         <li>
           <span class="mono">{row.model_id}</span>
-          <span class="num rate">{(row.rate * 100).toFixed(0)}%</span>
-          <span class="at">{row.n} call{row.n === 1 ? '' : 's'}</span>
+          <span class="num rate" title="smoothed: (successes + 1) / (calls + 2)">
+            {(row.experience * 100).toFixed(0)}%
+          </span>
+          <span class="at">{row.successes}/{row.outcomes} ok</span>
         </li>
       {/each}
     </ul>
