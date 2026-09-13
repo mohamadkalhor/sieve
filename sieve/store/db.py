@@ -439,19 +439,27 @@ class Store:
     def set_reachable(
         self, inventory: str, items: Iterable[Reachable], connector_id: str | None = None
     ) -> int:
-        """Replace what one router is serving.
+        """Record what one router is serving *now*, and retire what it is not.
 
         `connector_id` is the stable identity behind the name: renaming a
         connector does not orphan its rows, and "reachable via gateway A, not
         B" becomes a question the store can answer.
+
+        A pull is the whole truth about that inventory at that moment, so
+        anything it did not list stops being routable the instant it lands. The
+        row is not deleted -- an id that was reachable last week is a fact worth
+        keeping -- it is marked `stale`, and every reader that asks "where can I
+        send traffic" reads only the fresh rows. Before this, a provider that
+        went dark left its ids sitting in the inventory looking alive, and the
+        hourly run kept seating them in combos.
         """
         rows = 0
         with self.tx() as db:
-            db.execute("DELETE FROM reachable WHERE inventory=?", (inventory,))
+            db.execute("UPDATE reachable SET stale=1 WHERE inventory=?", (inventory,))
             for it in items:
                 db.execute(
                     "INSERT OR REPLACE INTO reachable (inventory, local_id, model_id,"
-                    " capability, seen_at, connector_id) VALUES (?,?,?,?,?,?)",
+                    " capability, seen_at, connector_id, stale) VALUES (?,?,?,?,?,?,0)",
                     (
                         it.inventory,
                         it.local_id,
@@ -464,14 +472,13 @@ class Store:
                 rows += 1
         return rows
 
-    def reachable_for(self, connector_id: str) -> list[Reachable]:
+    def reachable_for(self, connector_id: str, *, include_stale: bool = False) -> list[Reachable]:
         """What one connector was last seen serving. No network, ever."""
+        sql = "SELECT * FROM reachable WHERE connector_id=?"
+        if not include_stale:
+            sql += " AND stale=0"
         return [
-            self._reachable(r)
-            for r in self.db.execute(
-                "SELECT * FROM reachable WHERE connector_id=? ORDER BY local_id",
-                (connector_id,),
-            )
+            self._reachable(r) for r in self.db.execute(sql + " ORDER BY local_id", (connector_id,))
         ]
 
     @staticmethod
@@ -482,22 +489,34 @@ class Store:
             model_id=r["model_id"],
             capability=Capability.model_validate_json(r["capability"]),
             seen_at=_dt(r["seen_at"]),
+            stale=bool(r["stale"]),
         )
 
-    def reachable(self, *, unmatched: bool | None = None) -> list[Reachable]:
-        sql = "SELECT * FROM reachable"
+    def reachable(
+        self, *, unmatched: bool | None = None, include_stale: bool = False
+    ) -> list[Reachable]:
+        """The inventory. Only the last successful pull, unless asked otherwise."""
+        where = [] if include_stale else ["stale=0"]
         if unmatched is True:
-            sql += " WHERE model_id IS NULL"
+            where.append("model_id IS NULL")
         elif unmatched is False:
-            sql += " WHERE model_id IS NOT NULL"
+            where.append("model_id IS NOT NULL")
+        sql = "SELECT * FROM reachable"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY inventory, local_id"
         return [self._reachable(r) for r in self.db.execute(sql)]
 
     def local_ids(self) -> dict[str, list[str]]:
-        """Canonical model id -> the local ids that serve it."""
+        """Canonical model id -> the local ids that serve it, right now.
+
+        Stale rows are left out on purpose: this map is what a chain resolves
+        through, and a chain is a routing instruction, not a history.
+        """
         out: dict[str, list[str]] = {}
         for r in self.db.execute(
-            "SELECT model_id, local_id FROM reachable WHERE model_id IS NOT NULL ORDER BY local_id"
+            "SELECT model_id, local_id FROM reachable"
+            " WHERE model_id IS NOT NULL AND stale=0 ORDER BY local_id"
         ):
             out.setdefault(r["model_id"], []).append(r["local_id"])
         return out

@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 8110;
+// 8110 in CI, where the runner is empty. On the VPS that port is Slate's, so
+// the suite could not be run beside the thing it tests without this: set
+// SIEVE_E2E_PORT to move the throwaway server and the baseURL together.
+const PORT = Number(process.env.SIEVE_E2E_PORT ?? 8110);
 
 /**
  * The smoke test runs against a real `sieve serve` with the built web app in

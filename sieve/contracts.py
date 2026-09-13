@@ -178,6 +178,10 @@ class Reachable(_Model):
     model_id: str | None = None
     capability: Capability = Field(default_factory=Capability)
     seen_at: datetime
+    # True once a later pull of the same inventory stopped listing this id. The
+    # row is kept so "we used to reach it here" stays answerable, but nothing
+    # routes through it: `seen_at` then reads as the last time it was there.
+    stale: bool = False
 
 
 class Connector(_Model):

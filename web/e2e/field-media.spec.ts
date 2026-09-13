@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /**
  * Part 8 A and B: the Field shows a cost scatter only where cost exists, and
@@ -11,10 +11,26 @@ import { expect, test } from '@playwright/test';
  * **Part 10 changed the data, not the rule.** Artificial Analysis prices media
  * on its leaderboards, the priced share went from 13.4% to 53.0%, and six of
  * the eight media modalities now clear `MIN_PRICED_SHARE` on their own. The
- * threshold was not touched. So these tests now assert the rule from both
- * sides: a modality that clears it gets its scatter back, and one that does not
- * still gets the ranking.
+ * threshold was not touched. So these tests assert the rule from both sides: a
+ * modality that clears it gets its scatter back, and one that does not still
+ * gets the ranking.
  */
+
+/**
+ * The ranking's own heading.
+ *
+ * These tests used to look for the words "Ranked by". They stopped being on
+ * the page in 90b6392, on purpose: a board headed "Ranked by elo" names a unit
+ * and no author, and reads as though some outside arena produced the numbers,
+ * so the heading now names whoever did — "Artificial Analysis Elo" — and keeps
+ * the metric beside it when a modality has more than one. The page was right
+ * and the spec had not been told, which is why six tests here were red.
+ *
+ * Matching the element rather than the sentence is also the fix for next time:
+ * what these tests are actually about is *that there is a ranking instead of a
+ * scatter*, not how its title is worded.
+ */
+const rankingHeading = (page: Page) => page.locator('.board header h3');
 
 test('llm keeps its scatter, because every model there has a price', async ({ page, request }) => {
   const board = await (await request.get('/v1/leaderboard?modality=llm')).json();
@@ -37,7 +53,7 @@ test('a media modality below the threshold shows the ranking, not an empty scatt
   await page.goto('/field');
   await page.getByRole('tab', { name: /music/ }).click();
 
-  await expect(page.getByRole('heading', { name: /Ranked by/ })).toBeVisible();
+  await expect(rankingHeading(page)).toBeVisible();
   await expect(page.locator('canvas')).toHaveCount(0);
 
   // the leader from the API is the first row on screen
@@ -66,7 +82,7 @@ test('a media modality that now clears the threshold gets its scatter back', asy
   await expect(page.locator('canvas')).toBeVisible();
   // and the ranking stays underneath: "which is best" is a different question
   // from "what does best cost"
-  await expect(page.getByRole('heading', { name: /Ranked by/ })).toBeVisible();
+  await expect(rankingHeading(page)).toBeVisible();
 });
 
 test('the two searches work on a media scatter, without an effort line', async ({ page }) => {
@@ -94,7 +110,7 @@ test('the bar scale is the population and both endpoints are printed', async ({
 
   await page.goto('/field');
   await page.getByRole('tab', { name: /music/ }).click();
-  await expect(page.getByRole('heading', { name: /Ranked by/ })).toBeVisible();
+  await expect(rankingHeading(page)).toBeVisible();
 
   const scale = await page.locator('.scale').innerText();
   expect(scale).toContain(String(Math.round(board.low)));
@@ -104,7 +120,7 @@ test('the bar scale is the population and both endpoints are printed', async ({
 test('twelve rows by default, with a control for the rest', async ({ page }) => {
   await page.goto('/field');
   await page.getByRole('tab', { name: /text-to-video/ }).click();
-  await expect(page.getByRole('heading', { name: /Ranked by/ })).toBeVisible();
+  await expect(rankingHeading(page)).toBeVisible();
 
   await expect(page.locator('.bars li')).toHaveCount(12);
   const more = page.getByRole('button', { name: /Show all/ });
@@ -135,10 +151,10 @@ test('music offers both of its two leaderboards', async ({ page, request }) => {
 
   await page.goto('/field');
   await page.getByRole('tab', { name: /music/ }).click();
-  await expect(page.getByRole('heading', { name: /Ranked by with vocals/ })).toBeVisible();
+  await expect(rankingHeading(page)).toContainText('with vocals');
 
   await page.locator('.metric select').selectOption('elo:instrumental');
-  await expect(page.getByRole('heading', { name: /Ranked by instrumental/ })).toBeVisible();
+  await expect(rankingHeading(page)).toContainText('instrumental');
 });
 
 test('duplicates published under two names are collapsed', async ({ request }) => {
@@ -155,7 +171,7 @@ test('no horizontal scroll at 390px on a media ranking', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto('/field');
   await page.getByRole('tab', { name: /text-to-video/ }).click();
-  await expect(page.getByRole('heading', { name: /Ranked by/ })).toBeVisible();
+  await expect(rankingHeading(page)).toBeVisible();
 
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth

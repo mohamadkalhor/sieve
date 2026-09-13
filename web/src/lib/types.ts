@@ -277,6 +277,7 @@ export interface Reachable {
   model_id?: string | null;
   capability?: Capability;
   seen_at: string;
+  stale?: boolean;
 }
 
 

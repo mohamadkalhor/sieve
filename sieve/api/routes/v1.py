@@ -648,7 +648,13 @@ def put_model_status(
 
 @router.get("/cost-multipliers")
 def get_cost_multipliers(request: Request, _: Read = None) -> dict[str, float]:
-    return control.multipliers(store_of(request))
+    """The multiplier per router prefix, for the prefixes reachable today.
+
+    A prefix the last pull no longer served is left out: the stored number is
+    kept (a configuration export still carries it), but a knob wired to nothing
+    does not belong on a screen.
+    """
+    return control.live_multipliers(store_of(request))
 
 
 @router.put("/cost-multipliers")
@@ -658,7 +664,7 @@ def put_cost_multipliers(
     token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     store = store_of(request)
-    before = control.multipliers(store)
+    before = control.live_multipliers(store)
     try:
         after = control.put_multipliers(store, body)
     except ValueError as exc:
@@ -739,12 +745,39 @@ def rename_profile(
     body: Annotated[dict[str, str], Body()],
     token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
-    new = str(body.get("name") or "").strip()
+    """Change a profile's name, its purpose, or both.
+
+    `purpose` alone is a real patch and does not need a `name` beside it: asking
+    for the name back just to fix a sentence is how descriptions end up never
+    being fixed.
+    """
     store = store_of(request)
+    new = str(body.get("name") or "").strip()
+    purpose = body.get("purpose")
+    if not new and purpose is None:
+        return error(400, "bad_request", "give a new `name`, a new `purpose`, or both")
+
+    if purpose is not None:
+        before = control.profile(store, name)
+        if before is None:
+            return error(404, "not_found", f"no profile {name!r}")
+        rewritten = control.set_purpose(store, name, str(purpose))
+        log_decision(
+            store,
+            name,
+            "policy",
+            token.name,
+            before.model_dump(mode="json"),
+            rewritten.model_dump(mode="json"),
+            f"purpose of {name} rewritten by {token.name}",
+        )
+        if not new:
+            return rewritten
+
     if not _PROFILE_NAME.match(new):
         return error(400, "bad_request", "a valid new name is required")
-    before = control.profile(store, name)
-    if before is None:
+    held = control.profile(store, name)
+    if held is None:
         return error(404, "not_found", f"no profile {name!r}")
     try:
         control.rename(store, name, new)
@@ -756,7 +789,7 @@ def rename_profile(
         new,
         "policy",
         token.name,
-        before.model_dump(mode="json"),
+        held.model_dump(mode="json"),
         after.model_dump(mode="json") if after else None,
         f"renamed {name} to {new}",
     )
@@ -1309,9 +1342,17 @@ def post_pull(
 
 @router.get("/inventory")
 def get_inventory(
-    request: Request, unmatched: bool | None = None, _: Read = None
+    request: Request,
+    unmatched: bool | None = None,
+    include_stale: bool = False,
+    _: Read = None,
 ) -> list[Reachable]:
-    return store_of(request).reachable(unmatched=unmatched)
+    """What the routers serve, as of each one's last successful pull.
+
+    `include_stale=1` adds the rows a later pull stopped listing, each carrying
+    `stale: true` and the `seen_at` of the last time it was really there.
+    """
+    return store_of(request).reachable(unmatched=unmatched, include_stale=include_stale)
 
 
 @router.put("/aliases")

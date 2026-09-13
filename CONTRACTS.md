@@ -85,6 +85,18 @@ class Reachable(BaseModel):
     model_id: str | None    # matched canonical id; None = unmatched (shown on Sources screen)
     capability: Capability = Capability()
     seen_at: datetime
+    stale: bool = False     # AMS-29: a later pull of this inventory stopped listing it.
+                            # **The inventory is the last pull, not the union of every pull.**
+                            # A pull is the whole truth about that connector at that moment, so
+                            # `set_reachable` marks everything it did not list `stale` instead of
+                            # deleting it: the history survives and nothing routes through it.
+                            # Every reader that answers "where can traffic go right now" --
+                            # `store.reachable()`, `store.local_ids()` (chain local-id
+                            # resolution), `store.reachable_for()`, GET /v1/inventory, and the
+                            # cost-multiplier prefix list -- reads `stale = 0` by default, and
+                            # takes `include_stale` to see the rest. Before this, a provider that
+                            # went dark left 37 ids sitting in the inventory looking alive and the
+                            # hourly run kept seating them in combos.
 
 class Connector(BaseModel):     # a router, as data: added at runtime, not edited into sieve.toml
     id: str; name: str
@@ -299,12 +311,12 @@ Bearer <secret>` and the scope in the table; reads are open unless
 | GET /v1/models?modality=&reachable=&q= | – | ModelRef + latest observations + prices + reachable |
 | GET /v1/models/{id} | – | one, with full observation history |
 | GET /v1/profiles?modality= · GET /v1/profiles/{name} | – | Profile (SQLite truth; YAML seeds an empty store) |
-| GET · PUT /v1/profiles/{name}/settings | – · profiles:write | list controls, bounded/locked weights, profile multipliers |
+| GET · PUT /v1/profiles/{name}/settings | – · profiles:write | list controls, bounded/locked weights, profile multipliers. Weights merge per axis, so a page that knows one slider cannot wipe the others. **Removing an axis:** `{"weights": {"axis": null}}` (what a cleared form row sends) or `{"remove_axes": ["axis", ...]}` (what a script writes) drops it from the profile for real; both spellings may be combined with ordinary weight changes in one call |
 | GET · PUT /v1/profiles/{name}/models/{model_id}/status | – · profiles:write | active · pinned · removed and pin order |
 | GET · PUT /v1/cost-multipliers | – · profiles:write | default multiplier per reachable local-id prefix |
 | POST /v1/outcomes · GET /v1/profiles/{name}/experience | telemetry · – | append-only outcome · 30-day Laplace success score |
 | POST /v1/profiles/{name}/preview | – | unsaved controlled list using partial settings |
-| POST /v1/profiles · PATCH · DELETE /v1/profiles/{name} | profiles:write | create/copy · rename · guarded delete |
+| POST /v1/profiles · PATCH · DELETE /v1/profiles/{name} | profiles:write | create/copy · rename and/or re-describe · guarded delete. **PATCH takes `name`, `purpose`, or both**: `{"purpose": "..."}` alone rewrites the description and touches nothing else (400 with neither, 404 for an unknown profile), so fixing a sentence no longer means PUTting every weight and constraint back |
 | POST /v1/profiles/{name}/apply · GET /v1/profiles/{name}/history | apply · – | ship controlled chain · decision history |
 | PUT /v1/profiles/{name} | profiles:write | Profile (validated; stored; decision logged) |
 | PATCH /v1/profiles/{name}/weights · /policy | profiles:write | Profile |
@@ -316,7 +328,7 @@ Bearer <secret>` and the scope in the table; reads are open unless
 | POST /v1/telemetry [TelemetryEvent] | telemetry | {accepted} |
 | GET /v1/decisions?profile=&kind=&since= | – | Decision[] |
 | GET /v1/sources · POST /v1/sources/{name}/pull | – / apply | status; pull is async, returns job id |
-| GET /v1/inventory?unmatched=true · PUT /v1/aliases | – / profiles:write | Reachable[] / alias saved |
+| GET /v1/inventory?unmatched=true&include_stale=true · PUT /v1/aliases | – / profiles:write | Reachable[] — the last pull per connector; `include_stale` adds the retired rows, each `stale:true` with the `seen_at` it was last served / alias saved |
 | GET /v1/connectors · GET /v1/connectors/{id} | – | Connector[] + token_present; never a token |
 | POST /v1/connectors · PUT /v1/connectors/{id} · DELETE /v1/connectors/{id} | apply | Connector |
 | POST /v1/connectors/{id}/test | – | ConnectorTest — 200 with `ok:false` when the router is down |

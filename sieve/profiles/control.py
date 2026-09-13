@@ -89,17 +89,36 @@ def put_settings(store: Store, name: str, value: ProfileSettings) -> None:
 
 
 def update_settings(current: ProfileSettings, patch: dict[str, Any]) -> ProfileSettings:
+    """Merge a patch into one profile's settings, and say no to an invalid one.
+
+    Weights merge per axis rather than replacing the map, so a page that knows
+    about one slider cannot wipe the other nine. Two spellings remove an axis
+    outright -- `{"weights": {"axis": null}}`, which is what a form sends when a
+    row is cleared, and `{"remove_axes": ["axis"]}`, which is what a script
+    writes when it means it -- because without either, an axis could be set to
+    zero but never taken off the profile at all.
+    """
     raw = current.model_dump()
+    dropped = {str(axis) for axis in patch.get("remove_axes") or []}
+    patch = {k: v for k, v in patch.items() if k != "remove_axes"}
     if "weights" in patch:
-        incoming = patch["weights"]
+        incoming = patch["weights"] or {}
         merged = raw["weights"]
         for axis, change in incoming.items():
+            if change is None:
+                dropped.add(axis)
+                continue
             old = merged.get(axis, {"value": 0.0, "min": 0.0, "max": 1.0, "locked": False})
             candidate = {**old, **change}
             if not candidate["min"] <= candidate["value"] <= candidate["max"]:
                 raise ValueError(f"weight {axis} value must be inside [min,max]")
             merged[axis] = candidate
         patch = {**patch, "weights": merged}
+    if dropped:
+        weights = dict(patch.get("weights", raw["weights"]))
+        for axis in dropped:
+            weights.pop(axis, None)
+        patch = {**patch, "weights": weights}
     result = ProfileSettings.model_validate({**raw, **patch})
     for axis, weight in result.weights.items():
         if weight.min > weight.max or not weight.min <= weight.value <= weight.max:
@@ -127,6 +146,26 @@ def rename(store: Store, old: str, new: str) -> None:
         )
         db.execute("UPDATE chains SET profile=? WHERE profile=?", (new, old))
         db.execute("UPDATE decisions SET profile=? WHERE profile=?", (new, old))
+
+
+def set_purpose(store: Store, name: str, purpose: str) -> Profile:
+    """Rewrite what a profile is *for*, and nothing else.
+
+    The description is the only part of a profile a person edits often, and
+    until now the only way to change it was to PUT the whole profile back --
+    which meant a page had to hold, and re-send, every weight and constraint it
+    never asked about. One field, one call.
+    """
+    held = profile(store, name)
+    if held is None:
+        raise KeyError(name)
+    updated = held.model_copy(update={"purpose": purpose})
+    with store.tx() as db:
+        db.execute(
+            "UPDATE profiles SET json=?, updated_at=? WHERE name=?",
+            (updated.model_dump_json(), _iso(datetime.now(UTC)), name),
+        )
+    return updated
 
 
 def delete(store: Store, name: str) -> bool:
@@ -173,21 +212,48 @@ def statuses(store: Store, name: str) -> dict[str, tuple[str, int | None]]:
     }
 
 
+def live_prefixes(store: Store) -> set[str]:
+    """The router-local prefixes the last successful pull actually served.
+
+    `store.reachable()` is already only the fresh rows, so a provider that went
+    dark stops contributing a prefix here the moment the next pull lands.
+    """
+    return {r.local_id.split("/", 1)[0] for r in store.reachable() if "/" in r.local_id}
+
+
 def sync_prefixes(store: Store) -> None:
-    prefixes = {r.local_id.split("/", 1)[0] for r in store.reachable() if "/" in r.local_id}
     with store.tx() as db:
-        for prefix in prefixes:
+        for prefix in live_prefixes(store):
             db.execute(
                 "INSERT OR IGNORE INTO cost_multipliers(prefix,multiplier) VALUES(?,1.0)", (prefix,)
             )
 
 
 def multipliers(store: Store) -> dict[str, float]:
+    """Every multiplier the table holds, whether or not its prefix is reachable.
+
+    This is the stored truth, so it is what a configuration export copies and an
+    import restores: unplugging a router for an afternoon must not silently drop
+    the number somebody tuned. `live_multipliers` is the answer to the different
+    question -- which of these is in effect right now.
+    """
     sync_prefixes(store)
     return {
         r["prefix"]: r["multiplier"]
         for r in store.db.execute("SELECT * FROM cost_multipliers ORDER BY prefix")
     }
+
+
+def live_multipliers(store: Store) -> dict[str, float]:
+    """The multipliers whose prefix the last successful pull actually served.
+
+    What the API shows. A multiplier on a prefix nothing serves is not a price,
+    it is a leftover, and a screen that shows it invites someone to tune a knob
+    wired to nothing -- which is exactly what 37 retired `oc-go/*` ids left
+    behind. The row stays in the table either way.
+    """
+    live = live_prefixes(store)
+    return {prefix: value for prefix, value in multipliers(store).items() if prefix in live}
 
 
 def put_multipliers(store: Store, values: dict[str, float]) -> dict[str, float]:
@@ -199,7 +265,7 @@ def put_multipliers(store: Store, values: dict[str, float]) -> dict[str, float]:
                 "INSERT INTO cost_multipliers VALUES(?,?) ON CONFLICT(prefix) DO UPDATE SET multiplier=excluded.multiplier",
                 (prefix, value),
             )
-    return multipliers(store)
+    return live_multipliers(store)
 
 
 def add_outcome(store: Store, value: Outcome) -> None:
