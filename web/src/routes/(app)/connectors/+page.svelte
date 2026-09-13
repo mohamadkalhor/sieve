@@ -66,20 +66,32 @@
   async function load() {
     const result = await api.connectors();
     loading = false;
-    if (result.ok) {
-      rows = result.value;
-      absent = false;
-      error = null;
-      return;
-    }
-    // A 404 here is the module not being built yet, not a broken server.
-    if (result.error.status === 404 || result.error.code === 'not_built') {
+
+    /*
+      The route not being there does not always arrive as a 404. FastAPI mounts
+      the built web app at `/`, so a path it does not recognise -- one under
+      `/v1` included -- is answered with the SPA shell: 200, text/html, which
+      the client hands back as a null body. A server without the module was
+      measured doing exactly that, and `rows.length` on a null is a blank
+      screen rather than a banner. Both shapes mean the same thing.
+    */
+    const missing =
+      (!result.ok && (result.error.status === 404 || result.error.code === 'not_built')) ||
+      (result.ok && !Array.isArray(result.value));
+
+    if (missing) {
       absent = true;
       rows = [];
       error = null;
       return;
     }
-    error = result.error;
+    if (!result.ok) {
+      error = result.error;
+      return;
+    }
+    rows = result.value;
+    absent = false;
+    error = null;
   }
 
   $effect(() => {
