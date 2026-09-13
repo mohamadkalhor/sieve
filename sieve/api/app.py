@@ -22,11 +22,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from sieve import __version__
 from sieve.api.routes.config import router as config_router
 from sieve.api.routes.connectors import router as connectors_router
+from sieve.api.routes.runs import router as runs_router
 from sieve.api.routes.v1 import router as v1_router
 from sieve.axes import control as axis_control
 from sieve.config import Config, default_config, load_config
 from sieve.connectors import seed_from_toml
 from sieve.profiles import control as profile_control
+from sieve.runs import Runner, Scheduler
 from sieve.store import Store
 
 CONFIG_ENV = "SIEVE_CONFIG"
@@ -48,9 +50,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # `[targets.*]` gateway blocks become connectors on the first start after
     # this landed, rather than waiting for somebody to POST their own gateway.
     seed_from_toml(cfg, app.state.store)
+    # The loop runs here now, not in a systemd timer nobody can edit from a
+    # phone: one runner (a run is a background thread in this process), one
+    # scheduler thread that fires the due steps through the same path `Run now`
+    # takes. `reap_orphans` closes out a run a restart killed, which otherwise
+    # leaves the status box saying "running" for ever.
+    app.state.runner = Runner(cfg, app.state.store, reap_orphans=True)
+    app.state.scheduler = Scheduler(app.state.runner)
+    app.state.scheduler.start()
     try:
         yield
     finally:
+        app.state.scheduler.stop()
         app.state.store.close()
 
 
@@ -104,6 +115,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(v1_router)
     app.include_router(connectors_router)
     app.include_router(config_router)
+    app.include_router(runs_router)
 
     # Anything under /v1 that no route claims is an API call that went wrong,
     # and it has to say so in JSON. The SPA catch-all below would hand it the

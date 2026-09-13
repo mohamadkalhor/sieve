@@ -27,6 +27,7 @@ from sieve.contracts import Profile, PullResult
 from sieve.engine import COST_SOURCE, OwnerMissingError, apply_targets, run
 from sieve.http import client as http_client
 from sieve.http import fixtures_enabled
+from sieve.runs import STEPS as RUN_STEPS
 from sieve.store import Store
 
 EXIT_OK = 0
@@ -561,6 +562,41 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    """One named step of the loop, or `full`, recorded as a run.
+
+    `sieve run` with no arguments is `sieve run full` -- harvest, pull, ship --
+    which is exactly what the retired timer called and what the scheduler
+    inside the service calls now. `sieve run pull_sources` runs that step
+    alone. Either way a `runs` row records who asked, how long it took, what it
+    did in one line, and where its log is.
+
+    The older flags still reach the original code path below, because
+    `--dry-run` that silently shipped would be a nasty surprise.
+    """
+    if args.profile or args.target or args.no_pull or args.dry_run:
+        return cmd_run_legacy(args)
+
+    from sieve.runs import RunBusyError, Runner, running_run
+
+    cfg = _config(args)
+    store = Store(cfg.db_path)
+    held = running_run(store)
+    if held is not None:
+        _out(f"a run is already going ({held.id}, {held.step}); nothing started")
+        return EXIT_ERROR
+    runner = Runner(cfg, store, config_path=args.config)
+    try:
+        run, outcome = runner.run_now(args.step, args.actor, run_id=args.run_id)
+    except RunBusyError as busy:
+        _out(f"a run is already going ({busy.run_id}); nothing started")
+        return EXIT_ERROR
+    _out(f"{run.step}: {outcome.summary}  [run {run.id}]")
+    if outcome.error:
+        _out(f"error: {outcome.error}")
+    return EXIT_OK if outcome.ok else EXIT_ERROR
+
+
+def cmd_run_legacy(args: argparse.Namespace) -> int:
     """The loop: pull every enabled source, evaluate every profile, decide, and
     apply **only** where the profile opted in with `policy.auto_apply`.
 
@@ -817,7 +853,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=cmd_apply)
 
-    p = sub.add_parser("run", help="the whole loop: pull, evaluate, decide, apply where auto_apply")
+    p = sub.add_parser(
+        "run", help="one step of the loop, or `full`: harvest, pull, ship where auto_apply"
+    )
+    p.add_argument(
+        "step",
+        nargs="?",
+        default="full",
+        choices=list(RUN_STEPS),
+        help="which step to run; default `full`",
+    )
+    p.add_argument("--run-id", default=None, help="record this run under an id you chose")
     p.add_argument("--profile", nargs="*")
     p.add_argument("--target", nargs="*")
     p.add_argument("--no-pull", action="store_true", help="evaluate on what is already stored")

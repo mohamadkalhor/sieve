@@ -272,8 +272,16 @@ profile per snapshot), `chains` (current per profile), `decisions`
 [inventories.gateway] kind = "openai_compat"  base_url = "http://localhost:20128"  token_env = "GATEWAY_TOKEN"
 [inventories.pinned]  kind = "list"           models = ["anthropic/claude-sonnet-5"]
 [targets.out]         kind = "file"           dir = "out"
-[schedule]   pull = "hourly"  evaluate = "hourly"
+[schedule]   pull = "hourly"  evaluate = "hourly"   # deprecated, read by nothing
 ```
+
+**`[schedule]` is deprecated and ignored.** The keys are still accepted so an
+old `sieve.toml` loads, but nothing reads them: the cadence lives in the
+`schedules` table, one row per step, and is edited through
+`PUT /v1/schedules/{step}` or the status box on any page. `/v1/status` reports
+the cadence of `full` from that table. A config that said `pull = "hourly"` on
+a box whose timer had been overridden to 04:30 daily is the reason: a status
+line that is confidently wrong is worse than no status line.
 
 Tokens: env `SIEVE_TOKENS="ops:read,profiles:write,apply,telemetry:<secret>;agent:read,profiles:write,telemetry:<secret>"`.
 
@@ -315,6 +323,38 @@ Bearer <secret>` and the scope in the table; reads are open unless
 | POST /v1/connectors/{id}/pull | – | {connector, found, matched, unmatched} — refresh its inventory now |
 | GET /v1/connectors/{id}/models | – | what it was last seen serving, from the store |
 | GET /v1/events | – | SSE: `pull`, `ranking`, `decision`, `apply`, `connector` |
+| GET /v1/schedules · PUT /v1/schedules/{step} | – · profiles:write | cadence per step (+ `full`) with `next_fire` |
+| POST /v1/runs/{step} | profiles:write | 202 {id}; 409 `run_in_flight` with `running` when one is already going |
+| GET /v1/runs?limit=&step= · GET /v1/runs/{id} | – | Run[] · one run |
+| GET /v1/runs/{id}/log | – | text/plain, the run's own log |
+
+### Runs (AMS-31)
+
+The loop is three named steps, each callable alone and each recorded:
+
+| step | what it does |
+|---|---|
+| `pull_sources` | fetch every enabled benchmark source into the store |
+| `harvest_connectors` | ask every connector what it serves, refresh the inventory rows, re-extract id prefixes for cost multipliers |
+| `ship_profiles` | rank every profile against the current inventory, decide the lists, apply the combos of profiles with `auto_apply`, write decision rows |
+| `full` | `harvest_connectors` → `pull_sources` → `ship_profiles` — what the retired `sieve-run.timer` did |
+
+`sieve run <step>` runs one from the shell; `sieve run` alone is `full`. A run
+is a `runs` row: `id, step, requested_by, started, finished, ok, summary,
+error, log_path`. **One run at a time, box-wide** — the in-flight row is the
+lock, so the API answers 409 and the CLI refuses rather than letting two loops
+write one store.
+
+A run executes on a background thread inside the service (measured: the loop
+peaks at 106 MiB, the service sits at ~142 MiB, the unit's cap is 400 MiB).
+The schedule is a thread in the same process, awake every 30 s, firing due
+steps through the same path `Run now` takes. `sieve-run.timer` and its override
+are retired.
+
+A `schedules` row is `step, mode (off|hourly|daily), at_minute, at_time,
+timezone, last_fired`; `timezone` defaults to the box's own, so `daily 04:30`
+means the same moment the systemd timer meant. `/v1/status` carries
+`runs: {running, last, last_by_step}` and `schedules`.
 
 ## 7. MCP (`sieve mcp`, stdio + streamable HTTP)
 

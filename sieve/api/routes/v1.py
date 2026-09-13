@@ -1172,7 +1172,13 @@ def get_status(request: Request, _: Read = None) -> dict[str, Any]:
     - `ran_at` -- the last decision the hourly loop recorded. `sieve run`
       writes one per profile on every run, a hold included, precisely so that
       "running and changing nothing" is visible and distinct from "not running".
-    - `schedule` -- what the config says the cadence is.
+    - `schedule` -- the cadence of `full`, read from the `schedules` table.
+      It used to be `[schedule] pull` out of `sieve.toml`, which said "hourly"
+      on a box whose timer had been overridden to 04:30 daily: a status line
+      that is confidently wrong is worse than none.
+
+    `runs` and `schedules` carry the rest: what is going now, what finished
+    last, and when each of the four steps is next due.
 
     `/v1/sources` could not serve this: it takes `MAX(pulled_at)` over every
     observation of every source, which is seconds of scanning on a large store,
@@ -1189,10 +1195,15 @@ def get_status(request: Request, _: Read = None) -> dict[str, Any]:
     # empty state used to say "nothing has reported a call yet" over a store
     # holding four thousand calls, because none of them were from the last day.
     calls = store.db.execute("SELECT COUNT(*) AS n, MAX(at) AS last FROM telemetry").fetchone()
+    from sieve import runs as runs_module
+
+    schedules = runs_module.schedules_block(store)
     return {
         "pulled_at": pulled_at.isoformat() if pulled_at else None,
         "ran_at": ran_at.isoformat() if isinstance(ran_at, datetime) else ran_at,
-        "schedule": cfg.schedule.pull,
+        "schedule": runs_module.cadence_of(schedules),
+        "runs": runs_module.status_block(store),
+        "schedules": schedules,
         "sources_enabled": sum(1 for s in cfg.sources.values() if s.enabled),
         "telemetry_calls": calls["n"],
         "telemetry_at": calls["last"],
