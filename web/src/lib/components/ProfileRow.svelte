@@ -4,13 +4,21 @@
    * list those controls produce -- side by side, so a weight and its
    * consequence are never on two different screens.
    *
-   * THE LIST MOVES TWICE
+   * WHAT IT LOADS, AND WHEN
    *
-   * On every input the row re-ranks in the browser with the same arithmetic
-   * the server uses (`$lib/rank/weigh`, a port asserted against the Python to
-   * 1e-6), so the list tracks the finger and the slider is never frozen. Two
-   * hundred and fifty milliseconds after the last input it asks the server for
-   * the answer of record and shows that instead when it arrives.
+   * A row costs a chain and its settings to show: about a kilobyte. A ranking
+   * on this box is 765 KB, and there are twenty-two profiles -- so fetching one
+   * per row to fill the right-hand column would be seventeen megabytes before
+   * anybody had touched anything, most of it for seats they were not going to
+   * look at. Until a row is engaged its right column shows what that seat is
+   * shipping now, dim, which is a true answer and free.
+   *
+   * Touching a control, or opening the card, engages it: one `preview` comes
+   * back with the list *and* the ranking behind it, so from then on the row
+   * re-ranks in the browser on every input with the same arithmetic the server
+   * uses (`$lib/rank/weigh`, a port asserted against the Python to 1e-6). The
+   * list tracks the finger, and 250 ms after the last input the server's own
+   * answer replaces it.
    *
    * WHAT HAPPENS ON A SERVER THAT IS HALF WAY THROUGH THIS FEATURE
    *
@@ -71,6 +79,8 @@
   /** the status route is not on this server yet: pin and remove are off */
   let statusAbsent = $state(false);
 
+  /** this row has asked the server for its list at least once */
+  let engaged = $state(false);
   let preview = $state<PreviewResult | null>(null);
   let previewing = $state(false);
   /**
@@ -125,15 +135,10 @@
     const wanted = profile.name;
     loading = true;
     void (async () => {
-      const [c, r, s] = await Promise.all([
-        api.chain(wanted),
-        api.ranking(wanted),
-        api.profileSettings(wanted)
-      ]);
+      const [c, s] = await Promise.all([api.chain(wanted), api.profileSettings(wanted)]);
       if (wanted !== profile.name) return;
 
       chain = c.ok ? c.value : null;
-      ranking = r.ok ? r.value : null;
 
       if (absent(s) || !s.ok || !s.value.weights) {
         settings = fromProfile(profile);
@@ -147,8 +152,12 @@
         .sort(([aAxis, a], [bAxis, b]) => b.value - a.value || aAxis.localeCompare(bAxis))
         .map(([axis]) => axis);
       loading = false;
-      schedulePreview();
     })();
+  });
+
+  /** opening the card is engagement: the detail wants the ranking too */
+  $effect(() => {
+    if (open && !loading) void engage();
   });
 
   /* ---------------------------------------------------------------------- */
@@ -225,10 +234,6 @@
     }));
   });
 
-  const cut = $derived(Math.max(1, draft?.list_length ?? 5));
-  /** the bright list: what this draft would ship */
-  const shipping = $derived(previewRows ?? arrange(localRows).slice(0, cut));
-
   const shippedIds = $derived.by(() => {
     if (!chain) return [] as string[];
     return [chain.primary, ...(chain.fallbacks ?? [])].filter((id): id is string => !!id);
@@ -238,6 +243,25 @@
     shippedIds.forEach((id, index) => at.set(id, index + 1));
     return at;
   });
+
+  const cut = $derived(Math.max(1, draft?.list_length ?? 5));
+
+  /** what the gateway is serving now, as rows: the answer before any request */
+  const shippedRows = $derived(
+    shippedIds.map((id, index) => ({
+      rank: index + 1,
+      id,
+      local_ids: chain?.local?.[id] ?? [],
+      score: 0,
+      status: 'active' as ModelStatus
+    }))
+  );
+
+  /** the bright list: what this draft would ship */
+  const shipping = $derived(
+    previewRows ?? (engaged ? arrange(localRows).slice(0, cut) : shippedRows)
+  );
+
   /** what is on the gateway now and would fall off this draft: dim, behind */
   const dropping = $derived(
     shippedIds
@@ -312,10 +336,29 @@
   /** the newest request wins, whatever order the answers come back in */
   let latest = 0;
 
+  /**
+   * Fetch this row's list, once, the first time somebody shows interest.
+   *
+   * One `preview` answers with the list and the ranking behind it, so there is
+   * no second request for the axis values the local re-rank needs. A server
+   * without that route falls back to the ranking on its own, which is the same
+   * payload by a longer road.
+   */
+  async function engage() {
+    if (engaged || !draft) return;
+    engaged = true;
+    await runPreview();
+    if (previewAbsent && !ranking) {
+      const result = await api.ranking(profile.name);
+      if (result.ok) ranking = result.value;
+    }
+  }
+
   /** Something moved: the local list is already right, ask the server too. */
   function touched() {
     said = null;
-    schedulePreview();
+    if (!engaged) void engage();
+    else schedulePreview();
   }
 
   function schedulePreview() {
@@ -342,6 +385,8 @@
       return;
     }
     preview = result.value;
+    // the ranking behind the list, which is what makes the next input instant
+    if (result.value.ranking) ranking = result.value.ranking;
   }
 
   $effect(() => () => {
@@ -580,7 +625,7 @@
     <div class="list">
       <div class="listhead">
         <span class="label">
-          {previewAbsent ? 'Would ship' : 'Preview'}
+          {!engaged ? 'Shipping now' : previewRows ? 'Preview' : 'Would ship'}
           {#if previewing}<span class="spinner" role="status" aria-label="previewing"></span>{/if}
         </span>
         <label class="auto">
@@ -605,7 +650,13 @@
         {/if}
       </div>
 
-      <ol class="live">
+      {#if !engaged && !loading}
+        <p class="muted small hintline">
+          What this seat is serving. Move a control to see what would change.
+        </p>
+      {/if}
+
+      <ol class="live" class:idle={!engaged}>
         {#each shipping as row (row.id)}
           <li
             class:lead={row.rank === 1}
@@ -617,7 +668,7 @@
               {row.id}
               {#if row.local_ids.length}<span class="local mono">{row.local_ids[0]}</span>{/if}
             </span>
-            <span class="score num">{row.score.toFixed(3)}</span>
+            <span class="score num">{engaged ? row.score.toFixed(3) : '—'}</span>
             {#if shippedAt.has(row.id)}
               <span class="was" title="where it sits on the gateway now">
                 #{shippedAt.get(row.id)}
@@ -866,6 +917,16 @@
   }
   ol.live li.pinned .pos {
     color: var(--accent);
+  }
+  /* the shipped list, before anything has been asked of the server */
+  ol.live.idle li {
+    opacity: 0.62;
+  }
+  ol.live.idle li.lead {
+    background: none;
+  }
+  .hintline {
+    margin: 0 0 0.3rem;
   }
   ol.shipped {
     opacity: 0.45;

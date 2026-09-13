@@ -163,8 +163,21 @@
   /* the per-axis detail the Rankings screen used to be                      */
   /* ---------------------------------------------------------------------- */
 
-  const ranked = $derived((ranking?.ranks ?? []).filter((rank) => rank.position > 0));
-  const setAside = $derived((ranking?.ranks ?? []).filter((rank) => rank.position === 0));
+  /**
+   * The whole table, and how much of it is worth drawing.
+   *
+   * This box ranks 952 models for a language seat. The screen this panel
+   * replaced drew every one of them, which is nine hundred rows of seven cells
+   * on a page that now carries twenty-two profiles. The top of a ranking is
+   * what anybody reads; the rest is counted and named rather than drawn.
+   */
+  const TABLE = 50;
+  const ASIDE = 25;
+
+  const allRanked = $derived((ranking?.ranks ?? []).filter((rank) => rank.position > 0));
+  const allAside = $derived((ranking?.ranks ?? []).filter((rank) => rank.position === 0));
+  const ranked = $derived(allRanked.slice(0, TABLE));
+  const setAside = $derived(allAside.slice(0, ASIDE));
   const weightValues = $derived(
     Object.fromEntries(Object.entries(draft.weights).map(([axis, w]) => [axis, w.value]))
   );
@@ -390,7 +403,9 @@
   <section class="panel wide">
     <h3>What carried each score</h3>
     {#if ranked.length === 0}
-      <p class="hint muted">Nothing ranks for this profile yet.</p>
+      <p class="hint muted">
+        {ranking ? 'Nothing ranks for this profile yet.' : 'Asking the server for the ranking…'}
+      </p>
     {:else}
       <div class="scroll-x">
         <table>
@@ -432,6 +447,12 @@
           </tbody>
         </table>
       </div>
+      {#if allRanked.length > ranked.length}
+        <p class="hint muted">
+          The top {ranked.length} of {allRanked.length} ranked. The rest score below these and are
+          not drawn.
+        </p>
+      {/if}
       {#if setAside.length}
         <ul class="aside">
           {#each setAside as rank (rank.model_id)}
@@ -445,6 +466,11 @@
             </li>
           {/each}
         </ul>
+        {#if allAside.length > setAside.length}
+          <p class="hint muted">
+            and {allAside.length - setAside.length} more set aside.
+          </p>
+        {/if}
       {/if}
     {/if}
   </section>

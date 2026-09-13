@@ -30,6 +30,8 @@ test('moving a weight re-ranks that row and says it is not applied', async ({ pa
 
   const row = rowFor(page, 'coder');
   const list = row.locator('ol.live li');
+  // before anything is asked of the server the row shows what it is serving
+  await expect(row.locator('.hintline')).toBeVisible();
   await expect(list.first()).toBeVisible();
   const before = await list.first().locator('.id').innerText();
 
@@ -41,8 +43,8 @@ test('moving a weight re-ranks that row and says it is not applied', async ({ pa
   await cost.dispatchEvent('input');
 
   await expect(row.locator('.chip')).toContainText('changed, not applied');
-  const after = await list.first().locator('.id').innerText();
-  expect(after).not.toBe(before);
+  await expect(row.locator('.hintline')).toHaveCount(0);
+  await expect(list.first().locator('.id')).not.toHaveText(before);
 
   // and the weights still sum to 1
   await expect(row.locator('.sum')).toContainText('1.000');
@@ -81,16 +83,25 @@ test('discard puts the draft back', async ({ page }) => {
   const row = rowFor(page, 'coder');
   const list = row.locator('ol.live li');
   await expect(list.first()).toBeVisible();
-  const before = await list.first().locator('.id').innerText();
 
+  // engage the row first, so what is compared is two previews and not a
+  // preview against the chain the gateway happens to be holding
   const cost = page.locator('#w-coder-cost');
+  await cost.fill('0.30');
+  await cost.dispatchEvent('input');
+  await expect(row.locator('.chip')).toContainText('changed, not applied');
+  await row.getByRole('button', { name: 'Discard' }).click();
+  await expect(row.locator('.chip')).not.toContainText('changed');
+
+  const settled = await list.first().locator('.id').innerText();
+
   await cost.fill('0.95');
   await cost.dispatchEvent('input');
   await expect(row.locator('.chip')).toContainText('changed, not applied');
 
   await row.getByRole('button', { name: 'Discard' }).click();
   await expect(row.locator('.chip')).not.toContainText('changed');
-  await expect(list.first().locator('.id')).toHaveText(before);
+  await expect(list.first().locator('.id')).toHaveText(settled);
 });
 
 test('the old Rankings URL opens the row, with what carried each score', async ({ page }) => {

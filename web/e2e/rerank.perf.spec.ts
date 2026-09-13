@@ -248,6 +248,11 @@ async function openCoder(page: Page, rows: number) {
   await expect(length).toBeVisible();
   await length.fill(String(rows));
   await length.dispatchEvent('change');
+
+  // touching a control is what makes the row fetch its ranking, so the list is
+  // not there the instant the page is
+  const list = page.locator('li.row ol.live li');
+  await expect(list).toHaveCount(rows, { timeout: 15_000 });
 }
 
 function quantile(sorted: number[], q: number): number {
@@ -277,8 +282,6 @@ function report(label: string, timings: Timings) {
 
 test('one input re-ranks well inside a frame, on the data that ships', async ({ page }) => {
   await openCoder(page, 60);
-  await expect(page.locator('#w-coder-cost')).toBeVisible();
-  await expect(page.locator('li.row ol.live li').first()).toBeVisible();
 
   const timings = await measure(page, SAMPLES);
   const { median, p95 } = report('shipped fixture data', timings);
@@ -312,7 +315,6 @@ test('one input on a 60-row list costs most of a frame', async ({ page }) => {
   });
 
   await openCoder(page, 60);
-  await expect(page.locator('#w-coder-cost')).toBeVisible();
 
   const timings = await measure(page, SAMPLES);
   const { median, p95 } = report('60 synthetic rows (stubbed ranking)', timings);
@@ -356,7 +358,6 @@ test('at 60 rows the cost is the DOM, not the animation', async ({ page }) => {
   });
 
   await openCoder(page, 60);
-  await expect(page.locator('#w-coder-cost')).toBeVisible();
 
   const timings = await measure(page, SAMPLES);
   const { median, p95 } = report('60 synthetic rows, motion reduced (stubbed ranking)', timings);
