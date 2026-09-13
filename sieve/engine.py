@@ -506,13 +506,44 @@ def apply_targets(
     actor: str = "cli",
     store: Store | None = None,
 ) -> list[TargetResult]:
-    """Write chains to the named targets. Nothing else in Sieve writes outward."""
+    """Write chains outward: every connector switched on for writing, then the
+    `[targets.*]` blocks the config still names. Nothing else writes outward.
+
+    A connector **shadows** a target of the same name. One gateway described in
+    two places is still one gateway, and writing it twice is two round trips to
+    say the same thing -- with the second one liable to disagree.
+    """
     from sieve import plugins
+    from sieve.connectors import log_applied, seed_from_toml, ship
+    from sieve.connectors.base import ConnectorError
 
     owned = store or Store(cfg.db_path)
-    wanted = targets or list(cfg.targets)
+    seed_from_toml(cfg, owned)
+    by_name = {c.name: c for c in owned.connectors()}
+    wanted = targets or [
+        *(name for name, c in by_name.items() if c.write),
+        *(name for name in cfg.targets if name not in by_name),
+    ]
     results: list[TargetResult] = []
     for name in wanted:
+        connector = by_name.get(name)
+        if connector is not None:
+            if not connector.write:
+                results.append(
+                    TargetResult(
+                        target=name, error=f"connector {name!r} is not switched on for writing"
+                    )
+                )
+                continue
+            try:
+                outcome = ship(owned, connector, chains, dry_run=dry_run)
+            except ConnectorError as exc:
+                results.append(TargetResult(target=name, error=str(exc)))
+                continue
+            results.append(outcome)
+            if not dry_run and outcome.error is None:
+                log_applied(owned, connector, chains, actor)
+            continue
         target_cfg = cfg.targets.get(name)
         if target_cfg is None:
             results.append(TargetResult(target=name, error=f"no target named {name!r}"))

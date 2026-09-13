@@ -80,11 +80,31 @@ class Price(BaseModel):
     observed_at: datetime
 
 class Reachable(BaseModel):
-    inventory: str          # connector name from config
+    inventory: str          # connector name; the `reachable` row also carries its id
     local_id: str           # the id the gateway serves, e.g. "oc-go/glm-5.3"
     model_id: str | None    # matched canonical id; None = unmatched (shown on Sources screen)
     capability: Capability = Capability()
     seen_at: datetime
+
+class Connector(BaseModel):     # a router, as data: added at runtime, not edited into sieve.toml
+    id: str; name: str
+    kind: str                   # "openai_compat" | "ninerouter"
+    base_url: str
+    token_env: str | None = None    # the NAME of the variable holding the token, never the token
+    read: bool = True           # its ids join the inventory
+    write: bool = False         # it is given the chains, one combo per profile
+    poll_minutes: int = 60
+    last_pull_at: datetime | None = None
+    last_push_at: datetime | None = None
+    last_error: str | None = None   # the last sentence it failed with; cleared by a success
+    options: dict[str, Any] = {}    # kind-specific, and every key names something: admin_token_env, timeout
+    created_at: datetime | None = None
+
+class ConnectorTest(BaseModel):     # POST /v1/connectors/{id}/test; 200 even when the router is down
+    ok: bool; models_count: int = 0; error: str | None = None
+
+class ComboResult(BaseModel):       # one chain seated on one connector
+    ok: bool; created: bool = False; error: str | None = None
 
 class AxisField(BaseModel):
     source: str; field: str; weight: float = 1.0
@@ -191,7 +211,19 @@ class Target(Protocol):
     name: str
     def current(self, cfg) -> dict[str, list[str]]     # profile -> chain currently in place, if readable
     def write(self, cfg, chains: list[Chain], dry_run: bool) -> TargetResult
+class ConnectorAdapter(Protocol):   # one kind of router; sieve/connectors/<kind>.py
+    kind: str; writes: bool
+    def list_models(self) -> list[str]
+    def test(self) -> ConnectorTest                    # never raises: a router that is down is an answer
+    def put_combo(self, name: str, ordered_ids: list[str]) -> ComboResult
 ```
+
+A connector kind is **not** an entry point: it is chosen by a row in the
+database while a request is in flight, so it is a dict in
+`sieve/connectors/registry.py` rather than a lookup that can fail with
+`ImportError` halfway through an hourly run. Adding a kind is one file and one
+line. A connector shadows an `[inventories.*]` or `[targets.*]` block of the
+same name, so a gateway described in both places is read once and written once.
 
 Registration is by entry point group `sieve.sources` / `sieve.inventories` /
 `sieve.targets` in `pyproject.toml`, so a third-party package can add one.
@@ -219,7 +251,10 @@ never changes the chain.
 ## 4. Storage (`sieve/store`, SQLite, WAL)
 
 Tables: `models`, `aliases`, `observations` (append-only, unique on
-`(model_id, source, field, observed_at)`), `prices`, `reachable`, `snapshots`
+`(model_id, source, field, observed_at)`), `prices`, `reachable` (carrying the
+`connector_id` that served each row), `connectors` (id, name, kind, base_url,
+token_env, read, write, poll_minutes, last_pull_at, last_push_at, last_error,
+options — never a token), `snapshots`
 (one row per engine run: id, at, source rows counted), `rankings` (JSON per
 profile per snapshot), `chains` (current per profile), `decisions`
 (append-only), `telemetry` (append-only, pruned after 30 days), `tokens`
@@ -267,7 +302,12 @@ Bearer <secret>` and the scope in the table; reads are open unless
 | GET /v1/decisions?profile=&kind=&since= | – | Decision[] |
 | GET /v1/sources · POST /v1/sources/{name}/pull | – / apply | status; pull is async, returns job id |
 | GET /v1/inventory?unmatched=true · PUT /v1/aliases | – / profiles:write | Reachable[] / alias saved |
-| GET /v1/events | – | SSE: `pull`, `ranking`, `decision`, `apply` |
+| GET /v1/connectors · GET /v1/connectors/{id} | – | Connector[] + token_present; never a token |
+| POST /v1/connectors · PUT /v1/connectors/{id} · DELETE /v1/connectors/{id} | apply | Connector |
+| POST /v1/connectors/{id}/test | – | ConnectorTest — 200 with `ok:false` when the router is down |
+| POST /v1/connectors/{id}/pull | – | {connector, found, matched, unmatched} — refresh its inventory now |
+| GET /v1/connectors/{id}/models | – | what it was last seen serving, from the store |
+| GET /v1/events | – | SSE: `pull`, `ranking`, `decision`, `apply`, `connector` |
 
 ## 7. MCP (`sieve mcp`, stdio + streamable HTTP)
 

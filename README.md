@@ -122,6 +122,60 @@ guess at stays unmatched and is listed on the Sources screen for you to alias in
 `data/aliases.yaml`. It is never guessed at, because a wrong match silently
 routes traffic to a different model.
 
+## Connectors
+
+That TOML block still works, and on the first start after connectors landed it
+becomes one — so a machine configured this way migrates itself and keeps
+running. From then on a router is a **row**, not a file: you add one by URL over
+the API, test it, and switch it on for reading (its ids join the inventory),
+for writing (it is given a combo per profile), or for both.
+
+A connector never holds a token. It holds `token_env`, the *name* of the
+environment variable you set, exactly as a source names `key_env`.
+
+```bash
+curl -sX POST http://127.0.0.1:8110/v1/connectors \
+  -H "authorization: Bearer $SIEVE_TOKEN" -H "content-type: application/json" -d '{
+    "name": "spare",
+    "kind": "ninerouter",
+    "base_url": "http://127.0.0.1:20128",
+    "token_env": "SPARE_GATEWAY_TOKEN",
+    "read": true,
+    "write": true,
+    "poll_minutes": 60,
+    "options": {"admin_token_env": "SPARE_NINEROUTER_TOKEN"}
+  }'
+```
+
+```json
+{
+  "id": "9f2a1c7b40de", "name": "spare", "kind": "ninerouter",
+  "base_url": "http://127.0.0.1:20128", "token_env": "SPARE_GATEWAY_TOKEN",
+  "read": true, "write": true, "poll_minutes": 60,
+  "last_pull_at": null, "last_push_at": null, "last_error": null,
+  "options": {"admin_token_env": "SPARE_NINEROUTER_TOKEN"},
+  "token_present": true, "admin_token_present": true
+}
+```
+
+Then ask it whether it works. `POST /v1/connectors/{id}/test` is one of the two
+calls that leave the box — every `GET` is answered from the store, because a
+list of routers should not be as slow as the slowest one:
+
+```json
+{"ok": true, "models_count": 162, "error": null}
+```
+
+A router that is down answers the same shape with `"ok": false` and a sentence
+saying which environment variable it refused, never the value of one. The rest
+of the surface is `PUT /v1/connectors/{id}`, `DELETE /v1/connectors/{id}`,
+`POST /v1/connectors/{id}/pull` to refresh its inventory now rather than on the
+hour, and `GET /v1/connectors/{id}/models` for what it was last seen serving.
+
+Two kinds ship: `openai_compat`, which can only be read, and `ninerouter`,
+which is read the same way and written through its admin API. Adding a third is
+one file in `sieve/connectors/` and one line in its registry.
+
 ## Let your agents steer it
 
 ```bash

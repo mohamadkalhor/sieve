@@ -20,6 +20,7 @@ from typing import Any
 from sieve.contracts import (
     Capability,
     Chain,
+    Connector,
     Decision,
     Modality,
     ModelRef,
@@ -435,24 +436,53 @@ class Store:
     # inventory
     # ------------------------------------------------------------------ #
 
-    def set_reachable(self, inventory: str, items: Iterable[Reachable]) -> int:
+    def set_reachable(
+        self, inventory: str, items: Iterable[Reachable], connector_id: str | None = None
+    ) -> int:
+        """Replace what one router is serving.
+
+        `connector_id` is the stable identity behind the name: renaming a
+        connector does not orphan its rows, and "reachable via gateway A, not
+        B" becomes a question the store can answer.
+        """
         rows = 0
         with self.tx() as db:
             db.execute("DELETE FROM reachable WHERE inventory=?", (inventory,))
             for it in items:
                 db.execute(
                     "INSERT OR REPLACE INTO reachable (inventory, local_id, model_id,"
-                    " capability, seen_at) VALUES (?,?,?,?,?)",
+                    " capability, seen_at, connector_id) VALUES (?,?,?,?,?,?)",
                     (
                         it.inventory,
                         it.local_id,
                         it.model_id,
                         it.capability.model_dump_json(),
                         _iso(it.seen_at),
+                        connector_id,
                     ),
                 )
                 rows += 1
         return rows
+
+    def reachable_for(self, connector_id: str) -> list[Reachable]:
+        """What one connector was last seen serving. No network, ever."""
+        return [
+            self._reachable(r)
+            for r in self.db.execute(
+                "SELECT * FROM reachable WHERE connector_id=? ORDER BY local_id",
+                (connector_id,),
+            )
+        ]
+
+    @staticmethod
+    def _reachable(r: sqlite3.Row) -> Reachable:
+        return Reachable(
+            inventory=r["inventory"],
+            local_id=r["local_id"],
+            model_id=r["model_id"],
+            capability=Capability.model_validate_json(r["capability"]),
+            seen_at=_dt(r["seen_at"]),
+        )
 
     def reachable(self, *, unmatched: bool | None = None) -> list[Reachable]:
         sql = "SELECT * FROM reachable"
@@ -461,16 +491,7 @@ class Store:
         elif unmatched is False:
             sql += " WHERE model_id IS NOT NULL"
         sql += " ORDER BY inventory, local_id"
-        return [
-            Reachable(
-                inventory=r["inventory"],
-                local_id=r["local_id"],
-                model_id=r["model_id"],
-                capability=Capability.model_validate_json(r["capability"]),
-                seen_at=_dt(r["seen_at"]),
-            )
-            for r in self.db.execute(sql)
-        ]
+        return [self._reachable(r) for r in self.db.execute(sql)]
 
     def local_ids(self) -> dict[str, list[str]]:
         """Canonical model id -> the local ids that serve it."""
@@ -480,6 +501,117 @@ class Store:
         ):
             out.setdefault(r["model_id"], []).append(r["local_id"])
         return out
+
+    # ------------------------------------------------------------------ #
+    # connectors (the routers, as data)
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _connector(r: sqlite3.Row) -> Connector:
+        return Connector(
+            id=r["id"],
+            name=r["name"],
+            kind=r["kind"],
+            base_url=r["base_url"],
+            token_env=r["token_env"],
+            read=bool(r["read"]),
+            write=bool(r["write"]),
+            poll_minutes=int(r["poll_minutes"]),
+            last_pull_at=_dt(r["last_pull_at"]) if r["last_pull_at"] else None,
+            last_push_at=_dt(r["last_push_at"]) if r["last_push_at"] else None,
+            last_error=r["last_error"],
+            options=json.loads(r["options"] or "{}"),
+            created_at=_dt(r["created_at"]) if r["created_at"] else None,
+        )
+
+    def has_connectors(self) -> bool:
+        """Whether anything has been seeded yet. One row is enough to know."""
+        return self.db.execute("SELECT 1 FROM connectors LIMIT 1").fetchone() is not None
+
+    def connectors(self) -> list[Connector]:
+        rows = self.db.execute("SELECT * FROM connectors ORDER BY name")
+        return [self._connector(r) for r in rows]
+
+    def connector(self, connector_id: str) -> Connector | None:
+        row = self.db.execute("SELECT * FROM connectors WHERE id=?", (connector_id,)).fetchone()
+        return self._connector(row) if row else None
+
+    def connector_named(self, name: str) -> Connector | None:
+        row = self.db.execute("SELECT * FROM connectors WHERE name=?", (name,)).fetchone()
+        return self._connector(row) if row else None
+
+    def add_connector(self, connector: Connector) -> Connector:
+        """Insert one. A duplicate name raises, because a name addresses it."""
+        with self.tx() as db:
+            db.execute(
+                "INSERT INTO connectors (id, name, kind, base_url, token_env, read, write,"
+                " poll_minutes, last_pull_at, last_push_at, last_error, options, created_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                self._connector_row(connector),
+            )
+        return connector
+
+    def put_connector(self, connector: Connector) -> Connector:
+        """Insert or replace by id. What the API's PUT writes."""
+        with self.tx() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO connectors (id, name, kind, base_url, token_env,"
+                " read, write, poll_minutes, last_pull_at, last_push_at, last_error,"
+                " options, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                self._connector_row(connector),
+            )
+        return connector
+
+    @staticmethod
+    def _connector_row(c: Connector) -> tuple[Any, ...]:
+        return (
+            c.id,
+            c.name,
+            c.kind,
+            c.base_url,
+            c.token_env,
+            1 if c.read else 0,
+            1 if c.write else 0,
+            c.poll_minutes,
+            _iso(c.last_pull_at) if c.last_pull_at else None,
+            _iso(c.last_push_at) if c.last_push_at else None,
+            c.last_error,
+            json.dumps(c.options),
+            _iso(c.created_at) if c.created_at else _iso(now()),
+        )
+
+    def delete_connector(self, connector_id: str) -> bool:
+        """Forget a connector, and the inventory rows that only it served."""
+        with self.tx() as db:
+            db.execute("DELETE FROM reachable WHERE connector_id=?", (connector_id,))
+            cur = db.execute("DELETE FROM connectors WHERE id=?", (connector_id,))
+        return bool(cur.rowcount)
+
+    def touch_connector(
+        self,
+        connector_id: str,
+        *,
+        pulled_at: datetime | None = None,
+        pushed_at: datetime | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Record what just happened to a connector.
+
+        A timestamp left None is left alone; `error` is always written, so a
+        successful call clears the last failure rather than leaving a sentence
+        on the screen that stopped being true an hour ago.
+        """
+        sets = ["last_error=?"]
+        args: list[Any] = [error]
+        if pulled_at is not None:
+            sets.append("last_pull_at=?")
+            args.append(_iso(pulled_at))
+        if pushed_at is not None:
+            sets.append("last_push_at=?")
+            args.append(_iso(pushed_at))
+        args.append(connector_id)
+        with self.tx() as db:
+            db.execute(f"UPDATE connectors SET {', '.join(sets)} WHERE id=?", args)
 
     # ------------------------------------------------------------------ #
     # snapshots, rankings, chains

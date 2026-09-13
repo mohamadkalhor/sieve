@@ -180,6 +180,68 @@ class Reachable(_Model):
     seen_at: datetime
 
 
+class Connector(_Model):
+    """A router added at runtime: where it is, and what it is switched on for.
+
+    The whole reason this type exists is that a router used to be two blocks of
+    `sieve.toml` -- one to read its ids, one to write its combos -- which meant
+    adding a second one needed a file on the box and a restart. A connector is
+    the same facts as a row, so it can be added by URL, tested, and switched on
+    for reading, for writing, or for both.
+
+    **It never holds a token.** `token_env` is the *name* of the environment
+    variable, exactly as a source names `key_env`. Nothing stores the value,
+    nothing serves it, and a database that leaks leaks a list of variable names.
+    """
+
+    id: str
+    name: str
+    #: "openai_compat" | "ninerouter" -- see `sieve/connectors/registry.py`
+    kind: str
+    base_url: str
+    token_env: str | None = None
+    #: its ids join the inventory, so a profile may seat a model it serves
+    read: bool = True
+    #: it is given the chains: one combo per profile
+    write: bool = False
+    poll_minutes: int = 60
+    last_pull_at: datetime | None = None
+    last_push_at: datetime | None = None
+    #: the last sentence this connector failed with, or None. Kept so that "the
+    #: gateway is quiet" and "the gateway has been refusing us since Tuesday"
+    #: do not look the same on a screen.
+    last_error: str | None = None
+    #: kind-specific, and every key *names* something rather than holding it:
+    #: `admin_token_env`, `timeout`.
+    options: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+    def token(self) -> str | None:
+        """The secret this connector needs, read from the environment only."""
+        return os.environ.get(self.token_env) if self.token_env else None
+
+
+class ConnectorTest(_Model):
+    """What `POST /v1/connectors/{id}/test` answers. Never raises upward.
+
+    A router that is down is an ordinary answer to "is this working", so the
+    call is 200 with `ok: false` and the reason, not a 500 with a traceback.
+    """
+
+    ok: bool
+    models_count: int = 0
+    error: str | None = None
+
+
+class ComboResult(_Model):
+    """One chain seated on one connector."""
+
+    ok: bool
+    #: whether the combo had to be created rather than updated
+    created: bool = False
+    error: str | None = None
+
+
 class AxisField(_Model):
     source: str
     field: str
@@ -540,6 +602,29 @@ class Inventory(Protocol):
 
 
 @runtime_checkable
+class ConnectorAdapter(Protocol):
+    """One kind of router. Adding a kind is one file under `sieve/connectors`.
+
+    Not an entry-point group like the three above: a connector is chosen by a
+    row in the database while a request is in flight, and a lookup that can fail
+    with `ImportError` halfway through an hourly run is a worse trade than a
+    table a reader can see all of.
+    """
+
+    kind: str
+    #: whether this kind can be given combos at all. A connector asking to write
+    #: through a kind that cannot is refused when it is created, rather than
+    #: accepted and then shipping nothing every hour.
+    writes: bool
+
+    def list_models(self) -> list[str]: ...
+
+    def test(self) -> ConnectorTest: ...
+
+    def put_combo(self, name: str, ordered_ids: list[str]) -> ComboResult: ...
+
+
+@runtime_checkable
 class Target(Protocol):
     name: str
 
@@ -606,6 +691,11 @@ class EngineResult(_Model):
 
 
 #: The models `sieve export-types` renders into `web/src/lib/types.ts`.
+#:
+#: `Connector` is deliberately not here yet. `types.ts` is generated **and**
+#: committed, and a test fails if the two disagree, so the type joins this
+#: tuple in the same commit that regenerates the file -- which is the one
+#: that builds the Connectors screen, in `web/`.
 EXPORTED: tuple[type[BaseModel], ...] = (
     ModelRef,
     Observation,

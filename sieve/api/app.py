@@ -20,8 +20,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from sieve import __version__
+from sieve.api.routes.connectors import router as connectors_router
 from sieve.api.routes.v1 import router as v1_router
 from sieve.config import Config, default_config, load_config
+from sieve.connectors import seed_from_toml
 from sieve.store import Store
 
 CONFIG_ENV = "SIEVE_CONFIG"
@@ -37,6 +39,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cfg: Config = getattr(app.state, "config", None) or build_config()
     app.state.config = cfg
     app.state.store = Store(cfg.db_path)
+    # A box configured in TOML migrates itself: the `[inventories.*]` and
+    # `[targets.*]` gateway blocks become connectors on the first start after
+    # this landed, rather than waiting for somebody to POST their own gateway.
+    seed_from_toml(cfg, app.state.store)
     try:
         yield
     finally:
@@ -91,6 +97,23 @@ def create_app(config: Config | None = None) -> FastAPI:
         return {"status": "ok", "version": __version__}
 
     app.include_router(v1_router)
+    app.include_router(connectors_router)
+
+    # Anything under /v1 that no route claims is an API call that went wrong,
+    # and it has to say so in JSON. The SPA catch-all below would hand it the
+    # app shell with a 200, which a client reads as "the endpoint exists and
+    # answered nonsense" -- the web app spent a deploy showing "API not
+    # available yet" because of exactly that.
+    @app.api_route(
+        "/v1/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        include_in_schema=False,
+    )
+    async def v1_not_found(path: str) -> JSONResponse:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"code": "not_found", "message": f"no /v1/{path} endpoint"}},
+        )
 
     web = cfg.path(cfg.server.web)
     if web.is_dir():

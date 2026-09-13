@@ -1,4 +1,5 @@
-"""`GET /v1/events` — server-sent events for `pull`, `ranking`, `decision`, `apply`.
+"""`GET /v1/events` — server-sent events for `pull`, `ranking`, `decision`,
+`apply` and `connector`.
 
 An in-process fan-out: every subscriber gets its own bounded queue, and a slow
 reader drops events rather than holding the publisher up.
@@ -12,7 +13,9 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-EventKind = Literal["pull", "ranking", "decision", "apply", "ping"]
+#: `connector` carries a router being added, changed or forgotten, so a
+#: screen showing them learns about it without polling.
+EventKind = Literal["pull", "ranking", "decision", "apply", "connector", "ping"]
 
 QUEUE_SIZE = 64
 

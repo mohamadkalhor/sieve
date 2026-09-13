@@ -21,6 +21,8 @@ from sieve import plugins
 from sieve.catalog.aliases import load_aliases
 from sieve.catalog.registry import merge_pull
 from sieve.config import DEFAULT_CONFIG, Config, default_config, load_config
+from sieve.connectors import build_registry, refresh, seed_from_toml
+from sieve.connectors.base import ConnectorError
 from sieve.contracts import Profile, PullResult
 from sieve.engine import COST_SOURCE, OwnerMissingError, apply_targets, run
 from sieve.http import client as http_client
@@ -84,6 +86,11 @@ def cmd_pull(args: argparse.Namespace) -> int:
     cfg = _config(args)
     store = Store(cfg.db_path)
     http = http_client()
+    # The gateway blocks of sieve.toml become connectors on the first run after
+    # this landed. From then on a router may be named by either, and
+    # `sieve pull gateway` has to mean the same thing whichever it is.
+    seed_from_toml(cfg, store)
+    inventories = set(cfg.inventories) | {c.name for c in store.connectors()}
     wanted = args.source or [s.name for s in cfg.enabled_sources()]
     failures = 0
     # The hand-written alias file says it beats every rule in the matcher, and
@@ -96,9 +103,9 @@ def cmd_pull(args: argparse.Namespace) -> int:
     for name in wanted:
         source_cfg = cfg.sources.get(name)
         if source_cfg is None:
-            if name in cfg.inventories:
-                continue  # an inventory name; handled below
-            _out(f"{name}: no such source or inventory in sieve.toml")
+            if name in inventories:
+                continue  # a connector or inventory name; handled below
+            _out(f"{name}: no such source, connector or inventory")
             failures += 1
             continue
         try:
@@ -162,7 +169,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
         if result.rate_limit.remaining is not None:
             _out(f"  rate limit remaining: {result.rate_limit.remaining}")
 
-    if not args.source or any(n in cfg.inventories for n in args.source):
+    if not args.source or any(n in inventories for n in args.source):
         failures += _refresh_inventories(cfg, store, http, args.source)
     return EXIT_ERROR if failures else EXIT_OK
 
@@ -170,23 +177,39 @@ def cmd_pull(args: argparse.Namespace) -> int:
 def _refresh_inventories(
     cfg: Config, store: Store, http: Any, only: Sequence[str] | None = None
 ) -> int:
-    """List every gateway, match each local id to the catalog, store the result.
+    """List every router, match each local id to the catalog, store the result.
+
+    Connectors first -- those are the ones a person can add without a shell --
+    and the `[inventories.*]` blocks second, skipping any whose name a connector
+    already carries, so one gateway is read once rather than twice.
 
     An id that cannot be matched confidently keeps `model_id` None and shows up
     on the Sources screen for a person to alias. It is never guessed at and
     never dropped.
     """
-    from sieve.catalog.aliases import load_aliases
-    from sieve.catalog.registry import Registry
-
-    wanted = [n for n in (only or cfg.inventories) if n in cfg.inventories]
-    if not wanted:
+    seed_from_toml(cfg, store)
+    connectors = store.connectors()
+    shadowed = {c.name for c in connectors}
+    wanted_connectors = [c for c in connectors if c.read and (not only or c.name in only)]
+    wanted = [n for n in (only or cfg.inventories) if n in cfg.inventories and n not in shadowed]
+    if not wanted and not wanted_connectors:
         return 0
 
-    registry = Registry(load_aliases(cfg.aliases_file))
-    registry.extend(store.models())
+    registry = build_registry(cfg, store)
 
     failures = 0
+    for connector in wanted_connectors:
+        try:
+            count = refresh(store, connector, registry)
+        except ConnectorError as exc:  # a gateway being down is not a crash
+            _out(f"{connector.name}: {exc}")
+            failures += 1
+            continue
+        _out(
+            f"{connector.name}: {count.found} reachable, {count.matched} matched, "
+            f"{count.unmatched} unmatched  [connector: {connector.kind}]"
+        )
+
     for name in wanted:
         inventory_cfg = cfg.inventories[name]
         try:
