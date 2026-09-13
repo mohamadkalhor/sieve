@@ -184,9 +184,7 @@ def test_a_refused_token_names_the_variable_not_the_token(
 def test_a_router_that_is_not_there_is_an_answer_not_a_crash() -> None:
     # Port 1 is reserved and nothing listens on it; the connection is refused
     # rather than hanging.
-    outcome = OpenAICompatConnector(
-        connector("http://127.0.0.1:1"), timeout=1.0
-    ).test()
+    outcome = OpenAICompatConnector(connector("http://127.0.0.1:1"), timeout=1.0).test()
     assert outcome.ok is False
     assert "gateway" in (outcome.error or "")
 

@@ -32,7 +32,5 @@ def adapter_for(connector: Connector) -> Adapter:
     """The adapter for one connector, or a refusal naming the kinds there are."""
     cls = KINDS.get(connector.kind)
     if cls is None:
-        raise ConnectorError(
-            f"no connector kind {connector.kind!r}; have {', '.join(kinds())}"
-        )
+        raise ConnectorError(f"no connector kind {connector.kind!r}; have {', '.join(kinds())}")
     return cls(connector)

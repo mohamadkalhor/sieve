@@ -258,7 +258,6 @@ def test_controlled_profile_settings_status_experience_preview_and_crud(workspac
         )
         assert returned_at == cached.computed_at
 
-
         created = client.post(
             "/v1/profiles", json={"name": "judge-copy", "from": "judge"}, headers=headers
         )

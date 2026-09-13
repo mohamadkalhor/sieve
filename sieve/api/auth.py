@@ -33,7 +33,7 @@ ENV_VAR = "SIEVE_TOKENS"
 
 # --- gate, the sign-in service (CONTRACTS section 10) ------------------------
 
-GATE_URL_ENV = "SIEVE_GATE_URL"      # e.g. http://127.0.0.1:8112 — unset: off
+GATE_URL_ENV = "SIEVE_GATE_URL"  # e.g. http://127.0.0.1:8112 — unset: off
 GATE_TOKEN_ENV = "SIEVE_GATE_TOKEN"  # the service token gate knows us by
 GATE_COOKIE = "gate_session"
 

@@ -32,8 +32,16 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     now = datetime.now(UTC)
     store.add_observations(
         [
-            Observation(model_id="test/model", modality="llm", source="aa_llm", field=field,
-                        value=1, unit="index_0_100", observed_at=now, pulled_at=now)
+            Observation(
+                model_id="test/model",
+                modality="llm",
+                source="aa_llm",
+                field=field,
+                value=1,
+                unit="index_0_100",
+                observed_at=now,
+                pulled_at=now,
+            )
             for field in ("terminalbench_v2_1", "livecodebench")
         ]
     )

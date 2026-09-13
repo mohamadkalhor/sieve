@@ -183,9 +183,7 @@ def get_axes(
 
 
 @router.get("/axes/{name}")
-def get_axis(
-    request: Request, name: str, modality: Modality | None = None, _: Read = None
-) -> Any:
+def get_axis(request: Request, name: str, modality: Modality | None = None, _: Read = None) -> Any:
     return axis_control.row(_axes_store(request), name, modality) or error(
         404, "not_found", f"no axis {name!r}"
     )
@@ -211,8 +209,15 @@ def post_axis(
     if problem:
         return problem
     axis_control.put(store, value, builtin=False)
-    log_decision(store, value.name, "weights", token.name, None, value.model_dump(mode="json"),
-                 f"axis {value.name} created by {token.name}")
+    log_decision(
+        store,
+        value.name,
+        "weights",
+        token.name,
+        None,
+        value.model_dump(mode="json"),
+        f"axis {value.name} created by {token.name}",
+    )
     return axis_control.row(store, value.name)
 
 
@@ -234,8 +239,9 @@ def put_axis(
         return problem
     axis_control.put(store, value)
     after = axis_control.row(store, name, value.modality)
-    log_decision(store, name, "weights", token.name, before, after,
-                 f"axis {name} updated by {token.name}")
+    log_decision(
+        store, name, "weights", token.name, before, after, f"axis {name} updated by {token.name}"
+    )
     return after
 
 
@@ -711,9 +717,7 @@ def preview(
         )
         store.put_ranking(ranking)
     observed = {row["model_id"]: row["experience"] for row in control.experience(store, name)}
-    ranking = control.rerank_cached(
-        ranking, proposed.weights, proposed.experience_weight, observed
-    )
+    ranking = control.rerank_cached(ranking, proposed.weights, proposed.experience_weight, observed)
     ids = control.controlled_ids(
         store, name, ranking.ranks, proposed.list_length, proposed.floor_score
     )
