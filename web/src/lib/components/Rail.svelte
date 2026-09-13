@@ -16,6 +16,7 @@
     { href: '/rankings', label: 'Rankings' },
     { href: '/chains', label: 'Chains' },
     { href: '/sources', label: 'Sources' },
+    { href: '/connectors', label: 'Connectors' },
     { href: '/pulse', label: 'Pulse' }
   ];
 

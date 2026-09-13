@@ -174,6 +174,52 @@ export interface Recommendation {
   computed_at: string;
 }
 
+/**
+ * `/v1/connectors`: a gateway Sieve can read a model list from, and push its
+ * routing to. Phase 3 turned what used to be a block in the server's own
+ * config file into rows, so a person with a different router can add one from
+ * the Connectors screen.
+ *
+ * No response ever carries a key: `token_env` is the *name* of an environment
+ * variable, which is why it is safe to put on a page.
+ */
+export type ConnectorKind = 'ninerouter' | 'openai_compat';
+
+export interface ConnectorRow {
+  id: string;
+  name: string;
+  kind: ConnectorKind;
+  base_url: string;
+  token_env: string;
+  /** pull the model list from it */
+  read: boolean;
+  /** push routing decisions to it */
+  write: boolean;
+  poll_minutes: number;
+  last_pull_at: string | null;
+  last_push_at: string | null;
+  /** whatever the last read or write failed with, verbatim */
+  last_error: string | null;
+}
+
+/** What POST and PUT take. PUT accepts any subset of it. */
+export interface ConnectorBody {
+  name: string;
+  kind: ConnectorKind;
+  base_url: string;
+  token_env: string;
+  read: boolean;
+  write: boolean;
+  poll_minutes: number;
+}
+
+/** The answer to `test` and to `pull`: it worked, or it says why not. */
+export interface ConnectorProbe {
+  ok: boolean;
+  models_count: number;
+  error: string | null;
+}
+
 const q = (params: Record<string, string | number | boolean | undefined>): string => {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -228,6 +274,38 @@ export const api = {
   diff: (o?: RequestOptions) => request<TargetDiff[]>('/v1/diff', o),
 
   sources: (o?: RequestOptions) => request<SourceRow[]>('/v1/sources', o),
+  connectors: (o?: RequestOptions) => request<ConnectorRow[]>('/v1/connectors', o),
+
+  createConnector: (body: ConnectorBody, o?: RequestOptions) =>
+    request<ConnectorRow>('/v1/connectors', { ...o, method: 'POST', body }),
+
+  /** Partial: the switches send one field, the form sends all of them. */
+  updateConnector: (id: string, body: Partial<ConnectorBody>, o?: RequestOptions) =>
+    request<ConnectorRow>(`/v1/connectors/${encodeURIComponent(id)}`, {
+      ...o,
+      method: 'PUT',
+      body
+    }),
+
+  removeConnector: (id: string, o?: RequestOptions) =>
+    request<null>(`/v1/connectors/${encodeURIComponent(id)}`, { ...o, method: 'DELETE' }),
+
+  /** Reaches the gateway and counts what it serves; writes nothing. */
+  testConnector: (id: string, o?: RequestOptions) =>
+    request<ConnectorProbe>(`/v1/connectors/${encodeURIComponent(id)}/test`, {
+      ...o,
+      method: 'POST'
+    }),
+
+  pullConnector: (id: string, o?: RequestOptions) =>
+    request<ConnectorProbe>(`/v1/connectors/${encodeURIComponent(id)}/pull`, {
+      ...o,
+      method: 'POST'
+    }),
+
+  connectorModels: (id: string, o?: RequestOptions) =>
+    request<string[]>(`/v1/connectors/${encodeURIComponent(id)}/models`, o),
+
 
   inventory: (unmatched?: boolean, o?: RequestOptions) =>
     request<Reachable[]>(`/v1/inventory${q({ unmatched })}`, o),
