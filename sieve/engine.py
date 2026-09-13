@@ -314,7 +314,7 @@ def rank_profile(
                 costs[model_id] = amount * min(factors)
                 # replace the just-added cost observation used by the axis
                 bucket = obs.latest.get(model_id, {})
-                key = (COST_SOURCE, COST_FIELD)
+                key = obs.key(COST_SOURCE, COST_FIELD)
                 if key in bucket:
                     bucket[key] = bucket[key].model_copy(update={"value": costs[model_id]})
     except (RuntimeError, AttributeError):
@@ -334,7 +334,10 @@ def rank_profile(
             profile=profile.name, modality=profile.modality, computed_at=at, snapshot=snapshot
         )
 
-    axes: list[Axis] = axes_load.load_axes(cfg.axes_dir, profile.modality)
+    from sieve.axes import control as axis_control
+
+    axis_control.seed(store, cfg.axes_dir)
+    axes: list[Axis] = axis_control.axes(store, profile.modality)
     wanted = {a.name for a in axes if a.name in profile.weights}
     pool = obs.models()
 

@@ -87,7 +87,7 @@ def test_an_axis_file_takes_its_name_and_modality_from_its_path(tmp_path: Path) 
             "weight must be greater than 0",
         ),
         (
-            "fields:\n  - {source: aa, field: x, weight: 1}\nmin_coverage: 0\n",
+            "fields:\n  - {source: aa, field: x, weight: 1}\nmin_coverage: -0.1\n",
             "min_coverage",
         ),
         (

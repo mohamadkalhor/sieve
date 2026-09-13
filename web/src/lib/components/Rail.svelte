@@ -15,6 +15,7 @@
     // Rankings and Chains were columns of the Profiles screen seen on their
     // own; that screen shows all three at once now, so the rail names it once.
     { href: '/profiles', label: 'Profiles' },
+    { href: '/axes', label: 'Axes' },
     { href: '/sources', label: 'Sources' },
     { href: '/connectors', label: 'Connectors' },
     { href: '/pulse', label: 'Pulse' }

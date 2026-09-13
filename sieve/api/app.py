@@ -22,6 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from sieve import __version__
 from sieve.api.routes.connectors import router as connectors_router
 from sieve.api.routes.v1 import router as v1_router
+from sieve.axes import control as axis_control
 from sieve.config import Config, default_config, load_config
 from sieve.connectors import seed_from_toml
 from sieve.profiles import control as profile_control
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.config = cfg
     app.state.store = Store(cfg.db_path)
     profile_control.seed(app.state.store, cfg.profiles_dir)
+    axis_control.seed(app.state.store, cfg.axes_dir)
     # A box configured in TOML migrates itself: the `[inventories.*]` and
     # `[targets.*]` gateway blocks become connectors on the first start after
     # this landed, rather than waiting for somebody to POST their own gateway.

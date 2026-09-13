@@ -65,8 +65,8 @@ def check_axis(axis: Axis) -> Iterator[str]:
     """Everything pydantic cannot say on its own."""
     if not axis.fields:
         yield f"axis {axis.name!r} names no fields"
-    if not 0.0 < axis.min_coverage <= 1.0:
-        yield f"axis {axis.name!r}: min_coverage must be greater than 0 and at most 1"
+    if not 0.0 <= axis.min_coverage <= 1.0:
+        yield f"axis {axis.name!r}: min_coverage must be between 0 and 1"
 
     for field in axis.fields:
         where = f"axis {axis.name!r} field {field.source}:{field.field}"

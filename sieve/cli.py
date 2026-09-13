@@ -282,18 +282,26 @@ def cmd_check(args: argparse.Namespace) -> int:
     except ModuleNotFoundError as exc:
         raise OwnerMissingError("sieve.profiles.validate", "B") from exc
 
-    # a file that will not parse is one problem, reported like any other --
-    # never a traceback, because the person fixing it is editing YAML.
+    # Seed files are read only once. From then on check validates the vocabulary
+    # the engine and API actually use, rather than a stale copy on disk.
     try:
-        axes = list(axes_load.load_all_axes(cfg.axes_dir))
-        _out(f"axes: {len(axes)} loaded from {cfg.axes_dir}")
+        from sieve.axes import control as axis_control
+        from sieve.profiles import control as profile_control
+
+        store = Store(cfg.db_path)
+        profile_control.seed(store, cfg.profiles_dir)
+        axis_control.seed(store, cfg.axes_dir)
+        axes = axis_control.axes(store)
+        for axis in axes:
+            problems += list(axes_load.check_axis(axis))
+        _out(f"axes: {len(axes)} loaded from store")
     except ValueError as exc:
-        _out(f"axes: could not load {cfg.axes_dir}")
+        _out("axes: could not load store")
         _out(f"  fail: {exc}")
         return EXIT_ERROR
 
     try:
-        profiles = _profiles(cfg)
+        profiles = profile_control.profiles(store)
     except ValueError as exc:
         _out(f"profiles: could not load {cfg.profiles_dir}")
         _out(f"  fail: {exc}")

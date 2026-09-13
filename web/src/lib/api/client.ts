@@ -152,6 +152,17 @@ export interface StatusRow {
   telemetry_at: string | null;
 }
 
+export interface AxisRow extends Axis {
+  fields_count: number;
+  profiles: string[];
+  builtin: boolean;
+}
+
+export interface SourceFieldRow {
+  field: string;
+  rows: number;
+}
+
 export interface SourceRow {
   name: string;
   enabled: boolean;
@@ -331,7 +342,23 @@ export const api = {
 
   modalities: (o?: RequestOptions) => request<ModalityCount[]>('/v1/modalities', o),
 
-  axes: (modality?: Modality, o?: RequestOptions) => request<Axis[]>(`/v1/axes${q({ modality })}`, o),
+  axes: (modality?: Modality, o?: RequestOptions) =>
+    request<AxisRow[]>(`/v1/axes${q({ modality })}`, o),
+
+  axis: (name: string, modality?: Modality, o?: RequestOptions) =>
+    request<AxisRow>(`/v1/axes/${encodeURIComponent(name)}${q({ modality })}`, o),
+
+  createAxis: (body: Axis, o?: RequestOptions) =>
+    request<AxisRow>('/v1/axes', { ...o, method: 'POST', body }),
+
+  updateAxis: (name: string, body: Axis, o?: RequestOptions) =>
+    request<AxisRow>(`/v1/axes/${encodeURIComponent(name)}`, { ...o, method: 'PUT', body }),
+
+  removeAxis: (name: string, modality: Modality, force = false, o?: RequestOptions) =>
+    request<{ deleted: string; profiles_zeroed: string[] }>(
+      `/v1/axes/${encodeURIComponent(name)}${q({ modality, force })}`,
+      { ...o, method: 'DELETE' }
+    ),
 
   models: (
     params: { modality?: Modality; reachable?: boolean; q?: string; limit?: number } = {},
@@ -371,6 +398,8 @@ export const api = {
   diff: (o?: RequestOptions) => request<TargetDiff[]>('/v1/diff', o),
 
   sources: (o?: RequestOptions) => request<SourceRow[]>('/v1/sources', o),
+  sourceFields: (name: string, o?: RequestOptions) =>
+    request<SourceFieldRow[]>(`/v1/sources/${encodeURIComponent(name)}/fields`, o),
   connectors: (o?: RequestOptions) => request<ConnectorRow[]>('/v1/connectors', o),
 
   createConnector: (body: ConnectorBody, o?: RequestOptions) =>

@@ -20,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 from sieve.api.auth import Token, actor_for, require_read
 from sieve.api.auth import require as require_scope
 from sieve.api.sse import events
+from sieve.axes import control as axis_control
 from sieve.config import Config
 from sieve.contracts import (
     Axis,
@@ -165,19 +166,101 @@ def get_modalities(request: Request, _: Read = None) -> list[dict[str, Any]]:
     ]
 
 
+def _axes_store(request: Request) -> Store:
+    cfg, store = config_of(request), store_of(request)
+    control.seed(store, cfg.profiles_dir)
+    axis_control.seed(store, cfg.axes_dir)
+    return store
+
+
 @router.get("/axes")
 def get_axes(
     request: Request,
     modality: Modality | None = None,
     _: Read = None,
+) -> list[dict[str, object]]:
+    return axis_control.rows(_axes_store(request), modality)
+
+
+@router.get("/axes/{name}")
+def get_axis(
+    request: Request, name: str, modality: Modality | None = None, _: Read = None
 ) -> Any:
-    cfg = config_of(request)
-    try:
-        axes_load = import_module("sieve.axes.load")
-    except ModuleNotFoundError:
-        return not_built(Axis, "A", "sieve.axes.load")
-    axes = list(axes_load.load_all_axes(cfg.axes_dir))
-    return [a for a in axes if modality is None or a.modality == modality]
+    return axis_control.row(_axes_store(request), name, modality) or error(
+        404, "not_found", f"no axis {name!r}"
+    )
+
+
+def _axis_problem(store: Store, value: Axis) -> JSONResponse | None:
+    problems = axis_control.validate(value, store)
+    if problems:
+        return error(400, "bad_axis", "; ".join(problems))
+    return None
+
+
+@router.post("/axes", status_code=201)
+def post_axis(
+    request: Request,
+    value: Axis,
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    store = _axes_store(request)
+    if axis_control.axis(store, value.name, value.modality):
+        return error(409, "exists", f"axis {value.name!r} already exists for {value.modality}")
+    problem = _axis_problem(store, value)
+    if problem:
+        return problem
+    axis_control.put(store, value, builtin=False)
+    log_decision(store, value.name, "weights", token.name, None, value.model_dump(mode="json"),
+                 f"axis {value.name} created by {token.name}")
+    return axis_control.row(store, value.name)
+
+
+@router.put("/axes/{name}")
+def put_axis(
+    request: Request,
+    name: str,
+    value: Axis,
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    store = _axes_store(request)
+    before = axis_control.row(store, name, value.modality)
+    if before is None:
+        return error(404, "not_found", f"no axis {name!r} for {value.modality}")
+    if value.name != name:
+        return error(400, "bad_request", "the body's name must match the path")
+    problem = _axis_problem(store, value)
+    if problem:
+        return problem
+    axis_control.put(store, value)
+    after = axis_control.row(store, name, value.modality)
+    log_decision(store, name, "weights", token.name, before, after,
+                 f"axis {name} updated by {token.name}")
+    return after
+
+
+@router.delete("/axes/{name}")
+def delete_axis(
+    request: Request,
+    name: str,
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+    modality: Modality | None = None,
+    force: bool = False,
+) -> Any:
+    store = _axes_store(request)
+    before = axis_control.row(store, name, modality)
+    if before is None:
+        return error(404, "not_found", f"no axis {name!r}")
+    held_modality = str(before["modality"])
+    users = axis_control.profiles_using(store, name, held_modality)
+    if users and not force:
+        return error(409, "axis_in_use", f"used by {', '.join(users)}", profiles=users)
+    axis_control.delete(store, name, modality=held_modality, force=force)
+    reason = f"axis {name} deleted by {token.name}"
+    if users:
+        reason += "; profile weights set to 0"
+    log_decision(store, name, "weights", token.name, before, None, reason)
+    return {"deleted": name, "profiles_zeroed": users}
 
 
 @router.get("/models")
@@ -1157,6 +1240,21 @@ def get_sources(request: Request, _: Read = None) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+@router.get("/sources/{name}/fields")
+def get_source_fields(request: Request, name: str, _: Read = None) -> Any:
+    cfg, store = config_of(request), store_of(request)
+    if name not in cfg.sources:
+        return error(404, "not_found", f"no source {name!r}")
+    return [
+        {"field": row["field"], "rows": row["rows"]}
+        for row in store.db.execute(
+            "SELECT field,COUNT(*) AS rows FROM observations WHERE source=? "
+            "GROUP BY field ORDER BY field",
+            (name,),
+        )
+    ]
 
 
 @router.post("/sources/{name}/pull")
