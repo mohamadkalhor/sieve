@@ -1,0 +1,26 @@
+# AMS-15: cc/* and cx/* are flat-rate subscription logins on this fleet --
+# their cost is quota, not dollars, so every other profile's price weight
+# actively works against them here. This profile asks one question only:
+# which reachable model is best, ignoring what it would cost on the open
+# market. Price and latency carry no weight; `require.reachable` (implicit,
+# see below) plus reachable_only on the API call are what keep it honest.
+name: premium
+modality: llm
+purpose: "the best reachable model regardless of price -- flat-rate subscription seats"
+weights:
+  agentic_coding: 0.35
+  reasoning: 0.3
+  intelligence: 0.25
+  long_context: 0.1
+require:
+  reasoning: true
+shape: {in: 8000, out: 2000}
+policy:
+  margin: 2.0
+  min_confidence: 0.5
+  chain: 5
+  auto_apply: false
+
+# Take a family's highest effort mode: this profile is buying the best
+# answer reachable, not the cheapest one that clears a floor.
+prefer_effort: best
