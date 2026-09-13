@@ -1,4 +1,12 @@
-"""Scoped bearer tokens, read from the environment only (CONTRACTS section 5).
+"""Who is calling: a scoped bearer token, or a gate sign-in.
+
+Two identity sources, one answer. A script sends `Authorization: Bearer ...`
+and is a `SIEVE_TOKENS` record; a person's browser sends the `gate_session`
+cookie and is whoever gate says they are, with their role mapped onto the same
+scopes. Nothing else in the API can tell the difference, which is the point:
+the token line keeps working exactly as it did.
+
+Bearer tokens (CONTRACTS section 5).
 
 `SIEVE_TOKENS` is `name:scope,scope:secret;name:scope:secret`. A scope may
 itself contain a colon (`profiles:write`), so a record is read as: the name up
@@ -14,11 +22,88 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import threading
+import time
 from dataclasses import dataclass, field
 
+import httpx
 from fastapi import Header, HTTPException, Request
 
 ENV_VAR = "SIEVE_TOKENS"
+
+# --- gate, the sign-in service (CONTRACTS section 10) ------------------------
+
+GATE_URL_ENV = "SIEVE_GATE_URL"      # e.g. http://127.0.0.1:8112 — unset: off
+GATE_TOKEN_ENV = "SIEVE_GATE_TOKEN"  # the service token gate knows us by
+GATE_COOKIE = "gate_session"
+
+#: A gate role, as the scopes this API already understands. Owner and member
+#: may write; a viewer may only read. Nothing here grants `telemetry`: that is
+#: for machines reporting outcomes, and a machine carries a token.
+ROLE_SCOPES: dict[str, frozenset[str]] = {
+    "owner": frozenset({"read", "profiles:write", "apply"}),
+    "member": frozenset({"read", "profiles:write", "apply"}),
+    "viewer": frozenset({"read"}),
+}
+
+#: gate is one hop away on loopback, but a page can make a dozen calls and
+#: each would ask again. A minute of memory is the compromise: that is also
+#: the longest a revoked session keeps working here, which is short enough to
+#: be honest about in CONTRACTS.
+_GATE_TTL = 60.0
+_GATE_MISS_TTL = 10.0
+_gate_cache: dict[str, tuple[float, Token | None]] = {}
+_gate_lock = threading.Lock()
+
+
+def gate_identity(request: Request) -> Token | None:
+    """The signed-in person in front of this request, or None.
+
+    Silent when `SIEVE_GATE_URL` is unset, so a box without gate behaves
+    exactly as it did before. gate being unreachable is never a yes.
+    """
+    base = os.environ.get(GATE_URL_ENV, "").rstrip("/")
+    cookie = request.cookies.get(GATE_COOKIE)
+    if not base or not cookie:
+        return None
+
+    key = hashlib.sha256(cookie.encode()).hexdigest()
+    now = time.monotonic()
+    with _gate_lock:
+        hit = _gate_cache.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+
+    token: Token | None = None
+    try:
+        params = {}
+        service = os.environ.get(GATE_TOKEN_ENV, "")
+        if service:
+            params["token"] = service
+        reply = httpx.get(
+            f"{base}/v1/session",
+            params=params or None,
+            cookies={GATE_COOKIE: cookie},
+            timeout=2.0,
+        )
+        if reply.status_code == 200:
+            body = reply.json()
+            scopes = ROLE_SCOPES.get(str(body.get("role", "")), frozenset())
+            if scopes:
+                token = Token(
+                    name=f"gate:{body.get('email') or body.get('user_id')}",
+                    scopes=scopes,
+                    sha256=key,
+                )
+    except Exception:
+        # A gate that is down, slow or confused is not a gate that said yes.
+        token = None
+
+    with _gate_lock:
+        if len(_gate_cache) > 4096:
+            _gate_cache.clear()
+        _gate_cache[key] = (now + (_GATE_TTL if token else _GATE_MISS_TTL), token)
+    return token
 
 
 @dataclass(frozen=True)
@@ -91,10 +176,13 @@ def forbidden(message: str) -> HTTPException:
 def actor_for(request: Request, authorization: str | None) -> str:
     """The actor recorded on every decision this call produces."""
     secret = bearer(authorization)
-    if not secret:
+    if secret:
+        token = Tokens.from_env().lookup(secret)
+        if token:
+            return token.name
         return "anonymous"
-    token = Tokens.from_env().lookup(secret)
-    return token.name if token else "anonymous"
+    signed_in = gate_identity(request)
+    return signed_in.name if signed_in else "anonymous"
 
 
 def require(scope: str):  # type: ignore[no-untyped-def]
@@ -103,7 +191,14 @@ def require(scope: str):  # type: ignore[no-untyped-def]
     def dependency(request: Request, authorization: str | None = Header(default=None)) -> Token:
         secret = bearer(authorization)
         if not secret:
-            raise unauthorized(f"this call needs a bearer token with the {scope!r} scope")
+            # No token: this is a browser, so ask gate who it is.
+            signed_in = gate_identity(request)
+            if signed_in is None:
+                raise unauthorized(f"this call needs a bearer token with the {scope!r} scope")
+            if not signed_in.allows(scope):
+                raise forbidden(f"your role does not allow {scope!r}")
+            request.state.actor = signed_in.name
+            return signed_in
         token = Tokens.from_env().lookup(secret)
         if token is None:
             raise unauthorized("unknown token")
@@ -126,6 +221,10 @@ def require_read():  # type: ignore[no-untyped-def]
             return None
         secret = bearer(authorization)
         if not secret:
+            signed_in = gate_identity(request)
+            if signed_in is not None and signed_in.allows("read"):
+                request.state.actor = signed_in.name
+                return signed_in
             raise unauthorized("this server requires a token for reads")
         token = Tokens.from_env().lookup(secret)
         if token is None or not token.allows("read"):

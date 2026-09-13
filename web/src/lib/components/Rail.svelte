@@ -23,6 +23,12 @@
 
   const current = $derived($page.url.pathname);
 
+  /** gate sends the browser back here afterwards; it only accepts hosts on
+   * its own allow-list, so a link from anywhere else is refused. */
+  const signInHref = $derived(
+    `https://gate.mkalhor.xyz/login?next=${encodeURIComponent($page.url.href)}`
+  );
+
   /** re-rendered each minute so "12 min ago" keeps counting without a refetch */
   let now = $state(new Date());
   $effect(() => {
@@ -83,6 +89,15 @@
     {/each}
   </ul>
 
+  <!--
+    AMS-27. The whole of sign-in, for now: a link to gate, which comes back to
+    whatever page you were on. Sieve cannot yet tell whether you are signed in
+    (gate is a different origin and answers no cross-origin call), so the link
+    is always here rather than lying about your state. The rest of the UI is
+    the web agents' to build.
+  -->
+  <a class="signin" href={signInHref} rel="nofollow">Sign in</a>
+
   {#if status}
     <footer>
       <div class="line">
@@ -111,6 +126,16 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0 0.4rem;
+  }
+  .signin {
+    margin-top: auto;
+    padding: 0.45rem 0.55rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+    border-top: 1px solid var(--rule);
+  }
+  .signin:hover {
+    color: var(--ink);
   }
   .mark {
     width: 12px;

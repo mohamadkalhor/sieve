@@ -330,6 +330,40 @@ editor uses `web/src/lib/rank/weigh.ts`, which must produce the same numbers
 as `sieve/scoring/weigh.py` on the shared fixture `tests/fixtures/rank_case.json`
 — a vitest and a pytest both assert it.
 
+## 10. Identity (gate)
+
+Sieve has two ways of knowing who is calling, and the rest of the API cannot
+tell them apart.
+
+1. **`SIEVE_TOKENS`**, section 5, unchanged. Scripts, the MCP server and
+   anything headless carry `Authorization: Bearer <secret>`. Nothing about
+   this changed and nothing about it will.
+2. **gate**, the sign-in service at `https://gate.mkalhor.xyz`
+   (`http://127.0.0.1:8112` on the box, `gate.service`). A browser carries a
+   `gate_session` cookie, set on `.mkalhor.xyz`, so it reaches Sieve without
+   anything forwarding it by hand. Sieve asks gate `GET /v1/session` and maps
+   the role it gets back:
+
+   | gate role | scopes here |
+   |---|---|
+   | `owner` | `read`, `profiles:write`, `apply` |
+   | `member` | `read`, `profiles:write`, `apply` |
+   | `viewer` | `read` |
+
+   `telemetry` is deliberately not in that table: reporting an outcome is a
+   machine's job, and a machine carries a token.
+
+Configured by two lines in `/etc/default/sieve`: `SIEVE_GATE_URL` and
+`SIEVE_GATE_TOKEN`. **With `SIEVE_GATE_URL` unset the whole mechanism is
+inert** — a box without gate behaves exactly as it did before.
+
+An answer from gate is cached for 60 seconds per cookie, so that is the
+longest a revoked session or a demotion can keep working here. gate being
+unreachable is never treated as a yes.
+
+Unauthenticated pages link to `https://gate.mkalhor.xyz/login?next=<url>`.
+gate only redirects back to hosts on its own allow-list.
+
 ## 9. File ownership (phase 1)
 
 | owner | files |
