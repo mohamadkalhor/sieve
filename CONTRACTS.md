@@ -290,8 +290,15 @@ Bearer <secret>` and the scope in the table; reads are open unless
 | GET /v1/axes?modality= | – | Axis[] |
 | GET /v1/models?modality=&reachable=&q= | – | ModelRef + latest observations + prices + reachable |
 | GET /v1/models/{id} | – | one, with full observation history |
-| GET /v1/profiles?modality= · GET /v1/profiles/{name} | – | Profile |
-| PUT /v1/profiles/{name} | profiles:write | Profile (validated; file written; decision logged) |
+| GET /v1/profiles?modality= · GET /v1/profiles/{name} | – | Profile (SQLite truth; YAML seeds an empty store) |
+| GET · PUT /v1/profiles/{name}/settings | – · profiles:write | list controls, bounded/locked weights, profile multipliers |
+| GET · PUT /v1/profiles/{name}/models/{model_id}/status | – · profiles:write | active · pinned · removed and pin order |
+| GET · PUT /v1/cost-multipliers | – · profiles:write | default multiplier per reachable local-id prefix |
+| POST /v1/outcomes · GET /v1/profiles/{name}/experience | telemetry · – | append-only outcome · 30-day Laplace success score |
+| POST /v1/profiles/{name}/preview | – | unsaved controlled list using partial settings |
+| POST /v1/profiles · PATCH · DELETE /v1/profiles/{name} | profiles:write | create/copy · rename · guarded delete |
+| POST /v1/profiles/{name}/apply · GET /v1/profiles/{name}/history | apply · – | ship controlled chain · decision history |
+| PUT /v1/profiles/{name} | profiles:write | Profile (validated; stored; decision logged) |
 | PATCH /v1/profiles/{name}/weights · /policy | profiles:write | Profile |
 | POST /v1/profiles/{name}/evaluate | – | {ranking, chain, decision} — dry run, nothing stored |
 | GET /v1/rankings/{profile} | – | Ranking (latest) |

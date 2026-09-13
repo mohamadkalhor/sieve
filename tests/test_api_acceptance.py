@@ -190,3 +190,72 @@ def test_recommend_serves_the_chain_the_engine_computed(workspace: Config) -> No
         first = body["models"][0]
         assert first["local_ids"], "recommend returns the ids the gateway serves"
         assert first["final"] is not None
+
+
+def test_controlled_profile_settings_status_experience_preview_and_crud(workspace: Config) -> None:
+    app = create_app(workspace)
+    headers = {"Authorization": "Bearer s3cret"}
+    with TestClient(app) as client:
+        settings = client.get("/v1/profiles/judge/settings").json()
+        assert settings["list_length"] >= 1
+        changed = client.put(
+            "/v1/profiles/judge/settings",
+            json={"list_length": 3, "floor_score": 0.1},
+            headers=headers,
+        )
+        assert changed.status_code == 200
+        assert changed.json()["list_length"] == 3
+
+        model = "openai/gpt-5-6-sol"
+        pinned = client.put(
+            f"/v1/profiles/judge/models/{model}/status",
+            json={"status": "pinned"},
+            headers=headers,
+        )
+        assert pinned.json()["status"] == "pinned"
+
+        outcome = client.post(
+            "/v1/outcomes",
+            json={
+                "profile": "judge",
+                "model_id": model,
+                "local_id": model,
+                "ok": True,
+                "seconds": 1.2,
+                "vote": 1,
+                "note": "fixture",
+            },
+            headers=headers,
+        )
+        assert outcome.status_code == 200
+        experience = client.get("/v1/profiles/judge/experience").json()
+        assert experience[0]["experience"] == pytest.approx(2 / 3)
+
+        preview = client.post("/v1/profiles/judge/preview", json={"list_length": 2})
+        assert preview.status_code == 200
+        assert preview.json()["models"][0] == model
+        assert len(preview.json()["models"]) <= 2
+        assert client.get("/v1/profiles/judge/settings").json()["list_length"] == 3
+
+        created = client.post(
+            "/v1/profiles", json={"name": "judge-copy", "from": "judge"}, headers=headers
+        )
+        assert created.status_code == 200
+        renamed = client.patch(
+            "/v1/profiles/judge-copy", json={"name": "judge-copy-2"}, headers=headers
+        )
+        assert renamed.status_code == 200
+        deleted = client.delete("/v1/profiles/judge-copy-2?force=1", headers=headers)
+        assert deleted.status_code == 200
+        assert client.get("/v1/profiles/judge/history").json()
+
+
+def test_prefix_multipliers_appear_and_can_be_changed(workspace: Config) -> None:
+    app = create_app(workspace)
+    headers = {"Authorization": "Bearer s3cret"}
+    with TestClient(app) as client:
+        defaults = client.get("/v1/cost-multipliers").json()
+        assert defaults["openai"] == 1.0
+        changed = client.put("/v1/cost-multipliers", json={"openai": 0.5}, headers=headers)
+        assert changed.status_code == 200
+        assert changed.json()["openai"] == 0.5

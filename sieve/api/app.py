@@ -24,6 +24,7 @@ from sieve.api.routes.connectors import router as connectors_router
 from sieve.api.routes.v1 import router as v1_router
 from sieve.config import Config, default_config, load_config
 from sieve.connectors import seed_from_toml
+from sieve.profiles import control as profile_control
 from sieve.store import Store
 
 CONFIG_ENV = "SIEVE_CONFIG"
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cfg: Config = getattr(app.state, "config", None) or build_config()
     app.state.config = cfg
     app.state.store = Store(cfg.db_path)
+    profile_control.seed(app.state.store, cfg.profiles_dir)
     # A box configured in TOML migrates itself: the `[inventories.*]` and
     # `[targets.*]` gateway blocks become connectors on the first start after
     # this landed, rather than waiting for somebody to POST their own gateway.

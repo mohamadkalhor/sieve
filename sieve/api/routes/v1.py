@@ -30,6 +30,7 @@ from sieve.contracts import (
     Leaderboard,
     Modality,
     ModelRef,
+    Outcome,
     Profile,
     Ranking,
     Reachable,
@@ -40,6 +41,7 @@ from sieve.contracts import (
 )
 from sieve.engine import Deps as EngineDeps
 from sieve.engine import OwnerMissingError, apply_targets, rank_profile
+from sieve.profiles import control
 from sieve.scoring import leaderboard
 from sieve.scoring.health import health as health_of
 from sieve.scoring.health import health_series
@@ -117,7 +119,10 @@ def _profiles_module() -> Any:
         raise OwnerMissingError("sieve.profiles.load", "B") from exc
 
 
-def load_profile(cfg: Config, name: str) -> Profile | None:
+def load_profile(cfg: Config, name: str, store: Store | None = None) -> Profile | None:
+    if store is not None:
+        control.seed(store, cfg.profiles_dir)
+        return control.profile(store, name)
     for profile in _profiles_module().load_profiles(cfg.profiles_dir):
         if profile.name == name:
             found: Profile = profile
@@ -234,24 +239,22 @@ def get_model(request: Request, model_id: str, _: Read = None) -> Any:
 @router.get("/profiles")
 def get_profiles(request: Request, modality: Modality | None = None, _: Read = None) -> Any:
     cfg = config_of(request)
-    try:
-        profiles = list(_profiles_module().load_profiles(cfg.profiles_dir))
-    except OwnerMissingError:
-        return not_built(Profile, "B", "sieve.profiles.load")
+    store = store_of(request)
+    control.seed(store, cfg.profiles_dir)
+    profiles = control.profiles(store)
     return [p for p in profiles if modality is None or p.modality == modality]
 
 
 @router.get("/profiles/{name}")
 def get_profile(request: Request, name: str, _: Read = None) -> Any:
     cfg = config_of(request)
-    try:
-        profile = load_profile(cfg, name)
-    except OwnerMissingError:
-        return not_built(Profile, "B", "sieve.profiles.load")
+    profile = load_profile(cfg, name, store_of(request))
     return profile or error(404, "not_found", f"no profile {name!r}")
 
 
-def _save(cfg: Config, profile: Profile) -> None:
+def _save(cfg: Config, profile: Profile, store: Store | None = None) -> None:
+    if store is not None:
+        control.put_profile(store, profile)
     try:
         saver = import_module("sieve.profiles.save")
     except ModuleNotFoundError as exc:
@@ -270,8 +273,8 @@ def put_profile(
     if profile.name != name:
         return error(400, "bad_request", "the body's name must match the path")
     try:
-        before = load_profile(cfg, name)
-        _save(cfg, profile)
+        before = load_profile(cfg, name, store)
+        _save(cfg, profile, store)
     except OwnerMissingError:
         return not_built(Profile, "B", "sieve.profiles.save")
     log_decision(
@@ -295,7 +298,7 @@ def patch_weights(
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
     try:
-        profile = load_profile(cfg, name)
+        profile = load_profile(cfg, name, store)
     except OwnerMissingError:
         return not_built(Profile, "B", "sieve.profiles.load")
     if profile is None:
@@ -304,7 +307,7 @@ def patch_weights(
     if abs(total - 1.0) > 0.001:
         return error(400, "bad_weights", f"weights must sum to 1 +/- 0.001, got {total:.4f}")
     updated = profile.model_copy(update={"weights": weights})
-    _save(cfg, updated)
+    _save(cfg, updated, store)
     log_decision(
         store, name, "weights", token.name, profile.weights, weights, f"weights set by {token.name}"
     )
@@ -320,14 +323,14 @@ def patch_policy(
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
     try:
-        profile = load_profile(cfg, name)
+        profile = load_profile(cfg, name, store)
     except OwnerMissingError:
         return not_built(Profile, "B", "sieve.profiles.load")
     if profile is None:
         return error(404, "not_found", f"no profile {name!r}")
     merged = profile.policy.model_copy(update=policy)
     updated = profile.model_copy(update={"policy": merged})
-    _save(cfg, updated)
+    _save(cfg, updated, store)
     log_decision(
         store,
         name,
@@ -355,7 +358,7 @@ def patch_constraints(
     """
     cfg, store = config_of(request), store_of(request)
     try:
-        profile = load_profile(cfg, name)
+        profile = load_profile(cfg, name, store)
     except OwnerMissingError:
         return not_built(Profile, "B", "sieve.profiles.load")
     if profile is None:
@@ -371,7 +374,7 @@ def patch_constraints(
         )
 
     updated = profile.model_copy(update={"require": require})
-    _save(cfg, updated)
+    _save(cfg, updated, store)
     log_decision(
         store,
         name,
@@ -399,7 +402,7 @@ def patch_shape(
     """
     cfg, store = config_of(request), store_of(request)
     try:
-        profile = load_profile(cfg, name)
+        profile = load_profile(cfg, name, store)
     except OwnerMissingError:
         return not_built(Profile, "B", "sieve.profiles.load")
     if profile is None:
@@ -411,7 +414,7 @@ def patch_shape(
         return error(400, "bad_shape", str(exc.errors()[0].get("msg", exc)))
 
     updated = profile.model_copy(update={"shape": merged})
-    _save(cfg, updated)
+    _save(cfg, updated, store)
     log_decision(
         store,
         name,
@@ -450,14 +453,16 @@ def post_profile(
             "bad_request",
             f"{name!r} is not a usable profile name: letters, digits, _ and - only",
         )
-    if not source:
-        return error(400, "bad_request", "a new profile needs `from`: the profile to clone")
+    if not source and not body.get("modality"):
+        return error(400, "bad_request", "a new profile needs `from` or `modality`")
 
-    try:
-        existing = {p.name for p in _profiles_module().load_profiles(cfg.profiles_dir)}
-        original = load_profile(cfg, source)
-    except OwnerMissingError:
-        return not_built(Profile, "B", "sieve.profiles.load")
+    control.seed(store, cfg.profiles_dir)
+    existing = {p.name for p in control.profiles(store)}
+    original = control.profile(store, source)
+    if original is None and body.get("modality"):
+        original = next(
+            (p for p in control.profiles(store) if p.modality == body["modality"]), None
+        )
 
     if name in existing:
         # Chains are keyed by name, so two profiles sharing one would overwrite
@@ -472,7 +477,7 @@ def post_profile(
             "purpose": str(body.get("purpose") or f"cloned from {source}"),
         }
     )
-    _save(cfg, updated)
+    _save(cfg, updated, store)
     log_decision(
         store,
         name,
@@ -485,12 +490,238 @@ def post_profile(
     return updated
 
 
+@router.get("/profiles/{name}/settings")
+def get_profile_settings(request: Request, name: str, _: Read = None) -> Any:
+    cfg, store = config_of(request), store_of(request)
+    control.seed(store, cfg.profiles_dir)
+    value = control.settings(store, name)
+    return value or error(404, "not_found", f"no profile {name!r}")
+
+
+@router.put("/profiles/{name}/settings")
+def put_profile_settings(
+    request: Request,
+    name: str,
+    body: Annotated[dict[str, Any], Body()],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    cfg, store = config_of(request), store_of(request)
+    control.seed(store, cfg.profiles_dir)
+    before = control.settings(store, name)
+    if before is None:
+        return error(404, "not_found", f"no profile {name!r}")
+    try:
+        after = control.update_settings(before, body)
+    except (ValidationError, ValueError) as exc:
+        return error(400, "bad_settings", str(exc))
+    control.put_settings(store, name, after)
+    log_decision(
+        store,
+        name,
+        "policy",
+        token.name,
+        before.model_dump(mode="json"),
+        after.model_dump(mode="json"),
+        f"settings set by {token.name}",
+    )
+    return after
+
+
+@router.get("/profiles/{name}/models/{model_id:path}/status")
+def get_model_status(request: Request, name: str, model_id: str, _: Read = None) -> Any:
+    store = store_of(request)
+    if control.profile(store, name) is None:
+        return error(404, "not_found", f"no profile {name!r}")
+    return control.status(store, name, model_id)
+
+
+@router.put("/profiles/{name}/models/{model_id:path}/status")
+def put_model_status(
+    request: Request,
+    name: str,
+    model_id: str,
+    body: Annotated[dict[str, str], Body()],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    store = store_of(request)
+    if control.profile(store, name) is None:
+        return error(404, "not_found", f"no profile {name!r}")
+    before = control.status(store, name, model_id)
+    try:
+        after = control.put_status(store, name, model_id, body.get("status", ""))
+    except ValueError as exc:
+        return error(400, "bad_status", str(exc))
+    log_decision(
+        store, name, "policy", token.name, before, after, f"model status set by {token.name}"
+    )
+    return after
+
+
+@router.get("/cost-multipliers")
+def get_cost_multipliers(request: Request, _: Read = None) -> dict[str, float]:
+    return control.multipliers(store_of(request))
+
+
+@router.put("/cost-multipliers")
+def put_cost_multipliers(
+    request: Request,
+    body: Annotated[dict[str, float], Body()],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    store = store_of(request)
+    before = control.multipliers(store)
+    try:
+        after = control.put_multipliers(store, body)
+    except ValueError as exc:
+        return error(400, "bad_multiplier", str(exc))
+    for profile in control.profiles(store):
+        log_decision(
+            store,
+            profile.name,
+            "policy",
+            token.name,
+            before,
+            after,
+            f"default cost multipliers set by {token.name}",
+        )
+    return after
+
+
+@router.post("/outcomes")
+def post_outcome(
+    request: Request, outcome: Outcome, token: Annotated[Token, Depends(require_scope("telemetry"))]
+) -> Any:
+    store = store_of(request)
+    if control.profile(store, outcome.profile) is None:
+        return error(404, "not_found", f"no profile {outcome.profile!r}")
+    control.add_outcome(store, outcome)
+    return {"accepted": 1}
+
+
+@router.get("/profiles/{name}/experience")
+def get_experience(request: Request, name: str, _: Read = None) -> Any:
+    store = store_of(request)
+    if control.profile(store, name) is None:
+        return error(404, "not_found", f"no profile {name!r}")
+    return control.experience(store, name)
+
+
+@router.post("/profiles/{name}/preview")
+def preview(
+    request: Request, name: str, body: Annotated[dict[str, Any], Body()], _: Read = None
+) -> Any:
+    cfg, store = config_of(request), store_of(request)
+    found = control.profile(store, name)
+    current = control.settings(store, name)
+    if found is None or current is None:
+        return error(404, "not_found", f"no profile {name!r}")
+    try:
+        proposed = control.update_settings(current, body)
+    except (ValidationError, ValueError) as exc:
+        return error(400, "bad_settings", str(exc))
+    weights = {axis: item.value for axis, item in proposed.weights.items()}
+    candidate = found.model_copy(update={"weights": weights})
+    ranking = rank_profile(
+        cfg, store, candidate, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
+    )
+    ids = control.controlled_ids(
+        store, name, ranking.ranks, proposed.list_length, proposed.floor_score
+    )
+    return {"profile": name, "models": ids, "settings": proposed, "ranking": ranking}
+
+
+@router.get("/profiles/{name}/history")
+def get_profile_history(request: Request, name: str, _: Read = None) -> list[dict[str, Any]]:
+    return [
+        {"who": d.actor, "when": d.at, "what": d.reason, "before": d.before, "after": d.after}
+        for d in store_of(request).decisions(profile=name)
+    ]
+
+
+@router.patch("/profiles/{name}")
+def rename_profile(
+    request: Request,
+    name: str,
+    body: Annotated[dict[str, str], Body()],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    new = str(body.get("name") or "").strip()
+    store = store_of(request)
+    if not _PROFILE_NAME.match(new):
+        return error(400, "bad_request", "a valid new name is required")
+    before = control.profile(store, name)
+    if before is None:
+        return error(404, "not_found", f"no profile {name!r}")
+    try:
+        control.rename(store, name, new)
+    except ValueError:
+        return error(409, "exists", f"a profile named {new!r} already exists")
+    after = control.profile(store, new)
+    log_decision(
+        store,
+        new,
+        "policy",
+        token.name,
+        before.model_dump(mode="json"),
+        after.model_dump(mode="json") if after else None,
+        f"renamed {name} to {new}",
+    )
+    return after
+
+
+@router.delete("/profiles/{name}")
+def delete_profile(
+    request: Request,
+    name: str,
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+    force: bool = False,
+) -> Any:
+    store = store_of(request)
+    if control.profile(store, name) is None:
+        return error(404, "not_found", f"no profile {name!r}")
+    if not force and any(c.write for c in store.connectors()):
+        return error(
+            409, "in_use", "a write connector may still hold this profile combo; use ?force=1"
+        )
+    control.delete(store, name)
+    return {"deleted": name, "actor": token.name}
+
+
+@router.post("/profiles/{name}/apply")
+def apply_profile(
+    request: Request, name: str, token: Annotated[Token, Depends(require_scope("apply"))]
+) -> Any:
+    from sieve.connectors.loop import log_applied, ship
+
+    cfg, store = config_of(request), store_of(request)
+    found = control.profile(store, name)
+    selected = control.settings(store, name)
+    if found is None or selected is None:
+        return error(404, "not_found", f"no profile {name!r}")
+    weights = {axis: item.value for axis, item in selected.weights.items()}
+    found = found.model_copy(update={"weights": weights})
+    ranking = rank_profile(
+        cfg, store, found, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
+    )
+    chain = control.chain_for(store, name, ranking.ranks)
+    if chain is None:
+        return error(409, "empty_list", "no reachable models remain")
+    store.put_ranking(ranking)
+    store.put_chain(chain)
+    results = []
+    for connector in store.connectors():
+        if connector.write:
+            results.append(ship(store, connector, [chain]))
+            log_applied(store, connector, [chain], token.name)
+    return {"chain": chain, "results": results}
+
+
 @router.post("/profiles/{name}/evaluate")
 def evaluate(request: Request, name: str, authorization: Auth = None, _: Read = None) -> Any:
     """Dry run: ranking, chain and the decision that would be taken. Nothing stored."""
     cfg, store = config_of(request), store_of(request)
     try:
-        profile = load_profile(cfg, name)
+        profile = load_profile(cfg, name, store)
     except OwnerMissingError:
         return not_built(Ranking, "B", "sieve.profiles.load")
     if profile is None:

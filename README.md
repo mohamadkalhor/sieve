@@ -176,6 +176,18 @@ Two kinds ship: `openai_compat`, which can only be read, and `ninerouter`,
 which is read the same way and written through its admin API. Adding a third is
 one file in `sieve/connectors/` and one line in its registry.
 
+## Profiles: the list you control
+
+A profile owns one ordered model list. `GET/PUT /v1/profiles/{name}/settings`
+controls its length, score floor, bounded axis weights, experience share, and
+per-provider price multipliers. Models are `active`, `pinned`, or `removed`;
+pins stay first in pin order and removed models never ship. Preview a partial
+settings change without saving at `POST /v1/profiles/{name}/preview`, then
+`POST /v1/profiles/{name}/apply` sends that exact list to every write-enabled
+connector. Outcomes reported to `/v1/outcomes` provide a 30-day,
+Laplace-smoothed experience axis. Profiles and their settings live in SQLite;
+the shipped YAML is imported only when the store has no profiles.
+
 ## Let your agents steer it
 
 ```bash

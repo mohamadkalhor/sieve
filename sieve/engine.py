@@ -296,6 +296,29 @@ def rank_profile(
     )
     costs, costed_from_telemetry = add_cost_observations(obs, profile, at, measured_tokens)
     local = store.local_ids()
+    # A router-local prefix can carry a negotiated price multiplier. Since one
+    # canonical model may be available through several prefixes, use its cheapest
+    # reachable effective price; profile overrides win over defaults.
+    try:
+        from sieve.profiles import control
+
+        configured = control.settings(store, profile.name)
+        defaults = control.multipliers(store)
+        overrides = configured.cost_multipliers if configured else {}
+        for model_id, amount in list(costs.items()):
+            factors = [
+                overrides.get(i.split("/", 1)[0], defaults.get(i.split("/", 1)[0], 1.0))
+                for i in local.get(model_id, [])
+            ]
+            if factors:
+                costs[model_id] = amount * min(factors)
+                # replace the just-added cost observation used by the axis
+                bucket = obs.latest.get(model_id, {})
+                key = (COST_SOURCE, COST_FIELD)
+                if key in bucket:
+                    bucket[key] = bucket[key].model_copy(update={"value": costs[model_id]})
+    except (RuntimeError, AttributeError):
+        pass
 
     # what a source publishes about the model, with the gateway's own view of
     # this deployment laid over the top
@@ -371,6 +394,30 @@ def rank_profile(
         dominated = pareto.pareto_prune(rows, profile.weights)
 
     scored = weigh_mod.weigh(profile, axes_by_model)
+
+    # Experience is deliberately profile-local: Laplace smoothing gives an
+    # untried model a neutral 0.5 and avoids one lucky call becoming certainty.
+    try:
+        from sieve.profiles import control
+
+        selected = control.settings(store, profile.name)
+        if selected and selected.experience_weight:
+            observed = {
+                row["model_id"]: row["experience"]
+                for row in control.experience(store, profile.name, at)
+            }
+            share = selected.experience_weight
+            for model_id, (score, confidence, contributions) in list(scored.items()):
+                value = observed.get(model_id, 0.5)
+                contributions = {**contributions, "experience": share * value}
+                scored[model_id] = (
+                    (1.0 - share) * score + share * value,
+                    confidence,
+                    contributions,
+                )
+                axes_by_model[model_id]["experience"] = (value, 1.0)
+    except (RuntimeError, AttributeError):
+        pass
 
     health_mod = deps.health
     health_by_model: dict[str, float] = {}

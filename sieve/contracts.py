@@ -7,7 +7,7 @@ Code follows this module; this module does not follow code.
 from __future__ import annotations
 
 import os
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal, Protocol, get_args, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -292,6 +292,34 @@ class Policy(_Model):
     suspend_below_health: float = 0.75
     auto_apply: bool = False
     require_telemetry: bool = False
+
+
+class WeightSetting(_Model):
+    value: float = Field(ge=0.0, le=1.0)
+    min: float = Field(default=0.0, ge=0.0, le=1.0)
+    max: float = Field(default=1.0, ge=0.0, le=1.0)
+    locked: bool = False
+
+
+class ProfileSettings(_Model):
+    list_length: int = Field(default=5, ge=1, le=100)
+    floor_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    price_sensitivity: float = Field(default=1.0, ge=0.0, le=1.0)
+    experience_weight: float = Field(default=0.0, ge=0.0, le=1.0)
+    weights: dict[str, WeightSetting] = Field(default_factory=dict)
+    cost_multipliers: dict[str, float] = Field(default_factory=dict)
+    auto_apply: bool = False
+
+
+class Outcome(_Model):
+    profile: str
+    model_id: str
+    local_id: str
+    ok: bool
+    seconds: float = Field(ge=0)
+    vote: int = Field(ge=-1, le=1)
+    note: str | None = None
+    at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class Profile(_Model):
