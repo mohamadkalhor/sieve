@@ -915,6 +915,11 @@
     background: color-mix(in oklab, var(--accent) 8%, transparent);
     border-radius: 6px;
   }
+  /* the "nothing here" line is a sentence, not a row: it gets the whole width */
+  ol.live li.small {
+    display: block;
+    border-bottom: none;
+  }
   ol.live li.pinned .pos {
     color: var(--accent);
   }
