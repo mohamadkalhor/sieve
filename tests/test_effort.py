@@ -21,7 +21,6 @@ from sieve.catalog.effort import EFFORT_ORDER, effort_of, effort_rank, family_of
 from sieve.catalog.match import Matcher
 from sieve.contracts import SourceConfig
 from sieve.http import FixturePlayer
-from sieve.scoring.efforts import choose_efforts
 from sieve.sources import AALLMSource
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -189,149 +188,36 @@ def test_no_mode_ever_collapses_onto_another(pull: object) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _sol_family() -> dict[str, tuple[str | None, str | None]]:
+def test_every_mode_of_a_family_ranks_on_its_own_merits() -> None:
+    """The modes used to be thinned out before scoring, by `prefer_effort`.
+
+    One family would put six rows in the pool and a preference picked one of
+    them -- "best", or the cheapest that cleared a floor -- before the weights
+    were applied. That is a second opinion about the same question the weights
+    answer, so it is gone: every mode is a row, each is scored, and a profile
+    that cares about cost seats the cheap mode by scoring it higher.
+    """
+    from sieve.contracts import Profile
+    from sieve.scoring import weigh
+    from sieve.scoring.weigh import rank_order
+
     base = "openai/gpt-5-6-sol"
-    return {
-        base: (base, "max"),
-        f"{base}-xhigh": (base, "xhigh"),
-        f"{base}-high": (base, "high"),
-        f"{base}-medium": (base, "medium"),
-        f"{base}-low": (base, "low"),
-        f"{base}-non-reasoning": (base, "non-reasoning"),
+    modes = {
+        base: 0.95,
+        f"{base}-high": 0.90,
+        f"{base}-low": 0.70,
+    }
+    rows: dict[str, dict[str, tuple[float | None, float]]] = {
+        model_id: {"intelligence": (value, 1.0), "cost": (1.0 - value, 1.0)}
+        for model_id, value in modes.items()
     }
 
+    clever = Profile(name="clever", modality="llm", purpose="t", weights={"intelligence": 1.0})
+    thrifty = Profile(name="thrifty", modality="llm", purpose="t", weights={"cost": 1.0})
 
-def test_cheapest_clearing_seats_a_lower_mode_than_best() -> None:
-    """The comparison the brief asks for, on one family's real mode set."""
-    family = _sol_family()
-
-    best_aside = choose_efforts(family, "best")
-    cheap_aside = choose_efforts(family, "cheapest_clearing")
-
-    best_kept = (set(family) - set(best_aside)).pop()
-    cheap_kept = (set(family) - set(cheap_aside)).pop()
-
-    assert best_kept == "openai/gpt-5-6-sol", "best takes the max mode"
-    assert cheap_kept == "openai/gpt-5-6-sol-non-reasoning", "cheapest takes the lowest standing"
-    assert effort_rank(family[cheap_kept][1]) < effort_rank(family[best_kept][1])
-
-
-def test_cheapest_clearing_only_chooses_among_modes_that_already_cleared() -> None:
-    """A mode a constraint rejected must not come back because it is cheaper."""
-    family = _sol_family()
-    del family["openai/gpt-5-6-sol-non-reasoning"]  # excluded upstream
-    del family["openai/gpt-5-6-sol-low"]
-
-    kept = (set(family) - set(choose_efforts(family, "cheapest_clearing"))).pop()
-    assert kept == "openai/gpt-5-6-sol-medium"
-
-
-def test_a_pinned_mode_falls_back_downwards_never_upwards() -> None:
-    """Pinning a mode a family does not publish must never cost more."""
-    family = {
-        "x/m": ("x/m", "max"),
-        "x/m-low": ("x/m", "low"),
-    }
-    kept = (set(family) - set(choose_efforts(family, "medium"))).pop()
-    assert kept == "x/m-low", "medium is unpublished here, so the nearest lower mode wins"
-
-    exact = (set(family) - set(choose_efforts(family, "max"))).pop()
-    assert exact == "x/m"
-
-
-def test_a_family_of_one_and_an_unset_preference_are_both_left_alone() -> None:
-    family = _sol_family()
-    assert choose_efforts(family, None) == {}
-    assert choose_efforts({"x/only": ("x/only", "high")}, "cheapest_clearing") == {}
-
-
-def test_the_set_aside_reason_names_the_mode_that_won() -> None:
-    aside = choose_efforts(_sol_family(), "cheapest_clearing")
-    assert aside, "five of the six are set aside"
-    for reason in aside.values():
-        assert reason.startswith("effort:non-reasoning preferred for openai/gpt-5-6-sol")
-
-
-def test_a_mistyped_prefer_effort_is_caught_by_check() -> None:
-    """Silent and expensive otherwise: an unknown value would fall through to
-    the pinned-mode branch, match no mode, and seat the lowest of every family."""
-    from sieve.contracts import Profile
-    from sieve.profiles.validate import validate_profile
-
-    typo = Profile(
-        name="x",
-        modality="llm",
-        purpose="t",
-        weights={"cost": 1.0},
-        prefer_effort="higest",
-    )
-    assert any(
-        "prefer_effort 'higest' is not a mode" in problem for problem in validate_profile(typo)
-    )
-
-    # a floor is required with cheapest_clearing, so the valid case carries one
-    fine = typo.model_copy(
-        update={"prefer_effort": "cheapest_clearing", "require": {"min_axis": {"cost": 0.4}}}
-    )
-    assert not any("prefer_effort" in problem for problem in validate_profile(fine))
-
-
-def test_cheapest_clearing_without_a_floor_fails_check() -> None:
-    """A setting that always seats the bottom of the ladder is a bug, not a choice."""
-    from sieve.contracts import Profile, Shape
-    from sieve.profiles.validate import validate_profile
-
-    naked = Profile(
-        name="x",
-        modality="llm",
-        purpose="t",
-        weights={"cost": 1.0},
-        prefer_effort="cheapest_clearing",
-        shape=Shape.model_validate({"in": 10, "out": 10}),
-    )
-    assert any("sets no floor to clear" in p for p in validate_profile(naked))
-
-    # any require constraint counts, not only a min_axis
-    gated = naked.model_copy(update={"require": {"tools": True}})
-    assert not any("sets no floor to clear" in p for p in validate_profile(gated))
-
-    # a min_axis on an axis the profile does not weight is not a floor it clears
-    unweighted = naked.model_copy(update={"require": {"min_axis": {"reasoning": 0.9}}})
-    assert any("sets no floor to clear" in p for p in validate_profile(unweighted))
-
-
-def test_prefer_effort_is_rejected_on_a_media_profile() -> None:
-    """Effort modes are an LLM thing; silently ignoring the setting is how it rots."""
-    from sieve.contracts import Profile
-    from sieve.profiles.validate import validate_profile
-
-    media = Profile(
-        name="y",
-        modality="text-to-image",
-        purpose="t",
-        weights={"quality": 1.0},
-        prefer_effort="best",
-    )
-    assert any("only meaningful for an llm profile" in p for p in validate_profile(media))
-
-
-def test_every_shipped_profile_passes_both_guards() -> None:
-    """The nine seats set in this commit, checked as shipped."""
-    from pathlib import Path
-
-    from sieve.profiles.load import load_profiles
-    from sieve.profiles.validate import validate_profile
-
-    repo = Path(__file__).resolve().parents[1]
-    profiles = {p.name: p for p in load_profiles(repo / "profiles")}
-
-    assert profiles["reasoner"].prefer_effort == "best"
-    cheapest = [n for n, p in profiles.items() if p.prefer_effort == "cheapest_clearing"]
-    assert len(cheapest) == 8, cheapest
-    assert all(p.prefer_effort is None for p in profiles.values() if p.modality != "llm")
-
-    for profile in profiles.values():
-        assert not [p for p in validate_profile(profile) if "prefer_effort" in p]
+    assert rank_order(weigh(clever, rows))[0] == base
+    assert rank_order(weigh(thrifty, rows))[0] == f"{base}-low"
+    assert len(rank_order(weigh(clever, rows))) == 3, "no mode is set aside"
 
 
 def test_a_fold_rewrites_the_family_pointer_too() -> None:
@@ -385,30 +271,3 @@ def test_a_fold_rewrites_the_family_pointer_too() -> None:
 
     # and the folded row keeps the id it arrived under, as an alias
     assert "openai/gpt-5-6-luna" in by_id["openai/gpt-5.6-luna"].aliases
-
-
-def test_inheritance_reaches_a_family_whose_base_row_was_folded() -> None:
-    """The fix above, seen from the end that matters: capabilities arrive."""
-    from sieve.contracts import Capability, ModelRef
-    from sieve.engine import inherit_family_capabilities
-
-    def mode(model_id: str, effort: str | None) -> ModelRef:
-        return ModelRef(
-            id=model_id,
-            modality="llm",
-            name=model_id,
-            creator="openai",
-            effort=effort,
-            family="openai/gpt-5.6-luna",
-        )
-
-    models = [
-        mode("openai/gpt-5.6-luna", "max"),
-        mode("openai/gpt-5-6-luna-high", "high"),
-        mode("openai/gpt-5-6-luna-low", "low"),
-    ]
-    caps = {"openai/gpt-5.6-luna": Capability(tools=True, context_window=400_000)}
-
-    out = inherit_family_capabilities(caps, models)
-    assert out["openai/gpt-5-6-luna-high"].tools is True
-    assert out["openai/gpt-5-6-luna-low"].context_window == 400_000

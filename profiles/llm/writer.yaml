@@ -1,7 +1,9 @@
+# Long-form prose to a brief: following the brief is most of the job, and the
+# voice matters more than the last point of capability.
+
 name: writer
 modality: llm
-purpose: long-form prose to a brief
-...
+purpose: "long-form prose to a brief"
 weights:
   instruction: 0.4
   intelligence: 0.3

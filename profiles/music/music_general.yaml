@@ -1,7 +1,9 @@
+# Both music leaderboards, weighted evenly. A brief that names vocals or an
+# instrumental should weight one of them instead -- they are two contests.
+
 name: music_general
 modality: music
-purpose: generating music where vocals may or may not be wanted
-...
+purpose: "generating music where vocals may or may not be wanted"
 weights:
   instrumental: 0.5
   with_vocals: 0.5

@@ -1,7 +1,6 @@
 name: video_general
 modality: text-to-video
-purpose: everyday video generation
-...
+purpose: "everyday video generation"
 weights:
   quality: 0.7
   maturity: 0.2

@@ -1,7 +1,9 @@
+# Reading something long: the context window is the job, and at 200k input
+# tokens a task the price per task is felt.
+
 name: reader
 modality: llm
-purpose: summarising and answering over a large input
-...
+purpose: "summarising and answering over a large input"
 weights:
   long_context: 0.45
   cost: 0.35

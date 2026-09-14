@@ -1,7 +1,6 @@
 name: video_edit_general
 modality: video-editing
-purpose: editing an existing clip
-...
+purpose: "editing an existing clip"
 weights:
   quality: 0.7
   maturity: 0.2

@@ -1,7 +1,9 @@
+# The seat you reach for having already decided the answer matters more than
+# the bill.
+
 name: reasoner
 modality: llm
-purpose: hard problems where thinking time is worth paying for
-...
+purpose: "hard problems where thinking time is worth paying for"
 weights:
   reasoning: 0.5
   math: 0.2

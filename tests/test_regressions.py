@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from sieve import cli
-from sieve.contracts import ObsTable, Price, Profile, Shape
+from sieve.contracts import ObsTable, Price, Profile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -86,7 +86,7 @@ def test_cost_reaches_a_model_that_has_a_price_and_no_benchmark() -> None:
     `sieve pull openrouter` -- the first command in the README -- therefore
     ranked nothing at all, and said so as if there were no models.
     """
-    from sieve.engine import COST_FIELD, COST_SOURCE, add_cost_observations
+    from sieve.engine import COST_FIELD, COST_SOURCE, SHAPES, add_cost_observations
 
     at = datetime(2026, 1, 1, tzinfo=UTC)
     obs = ObsTable(modality="llm")
@@ -105,76 +105,16 @@ def test_cost_reaches_a_model_that_has_a_price_and_no_benchmark() -> None:
         modality="llm",
         purpose="volume work",
         weights={"cost": 1.0},
-        shape=Shape(in_tokens=2000, out_tokens=500),
     )
     costs, from_telemetry = add_cost_observations(obs, profile, at)
-    assert from_telemetry == set(), "no telemetry here, so cost is the shape's"
+    assert from_telemetry == set(), "no telemetry here, so cost is the modality's shape"
 
-    assert costs["vendor/priced-only"] == pytest.approx(1.0 * 0.002 + 2.0 * 0.0005)
+    shape = SHAPES["llm"]
+    expected = (shape.in_tokens or 0) * 1.0 / 1e6 + (shape.out_tokens or 0) * 2.0 / 1e6
+    assert costs["vendor/priced-only"] == pytest.approx(expected)
     assert obs.models() == ["vendor/priced-only"]
     injected = obs.get("vendor/priced-only", COST_SOURCE, COST_FIELD)
     assert injected is not None and injected.unit == "usd_per_task"
-
-
-# --------------------------------------------------------------------------- #
-# an effort mode inherits what it can do from the model it is a mode of
-# --------------------------------------------------------------------------- #
-
-
-def test_an_effort_mode_inherits_its_familys_capabilities() -> None:
-    """Nothing publishes capabilities per mode, so a mode had none at all.
-
-    Artificial Analysis is the only source that lists the modes and publishes no
-    capabilities whatsoever; OpenRouter publishes them and carries only the base
-    id. So `gpt-5-6-sol-high` arrived with no tools, no context window and no
-    reasoning, and every profile with a `require:` block excluded every mode it
-    had -- reported as "excluded by tools", which reads as a fact about the
-    model rather than a hole in the catalogue.
-
-    That made PLAN 2.1a unreachable: the modes were split into their own rows
-    and then none of them could ever be seated.
-    """
-    from sieve.contracts import Capability, ModelRef
-    from sieve.engine import inherit_family_capabilities
-
-    base = ModelRef(
-        id="openai/gpt-6-astra",
-        modality="llm",
-        name="GPT-6 Astra",
-        creator="openai",
-        family="openai/gpt-6-astra",
-        effort="max",
-    )
-    high = base.model_copy(update={"id": "openai/gpt-6-astra-high", "effort": "high"})
-    low = base.model_copy(update={"id": "openai/gpt-6-astra-low", "effort": "low"})
-    stranger = ModelRef(id="other/thing", modality="llm", name="Thing", creator="other")
-
-    caps = {
-        "openai/gpt-6-astra": Capability(tools=True, context_window=400_000, reasoning=True),
-        # the mode publishes one thing for itself, and it must win
-        "openai/gpt-6-astra-low": Capability(reasoning=False),
-    }
-
-    out = inherit_family_capabilities(caps, [base, high, low, stranger])
-
-    assert out["openai/gpt-6-astra-high"].tools is True, "the mode can be given tools"
-    assert out["openai/gpt-6-astra-high"].context_window == 400_000
-
-    assert out["openai/gpt-6-astra-low"].tools is True, "inherited"
-    assert out["openai/gpt-6-astra-low"].reasoning is False, "and its own value wins"
-
-    assert "other/thing" not in out, "a model in no family inherits nothing"
-    assert out["openai/gpt-6-astra"] == caps["openai/gpt-6-astra"], "the base is untouched"
-
-
-def test_a_family_with_no_capabilities_anywhere_inherits_nothing() -> None:
-    """Not every family has a base OpenRouter carries. That is not a failure."""
-    from sieve.contracts import ModelRef
-    from sieve.engine import inherit_family_capabilities
-
-    base = ModelRef(id="v/m", modality="llm", name="M", creator="v", family="v/m", effort="max")
-    high = base.model_copy(update={"id": "v/m-high", "effort": "high"})
-    assert inherit_family_capabilities({}, [base, high]) == {}
 
 
 def test_two_sources_that_disagree_about_one_price_are_surfaced(tmp_path: Path) -> None:

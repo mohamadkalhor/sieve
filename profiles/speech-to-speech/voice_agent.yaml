@@ -1,7 +1,9 @@
+# A voice agent is judged on holding a conversation, which is the one thing
+# Artificial Analysis measures here.
+
 name: voice_agent
 modality: speech-to-speech
-purpose: a voice-to-voice agent a person talks to
-...
+purpose: "a voice-to-voice agent a person talks to"
 weights:
   conversation: 1.0
 ship: 3

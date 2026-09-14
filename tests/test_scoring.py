@@ -20,25 +20,23 @@ import pytest
 from sieve.contracts import (
     AxisScore,
     Chain,
-    Policy,
     Profile,
     Rank,
     Ranking,
-    Shape,
     TelemetryEvent,
 )
 from sieve.scoring import (
+    TaskShape,
     apply_transform,
     cost_per_task,
     decide,
     explain,
     health,
-    pareto_prune,
     percentile,
+    shipped,
     weigh,
 )
 from sieve.scoring.health import health_series
-from sieve.scoring.pareto import dominates
 from sieve.scoring.weigh import rank_order
 
 FIXTURE = Path(__file__).parent / "fixtures" / "rank_case.json"
@@ -104,7 +102,7 @@ def _profile_from(case: dict[str, Any]) -> Profile:
         modality=body["modality"],
         purpose=body["purpose"],
         weights=body["weights"],
-        policy=Policy(**body["policy"]),
+        ship=body["policy"]["chain"],
     )
 
 
@@ -129,20 +127,32 @@ def test_weigh_reproduces_the_shared_fixture_exactly() -> None:
         for axis, value in contributions.items():
             assert value == pytest.approx(expected["contributions"][model_id][axis], abs=1e-6)
 
-    kept = {m: v for m, v in scored.items() if v[1] >= profile.policy.min_confidence}
-    assert rank_order(kept) == expected["order"]
+    # m11 is the model with an unmeasured axis. The fixture's expected order
+    # predates this rebuild and leaves it out, because a confidence floor used
+    # to exclude it; nothing excludes it now, so it ranks where its score puts
+    # it and the rest of the order is unchanged.
+    assert [m for m in rank_order(scored) if m != "m11"] == expected["order"]
 
 
-def test_the_confidence_floor_excludes_the_unmeasured_model() -> None:
+def test_an_unmeasured_axis_costs_confidence_and_excludes_nobody() -> None:
+    """The model with a gap ranks low. It is not thrown out for having one.
+
+    A confidence floor used to remove it by name, which is how a slider came to
+    have no visible effect on models nobody had benchmarked yet: they were gone
+    before the weights were applied.
+    """
     case = _case()
     profile = _profile_from(case)
     scored = weigh(profile, _axes_by_model(case))
 
-    _score, confidence, contributions = scored["m11"]
+    score, confidence, contributions = scored["m11"]
     assert contributions["c"] == 0.0, "an unmeasured axis contributes nothing"
     assert confidence == pytest.approx(0.7, abs=1e-9), "and the loss shows up here"
-    assert confidence < profile.policy.min_confidence
-    assert "m11" not in case["expected"]["order"]
+    assert score == pytest.approx(case["expected"]["scores"]["m11"], abs=1e-6)
+
+    order = rank_order(scored)
+    assert "m11" in order, "a gap in the evidence is not a reason to disappear"
+    assert order.index("m11") > order.index("m07"), "it ranks where its score puts it"
 
 
 def test_unweighted_axes_are_ignored_entirely() -> None:
@@ -188,49 +198,6 @@ def test_raising_a_weight_never_demotes_the_model_best_on_that_axis() -> None:
             assert position <= previous, f"raising `a` demoted the best model on `a` at {share}"
         previous = position
     assert previous == 0, "at weight 0.95 on `a`, the best model on `a` must lead"
-
-
-# --------------------------------------------------------------------------- #
-# Pareto
-# --------------------------------------------------------------------------- #
-
-
-def test_pareto_prunes_only_what_is_strictly_beaten() -> None:
-    weights = {"a": 0.5, "b": 0.5}
-    rows: dict[str, dict[str, float | None]] = {
-        "good": {"a": 0.9, "b": 0.9},
-        "equal": {"a": 0.9, "b": 0.9},
-        "worse_on_one": {"a": 0.9, "b": 0.5},
-        "trade_off": {"a": 0.4, "b": 0.99},
-    }
-    dominated = pareto_prune(rows, weights)
-
-    assert "equal" not in dominated, "a model equal on every axis is not dominated"
-    assert dominated.get("worse_on_one") in ("good", "equal")
-    assert "trade_off" not in dominated, "better on one axis is never dominated"
-
-
-def test_pareto_skips_axes_nobody_measured() -> None:
-    rows: dict[str, dict[str, float | None]] = {
-        "measured": {"a": 0.9, "b": None},
-        "new": {"a": 0.5, "b": None},
-    }
-    dominated = pareto_prune(rows, {"a": 0.5, "b": 0.5})
-    assert dominated == {"new": "measured"}, "the comparison uses the axis that exists"
-
-    unknown: dict[str, dict[str, float | None]] = {
-        "one": {"a": None},
-        "two": {"a": None},
-    }
-    assert pareto_prune(unknown, {"a": 1.0}) == {}, "no evidence prunes nothing"
-
-
-def test_pareto_ignores_axes_the_profile_does_not_weight() -> None:
-    rows: dict[str, dict[str, float | None]] = {
-        "x": {"a": 0.9, "ignored": 0.1},
-        "y": {"a": 0.5, "ignored": 0.99},
-    }
-    assert pareto_prune(rows, {"a": 1.0}) == {"y": "x"}
 
 
 # --------------------------------------------------------------------------- #
@@ -292,78 +259,99 @@ def _rank(model_id: str, final: float, *, health_value: float = 1.0, position: i
 
 
 def _ranking(*ranks: Rank) -> Ranking:
+    """A ranking as the engine builds one: reachable models, best first."""
     best_first = sorted(ranks, key=lambda r: (-r.final, r.model_id))
-    ordered = [r.model_copy(update={"position": i}) for i, r in enumerate(best_first, start=1)]
+    ordered = [
+        r.model_copy(update={"position": i if r.reachable else 0})
+        for i, r in enumerate(best_first, start=1)
+    ]
     return Ranking(profile="coder", modality="llm", computed_at=NOW, snapshot="s1", ranks=ordered)
 
 
-def _profile(**policy: Any) -> Profile:
+def _profile(ship: int = 4) -> Profile:
     return Profile(
         name="coder",
         modality="llm",
         purpose="agentic coding",
         weights={"a": 1.0},
-        policy=Policy(**{"margin": 3.0, "max_tenure_days": 14, **policy}),
+        ship=ship,
     )
 
 
-def _incumbent(model_id: str, *, days: int = 1) -> Chain:
+def _incumbent(*model_ids: str, days: int = 1) -> Chain:
     return Chain(
         profile="coder",
         computed_at=NOW - timedelta(days=days),
-        primary=model_id,
-        fallbacks=[],
-        incumbent=model_id,
+        primary=model_ids[0],
+        fallbacks=list(model_ids[1:]),
+        incumbent=model_ids[0],
         incumbent_since=NOW - timedelta(days=days),
     )
 
 
-def test_plus_one_point_holds_at_margin_three() -> None:
-    ranking = _ranking(_rank("new/model", 0.81), _rank("old/model", 0.80))
-    chain, decision = decide(_profile(), _incumbent("old/model"), ranking, NOW)
+def test_the_list_is_the_top_ship_reachable_models_in_score_order() -> None:
+    ranking = _ranking(*[_rank(f"m/{i}", 0.9 - i / 100) for i in range(8)])
+    chain, decision = decide(_profile(ship=3), None, ranking, NOW)
+
+    assert chain is not None
+    assert [chain.primary, *chain.fallbacks] == ["m/0", "m/1", "m/2"]
+    assert chain.local["m/0"] == ["gw/0"]
+    assert decision is not None and decision.kind == "switch"
+
+
+def test_a_tenth_of_a_point_moves_the_list_because_nothing_holds_it_back() -> None:
+    """There is no margin any more. The score is the whole argument.
+
+    A challenger used to have to clear three points on a hundred-point scale,
+    which meant the list could disagree with the weights for weeks and the
+    reason was invisible on the page.
+    """
+    ranking = _ranking(_rank("new/model", 0.801), _rank("old/model", 0.80))
+    chain, decision = decide(_profile(ship=1), _incumbent("old/model"), ranking, NOW)
+
+    assert chain is not None and chain.primary == "new/model"
+    assert decision is not None and decision.kind == "switch"
+    assert decision.reason.startswith("switch: the list changed, new/model leads")
+    assert chain.incumbent_since == NOW, "a list that changed starts its tenure now"
+
+
+def test_an_unchanged_list_is_a_hold_and_keeps_its_tenure() -> None:
+    ranking = _ranking(_rank("old/model", 0.80), _rank("new/model", 0.70))
+    incumbent = _incumbent("old/model", "new/model", days=9)
+    chain, decision = decide(_profile(ship=2), incumbent, ranking, NOW)
 
     assert decision is not None and decision.kind == "hold"
-    assert decision.reason == "hold: challenger new/model +1.0 inside margin 3.0"
-    assert chain is not None and chain.primary == "old/model", "a hold changes nothing"
+    assert decision.reason == "hold: the list is unchanged, old/model still leads"
+    assert chain is not None and [chain.primary, *chain.fallbacks] == ["old/model", "new/model"]
+    assert chain.incumbent_since == incumbent.incumbent_since
 
 
-def test_plus_four_points_switches() -> None:
-    ranking = _ranking(_rank("new/model", 0.84), _rank("old/model", 0.80))
-    chain, decision = decide(_profile(), _incumbent("old/model"), ranking, NOW)
-
-    assert decision is not None and decision.kind == "switch"
-    assert decision.reason.startswith("switch: new/model over old/model by +4.0, margin 3.0")
-    assert chain is not None and chain.primary == "new/model"
-    assert chain.incumbent_since == NOW, "a new primary starts its tenure now"
-
-
-def test_a_fifteen_day_incumbent_loses_to_a_tenth_of_a_point() -> None:
-    ranking = _ranking(_rank("new/model", 0.801), _rank("old/model", 0.80))
-    chain, decision = decide(_profile(), _incumbent("old/model", days=15), ranking, NOW)
-
-    assert decision is not None and decision.kind == "switch"
-    assert decision.reason.startswith("switch: tenure 15 d > 14 d, margin waived")
-    assert chain is not None and chain.primary == "new/model"
-
-
-def test_health_below_the_threshold_suspends_the_incumbent() -> None:
-    ranking = _ranking(_rank("old/model", 0.80 * 0.6, health_value=0.6), _rank("new/model", 0.70))
+def test_a_reordering_below_the_primary_is_still_a_change() -> None:
+    """The fallbacks are part of the routing instruction, not decoration."""
+    ranking = _ranking(_rank("a/one", 0.9), _rank("c/three", 0.8), _rank("b/two", 0.7))
     chain, decision = decide(
-        _profile(suspend_below_health=0.75), _incumbent("old/model"), ranking, NOW
+        _profile(ship=3), _incumbent("a/one", "b/two", "c/three"), ranking, NOW
     )
 
-    assert decision is not None and decision.kind == "suspend"
-    assert "health 0.60 < 0.75" in decision.reason
+    assert decision is not None and decision.kind == "switch"
+    assert chain is not None
+    assert [chain.primary, *chain.fallbacks] == ["a/one", "c/three", "b/two"]
+
+
+def test_a_model_that_stopped_working_falls_out_by_scoring_lower() -> None:
+    """Health is multiplied into the score, so it needs no veto of its own."""
+    sick = _rank("old/model", 0.80 * 0.4, health_value=0.4)
+    ranking = _ranking(sick, _rank("new/model", 0.70))
+    chain, decision = decide(_profile(ship=1), _incumbent("old/model"), ranking, NOW)
+
     assert chain is not None and chain.primary == "new/model"
+    assert decision is not None and decision.kind == "switch"
 
 
-def test_a_hold_returns_the_incumbent_chain_untouched() -> None:
-    incumbent = _incumbent("old/model", days=2)
-    ranking = _ranking(_rank("new/model", 0.815), _rank("old/model", 0.80))
-    chain, decision = decide(_profile(), incumbent, ranking, NOW)
-
-    assert decision is not None and decision.kind == "hold"
-    assert chain is incumbent, "a hold must not rewrite the chain, not even identically"
+def test_ship_is_a_ceiling_not_a_promise() -> None:
+    ranking = _ranking(_rank("m/0", 0.9), _rank("m/1", 0.8))
+    chain, _ = decide(_profile(ship=6), None, ranking, NOW)
+    assert chain is not None and [chain.primary, *chain.fallbacks] == ["m/0", "m/1"]
 
 
 def test_decide_is_deterministic() -> None:
@@ -375,27 +363,27 @@ def test_decide_is_deterministic() -> None:
     assert first[1].reason == second[1].reason and first[1].kind == second[1].kind
 
 
-def test_the_chain_is_cut_to_the_policy_length() -> None:
-    ranking = _ranking(*[_rank(f"m/{i}", 0.9 - i / 100) for i in range(8)])
-    chain, _ = decide(_profile(chain=3), None, ranking, NOW)
-    assert chain is not None
-    assert [chain.primary, *chain.fallbacks] == ["m/0", "m/1", "m/2"]
-    assert chain.local["m/0"] == ["gw/0"]
-
-
 def test_nothing_reachable_is_a_hold_not_a_crash() -> None:
     ranking = Ranking(
         profile="coder",
         modality="llm",
         computed_at=NOW,
         snapshot="s1",
-        ranks=[_rank("m/1", 0.9).model_copy(update={"reachable": False})],
+        ranks=[_rank("m/1", 0.9, position=0).model_copy(update={"reachable": False})],
     )
     chain, decision = decide(_profile(), None, ranking, NOW)
     assert chain is None
     assert (
         decision is not None and decision.reason == "hold: nothing reachable ranks for this profile"
     )
+
+
+def test_an_unreachable_model_never_ships_even_if_it_scores_best() -> None:
+    ranking = _ranking(
+        _rank("far/best", 0.99).model_copy(update={"reachable": False}),
+        _rank("near/second", 0.5),
+    )
+    assert [r.model_id for r in shipped(ranking, 4)] == ["near/second"]
 
 
 # --------------------------------------------------------------------------- #
@@ -499,7 +487,7 @@ def test_explain_says_so_when_no_single_weight_can_flip_it() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_cost_per_task_uses_the_profile_shape() -> None:
+def test_cost_per_task_uses_the_modality_shape() -> None:
     from sieve.contracts import Price
 
     price = Price(
@@ -511,13 +499,13 @@ def test_cost_per_task_uses_the_profile_shape() -> None:
         cached_input=0.3,
         observed_at=NOW,
     )
-    shape = Shape.model_validate({"in": 30000, "out": 4000, "cached": 0.5})
+    shape = TaskShape(in_tokens=30000, out_tokens=4000, cached=0.5)
     # 15000 fresh at $3 + 15000 cached at $0.30 + 4000 out at $15, per 1M
     expected = (15000 * 3 + 15000 * 0.3 + 4000 * 15) / 1_000_000
     assert cost_per_task(price, shape) == pytest.approx(expected)
 
     assert cost_per_task(None, shape) is None, "an unknown price is not a free model"
-    assert cost_per_task(price, Shape()) is None
+    assert cost_per_task(price, TaskShape()) is None
 
 
 def test_media_cost_per_task() -> None:
@@ -526,21 +514,23 @@ def test_media_cost_per_task() -> None:
     per_second = Price(
         model_id="a/b", source="aa_media", unit="usd_per_second", per_unit=0.35, observed_at=NOW
     )
-    assert cost_per_task(per_second, Shape(seconds=8)) == pytest.approx(2.8)
+    assert cost_per_task(per_second, TaskShape(seconds=8)) == pytest.approx(2.8)
 
     per_image = Price(
         model_id="a/b", source="aa_media", unit="usd_per_image", per_unit=0.03, observed_at=NOW
     )
-    assert cost_per_task(per_image, Shape(images=4)) == pytest.approx(0.12)
+    assert cost_per_task(per_image, TaskShape(images=4)) == pytest.approx(0.12)
 
 
 # --------------------------------------------------------------------------- #
-# pareto pruning, against the real field
+# the real field: nothing is taken out of it
 # --------------------------------------------------------------------------- #
 
 
-def _real_llm_rows(profile_name: str) -> tuple[dict[str, dict[str, float | None]], object]:
-    """Axis values for one profile over the recorded Artificial Analysis field."""
+def _real_llm_rows(
+    profile_name: str,
+) -> tuple[dict[str, dict[str, tuple[float | None, float]]], Profile]:
+    """Axis values and coverage for one profile over the recorded AA field."""
     import os
 
     os.environ.setdefault("ARTIFICIAL_ANALYSIS_API_KEY", "fixture")
@@ -574,54 +564,48 @@ def _real_llm_rows(profile_name: str) -> tuple[dict[str, dict[str, float | None]
     per_axis = {
         a.name: axes_compute.axis_values(a, obs, pool) for a in axes if a.name in profile.weights
     }
-    rows = {m: {name: per_axis[name].get(m, (None, 0.0))[0] for name in per_axis} for m in pool}
+    rows = {m: {name: per_axis[name].get(m, (None, 0.0)) for name in per_axis} for m in pool}
     return rows, profile
 
 
-def test_pareto_prune_fires_on_the_real_field() -> None:
-    """Phase 1 reported "dominated by" as implemented but never firing.
+def test_every_model_on_the_real_field_keeps_its_place() -> None:
+    """Phase 1 pruned 60 real models down to a handful of incomparable ones.
 
-    That was a property of the data, not the code: the hand-built fixture held
-    six models, and six models spread over six axes are almost all mutually
-    incomparable. On the recorded field of 60 the pruner finds real dominations,
-    which is what makes the set-aside reason worth showing at all.
+    That was the single biggest reason a slider looked broken: a model dropped
+    for being beaten on every axis could never come back, however the weights
+    moved, and the page could not say why. Now the field is ranked whole.
     """
     rows, profile = _real_llm_rows("coder")
-    weighted = [a for a, w in profile.weights.items() if w > 0]  # type: ignore[attr-defined]
+    scored = weigh(profile, rows)
 
-    pruned = pareto_prune(rows, profile.weights)  # type: ignore[attr-defined]
-    assert pruned, "nothing dominated on a 60-model field means the pruner is broken"
-
-    # every claim the pruner makes has to survive being checked directly
-    for model_id, by in pruned.items():
-        assert by != model_id
-        assert dominates(rows[by], rows[model_id], weighted), (
-            f"{by} was said to dominate {model_id} and does not"
-        )
+    assert len(scored) == len(rows), "every model in the pool is scored"
+    order = rank_order(scored)
+    assert len(order) == len(rows), "and every scored model has a place in the order"
+    values = [scored[m][0] for m in order]
+    assert values == sorted(values, reverse=True), "best first, and nothing else"
 
 
-def test_pareto_prune_never_prunes_on_an_unmeasured_axis() -> None:
-    """A model may only be pruned by one that beats it where both are measured."""
-    rows, profile = _real_llm_rows("coder")
-    weighted = [a for a, w in profile.weights.items() if w > 0]  # type: ignore[attr-defined]
+def test_a_model_known_only_for_its_price_neither_prunes_nor_is_pruned() -> None:
+    """The live bug, from both sides: a cheap unmeasured model used to delete
+    a flagship from the list by "dominating" it on the one axis it had.
 
-    for model_id, by in pareto_prune(rows, profile.weights).items():  # type: ignore[attr-defined]
-        shared = [
-            a for a in weighted if rows[by].get(a) is not None and rows[model_id].get(a) is not None
-        ]
-        assert shared, f"{model_id} pruned with no axis measured on both sides"
-        assert all(rows[by][a] >= rows[model_id][a] for a in shared)  # type: ignore[operator]
-
-
-def test_a_model_known_only_for_its_price_dominates_nothing() -> None:
-    """The live bug: a cheap model with no quality measurements pruned Opus 5."""
+    Now neither is removed. The flagship leads because it scores higher, and
+    the cheap one is on the list at the place its score earns -- which is the
+    answer a person can argue with by moving a slider.
+    """
     weights = {"reasoning": 0.4, "intelligence": 0.35, "cost": 0.25}
-    rows: dict[str, dict[str, float | None]] = {
-        "flagship": {"reasoning": 0.95, "intelligence": 0.99, "cost": 0.36},
-        "cheap_unknown": {"reasoning": None, "intelligence": None, "cost": 0.73},
-        "cheap_measured": {"reasoning": 0.96, "intelligence": 0.99, "cost": 0.8},
+    profile = Profile(name="probe", modality="llm", purpose="the live bug", weights=weights, ship=4)
+    rows: dict[str, dict[str, tuple[float | None, float]]] = {
+        "flagship": {
+            "reasoning": (0.95, 1.0),
+            "intelligence": (0.99, 1.0),
+            "cost": (0.36, 1.0),
+        },
+        "cheap_unknown": {
+            "reasoning": (None, 0.0),
+            "intelligence": (None, 0.0),
+            "cost": (0.73, 1.0),
+        },
     }
-    assert not dominates(rows["cheap_unknown"], rows["flagship"], list(weights))
-    dominated = pareto_prune(rows, weights)
-    assert dominated.get("flagship") == "cheap_measured", "a measured better model still prunes"
-    assert "cheap_unknown" not in dominated.values()
+    order = rank_order(weigh(profile, rows))
+    assert order == ["flagship", "cheap_unknown"]

@@ -240,7 +240,7 @@ def test_dropping_an_axis_and_setting_another_happen_in_one_call(client: TestCli
         after = client.put(
             f"/v1/profiles/{name}/settings",
             json={
-                "weights": {gone: None, kept: {"value": 1.0}},
+                "weights": {gone: None, kept: 1.0},
                 "remove_axes": axes[2:],
             },
             headers=HEADERS,
@@ -248,7 +248,7 @@ def test_dropping_an_axis_and_setting_another_happen_in_one_call(client: TestCli
         assert after.status_code == 200, after.text
         weights = after.json()["weights"]
         assert gone not in weights
-        assert weights[kept]["value"] == pytest.approx(1.0)
+        assert weights[kept] == pytest.approx(1.0)
 
 
 # --------------------------------------------------------------------------- #

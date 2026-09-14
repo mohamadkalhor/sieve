@@ -1,7 +1,6 @@
 name: researcher
 modality: llm
-purpose: multi-step research loops that call tools and read a lot
-...
+purpose: "multi-step research loops that call tools and read a lot"
 weights:
   agentic_tools: 0.35
   reasoning: 0.2

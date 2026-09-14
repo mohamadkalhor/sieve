@@ -1,7 +1,6 @@
 name: edit_general
 modality: image-editing
-purpose: editing an existing image to instruction
-...
+purpose: "editing an existing image to instruction"
 weights:
   quality: 0.8
   maturity: 0.2

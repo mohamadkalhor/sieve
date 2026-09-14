@@ -67,10 +67,13 @@ def test_export_dry_run_import_and_reexport(client: TestClient) -> None:
     document = original.json()
     judge = next(profile for profile in document["profiles"] if profile["name"] == "judge")
     axis = next(iter(judge["settings"]["weights"]))
-    before = judge["settings"]["weights"][axis]["value"]
+    before = judge["settings"]["weights"][axis]
     after = before / 2 if before else 0.1
-    judge["settings"]["weights"][axis]["value"] = after
-    judge["model_status"]["test/model"] = {"status": "pinned", "pin_order": 1}
+    other = next(a for a in judge["settings"]["weights"] if a != axis)
+    other_before = judge["settings"]["weights"][other]
+    # the shares still add to one, so moving one moves another
+    judge["settings"]["weights"][axis] = after
+    judge["settings"]["weights"][other] = other_before + (before - after)
     document["cost_multipliers"]["cc"] = 0.1
 
     preview = client.put("/v1/config?dry_run=1", headers=AUTH, json=document)
@@ -82,14 +85,14 @@ def test_export_dry_run_import_and_reexport(client: TestClient) -> None:
             "after": 0.1,
         },
         {
-            "path": "profiles/judge/model_status/test/model",
-            "before": None,
-            "after": {"status": "pinned", "pin_order": 1},
-        },
-        {
-            "path": f"profiles/judge/settings/weights/{axis}/value",
+            "path": f"profiles/judge/settings/weights/{axis}",
             "before": before,
             "after": after,
+        },
+        {
+            "path": f"profiles/judge/settings/weights/{other}",
+            "before": other_before,
+            "after": other_before + (before - after),
         },
     ]
     assert client.get("/v1/config", headers=AUTH).json()["cost_multipliers"].get("cc") is None
@@ -107,7 +110,7 @@ def test_invalid_import_is_atomic(client: TestClient) -> None:
     invalid = copy.deepcopy(before)
     judge = next(profile for profile in invalid["profiles"] if profile["name"] == "judge")
     axis = next(iter(judge["settings"]["weights"]))
-    judge["settings"]["weights"][axis]["value"] = 2
+    judge["settings"]["weights"][axis] = 2
     response = client.put("/v1/config", headers=AUTH, json=invalid)
     assert response.status_code == 400
     after = client.get("/v1/config", headers=AUTH).json()

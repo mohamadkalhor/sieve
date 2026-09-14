@@ -1,7 +1,9 @@
+# Volume work: a small quality difference is not worth a large bill, so cost
+# carries half the weight and nothing else comes close.
+
 name: cheap_bulk
 modality: llm
-purpose: high-volume work where the cheapest adequate model wins
-...
+purpose: "high-volume work where the cheapest adequate model wins"
 weights:
   cost: 0.5
   intelligence: 0.3

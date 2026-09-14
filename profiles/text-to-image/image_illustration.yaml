@@ -1,7 +1,9 @@
+# `anime` is the published category closest to drawn style; it is broader than
+# the name suggests.
+
 name: image_illustration
 modality: text-to-image
-purpose: drawn and stylised work
-...
+purpose: "drawn and stylised work"
 weights:
   quality: 0.4
   anime: 0.4

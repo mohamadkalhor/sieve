@@ -21,7 +21,7 @@ from sieve.profiles import control
         ({"missing_axis": 1.0}, "missing_axis"),
         ({"quality": 1.0}, "quality"),  # Exists for media, not for this LLM profile.
         ({"cost": 0.2}, "sum"),
-        ({"cost": 1.2, "reasoning": -0.2}, "cost"),
+        ({"cost": 1.2, "reasoning": -0.2}, "must be in [0,1]"),
     ],
 )
 def test_all_doors_reject_invalid_weights(
@@ -44,7 +44,7 @@ def test_all_doors_reject_invalid_weights(
             response = client.put(
                 "/v1/profiles/judge/settings",
                 json={
-                    "weights": {a: {"value": w} for a, w in weights.items()},
+                    "weights": weights,
                     "remove_axes": list(set(settings["weights"]) - set(weights)),
                 },
             )
@@ -60,14 +60,16 @@ def test_settings_are_the_document_and_copy_truth(workspace: Config, removal: st
     with TestClient(app) as client:
         client.headers["Authorization"] = f"Bearer {TOKENS.split(';')[0].rsplit(':', 1)[1]}"
         original = client.get("/v1/profiles/judge").json()
-        patch: dict[str, Any] = {"weights": {"cost": {"value": 1.0, "locked": True}}}
+        # the old `{"value": ...}` spelling still reads, and the bounds and the
+        # lock beside it are dropped with a warning rather than a 400
+        patch: dict[str, Any] = {"weights": {"cost": {"value": 1.0}}}
         if removal == "null":
             patch["weights"].update(dict.fromkeys(set(original["weights"]) - {"cost"}))
         else:
             patch["remove_axes"] = list(set(original["weights"]) - {"cost"})
         response = client.put("/v1/profiles/judge/settings", json=patch)
         assert response.status_code == 200, response.text
-        assert response.json()["weights"]["cost"]["locked"] is True
+        assert response.json()["weights"] == {"cost": 1.0}
         assert client.get("/v1/profiles/judge").json()["weights"] == {"cost": 1.0}
         listed = {p["name"]: p for p in client.get("/v1/profiles").json()}
         assert listed["judge"]["weights"] == {"cost": 1.0}
@@ -91,8 +93,7 @@ def test_settings_are_the_document_and_copy_truth(workspace: Config, removal: st
                 response = client.patch("/v1/profiles/judge/weights", json=weights)
             assert response.status_code == 200, response.text
             selected = client.get("/v1/profiles/judge/settings").json()["weights"]
-            assert {a: w["value"] for a, w in selected.items()} == weights
-            assert selected["cost"]["locked"] is True
+            assert selected == weights
         held = control.profile(app.state.store, "judge")
         assert held is not None and held.weights == weights
 

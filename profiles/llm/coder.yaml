@@ -1,7 +1,10 @@
+# Agentic coding, weighted the way the work is felt: the model has to do the
+# task well first, and the bill matters second because this seat is the
+# expensive one.
+
 name: coder
 modality: llm
-purpose: agentic coding inside a repository
-...
+purpose: "agentic coding inside a repository"
 weights:
   agentic_coding: 0.45
   cost: 0.2

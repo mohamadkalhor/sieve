@@ -1,7 +1,6 @@
 name: quick_chat
 modality: llm
-purpose: short interactive turns where waiting is the worst outcome
-...
+purpose: "short interactive turns where waiting is the worst outcome"
 weights:
   intelligence: 0.35
   cost: 0.3

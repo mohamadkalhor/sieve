@@ -5,4 +5,3 @@ purpose: weights that do not sum to one
 weights:
   agentic_coding: 0.5
   cost: 0.3
-shape: {in: 1000, out: 500}

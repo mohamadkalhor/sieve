@@ -1,0 +1,8 @@
+# A list of forty is not a list; `ship` is 1..10 and a file saying
+# otherwise must be refused rather than quietly clamped.
+name: bad_ship
+modality: llm
+purpose: ships more models than any gateway would walk
+weights:
+  agentic_coding: 1.0
+ship: 40

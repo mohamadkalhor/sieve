@@ -373,7 +373,7 @@ def test_the_bad_profiles_are_all_rejected() -> None:
     assert all(problems.values()), f"something passed that should not: {problems}"
     assert any("sum to" in " ".join(v) for v in problems.values())
     assert any("unknown axis" in " ".join(v) for v in problems.values())
-    assert any("unknown constraint" in " ".join(v) for v in problems.values())
+    assert any("ship" in " ".join(v) for v in problems.values())
 
 
 def test_a_good_profile_round_trips_and_keeps_its_comments(tmp_path: Path) -> None:
@@ -387,12 +387,13 @@ def test_a_good_profile_round_trips_and_keeps_its_comments(tmp_path: Path) -> No
         "weights:\n"
         "  agentic_coding: 0.6\n"
         "  cost: 0.4\n"
+        "ship: 3\n"
         "shape: {in: 30000, out: 4000}\n",
         encoding="utf-8",
     )
 
     profile = next(iter(load_profiles(tmp_path)))
-    assert profile.name == "coder" and profile.shape.in_tokens == 30000
+    assert profile.name == "coder" and profile.ship == 3, "a retired key does not stop a read"
     assert not list(validate_profile(profile, {("llm", "agentic_coding"), ("llm", "cost")}))
 
     moved = profile.model_copy(update={"weights": {"agentic_coding": 0.7, "cost": 0.3}})
@@ -401,7 +402,7 @@ def test_a_good_profile_round_trips_and_keeps_its_comments(tmp_path: Path) -> No
     text = source.read_text(encoding="utf-8")
     assert "# the coding seat" in text, "an API write must not throw a comment away"
     assert "0.7" in text
-    assert "in: 30000" in text, "shape keeps the YAML spelling"
+    assert "shape" not in text, "a key that means nothing is not written back"
 
     assert next(iter(load_profiles(tmp_path))).weights == {"agentic_coding": 0.7, "cost": 0.3}
 

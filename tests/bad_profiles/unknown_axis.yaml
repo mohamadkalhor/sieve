@@ -5,4 +5,3 @@ purpose: names an axis that does not exist
 weights:
   agentic_coding: 0.5
   vibes: 0.5
-shape: {in: 1000, out: 500}

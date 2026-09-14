@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from sieve.api.app import create_app
 from sieve.api.auth import Tokens
 from sieve.config import default_config, load_config
-from sieve.contracts import Decision, ModelRef, Observation, Price, Profile, Shape
+from sieve.contracts import Decision, ModelRef, Observation, Price, Profile
 from sieve.store import Store
 from sieve.typegen import render
 
@@ -273,22 +273,39 @@ def test_types_ts_is_current() -> None:
 
 def test_types_ts_matches_what_the_api_serialises() -> None:
     generated = render()
-    assert "in_tokens?: number | null;" in generated
+    assert "ship?: number;" in generated
     assert "export type Modality =" in generated
     assert "export interface Ranking {" in generated
 
 
-def test_shape_accepts_the_yaml_spelling() -> None:
-    profile = Profile(
-        name="coder",
-        modality="llm",
-        purpose="agentic coding",
-        weights={"agentic_coding": 1.0},
-        shape=Shape.model_validate({"in": 30000, "out": 4000, "cached": 0.5}),
+def test_a_profile_written_in_the_old_shape_still_loads() -> None:
+    """Every profile on disk and in the database was written with a policy, a
+    shape and a require block. None of them mean anything now, and none of them
+    may stop a profile from loading."""
+    from sieve.profiles.legacy import clean_profile
+
+    body, warnings = clean_profile(
+        {
+            "name": "coder",
+            "modality": "llm",
+            "purpose": "agentic coding",
+            "weights": {"agentic_coding": 1.0},
+            "require": {"tools": True},
+            "shape": {"in": 30000, "out": 4000, "cached": 0.5},
+            "policy": {"margin": 3.0, "chain": 3, "auto_apply": True},
+            "prefer_effort": "best",
+        }
     )
-    assert profile.shape.in_tokens == 30000
-    assert profile.shape.out_tokens == 4000
-    assert "in_tokens" in profile.shape.model_dump()
+    profile = Profile.model_validate(body)
+
+    assert profile.weights == {"agentic_coding": 1.0}
+    assert profile.ship == 3, "policy.chain was the old spelling of ship"
+    assert sorted(w.split("'")[1] for w in warnings) == [
+        "policy",
+        "prefer_effort",
+        "require",
+        "shape",
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -300,7 +317,6 @@ def test_rank_case_fixture_is_internally_consistent() -> None:
     """A and D both assert against this file, so its own arithmetic must hold."""
     case = json.loads(FIXTURE.read_text(encoding="utf-8"))
     weights = case["profile"]["weights"]
-    floor = case["profile"]["policy"]["min_confidence"]
     expected = case["expected"]
 
     assert len(case["models"]) == 12
@@ -314,10 +330,11 @@ def test_rank_case_fixture_is_internally_consistent() -> None:
         assert abs(score - expected["scores"][model["id"]]) < 1e-6
         assert abs(confidence - expected["confidence"][model["id"]]) < 1e-6
 
-    excluded = {m for m, c in expected["confidence"].items() if c < floor}
-    assert excluded == set(expected["excluded"]) == {"m11"}
-
-    ranked = [m for m in expected["scores"] if m not in excluded]
+    # The fixture predates this rebuild: `excluded` and `policy` are the
+    # confidence floor that used to remove m11, kept as a record of what the
+    # numbers were. Nothing applies them now -- m11 ranks on its score like
+    # everything else -- so only the arithmetic above is asserted.
+    ranked = [m for m in expected["scores"] if m not in set(expected["excluded"])]
     assert expected["order"] == sorted(ranked, key=lambda m: (-expected["scores"][m], m))
     assert expected["order"][0] == "m12"
     # the exact tie is deliberate: it pins the tie-break rule

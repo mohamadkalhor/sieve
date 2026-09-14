@@ -1,7 +1,10 @@
+# cc/* and cx/* are flat-rate subscription logins on this fleet -- their cost
+# is quota, not dollars -- so this seat asks one question only: which reachable
+# model is best. Price and latency carry no weight at all.
+
 name: premium
 modality: llm
-purpose: the best reachable model regardless of price -- flat-rate subscription seats
-...
+purpose: "the best reachable model regardless of price -- flat-rate subscription seats"
 weights:
   agentic_coding: 0.35
   reasoning: 0.3

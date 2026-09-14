@@ -1,7 +1,9 @@
+# Accuracy is the only axis this modality has, and it is coarse: the free
+# endpoint rounds the error rate to one decimal, so most working models tie.
+
 name: transcription
 modality: speech-to-text
-purpose: turning recorded speech into text
-...
+purpose: "turning recorded speech into text"
 weights:
   accuracy: 1.0
 ship: 3

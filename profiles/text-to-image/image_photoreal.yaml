@@ -1,7 +1,9 @@
+# No photorealism category is published for text-to-image today, so `nature`
+# stands in for it. Swap it the day a better one appears.
+
 name: image_photoreal
 modality: text-to-image
-purpose: photographic images that must not look generated
-...
+purpose: "photographic images that must not look generated"
 weights:
   quality: 0.4
   nature: 0.4

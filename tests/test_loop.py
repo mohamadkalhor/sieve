@@ -25,29 +25,10 @@ FIXTURES = REPO / "tests" / "fixtures"
 REACHABLE = ["openai/gpt-5-6-sol-non-reasoning", "alibaba/qwen3-8-flash-next"]
 
 
-def _workspace(tmp_path: Path, auto: dict[str, bool]) -> Path:
-    """A scratch install whose named profiles opt in (or do not) to auto_apply.
-
-    The setting is **replaced**, not prepended. This used to insert a line after
-    `policy:` and leave any shipped one where it was, so a profile that already
-    said `auto_apply: true` ended up saying it twice and YAML kept the second --
-    the shipped value, not the one the test asked for. The day the deployed
-    profiles opted in, this test started asserting against a file it thought it
-    had written and had not.
-    """
+def _workspace(tmp_path: Path) -> Path:
+    """A scratch install carrying the shipped llm profiles, and a file target."""
     profiles = tmp_path / "profiles"
     shutil.copytree(REPO / "profiles" / "llm", profiles / "llm")
-
-    for name, opted_in in auto.items():
-        path = profiles / "llm" / f"{name}.yaml"
-        out: list[str] = []
-        for line in path.read_text(encoding="utf-8").split("\n"):
-            if line.strip().startswith("auto_apply:"):
-                continue
-            out.append(line)
-            if line.strip() == "policy:":
-                out.append(f"  auto_apply: {'true' if opted_in else 'false'}")
-        path.write_text("\n".join(out), encoding="utf-8")
 
     config = tmp_path / "sieve.toml"
     config.write_text(
@@ -86,7 +67,7 @@ def _workspace(tmp_path: Path, auto: dict[str, bool]) -> Path:
 def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("SIEVE_FIXTURES", "1")
     monkeypatch.delenv("ARTIFICIAL_ANALYSIS_API_KEY", raising=False)
-    config = _workspace(tmp_path, {"cheap_bulk": True, "quick_chat": False})
+    config = _workspace(tmp_path)
     assert main(["--config", str(config), "pull", "aa_llm", "gw"]) == 0
     return config
 
@@ -96,21 +77,32 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 # --------------------------------------------------------------------------- #
 
 
-def test_only_a_profile_that_opted_in_ships(
+def test_every_seat_ships_and_a_second_run_writes_nothing(
     workspace: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The acceptance line, both halves, in one run."""
+    """The acceptance line, both halves, in two runs.
+
+    There is no opting in any more: a seat exists to be routed to, and one that
+    ranked a new list and kept it to itself was a seat nobody could trust. What
+    stops an hourly run from rewriting a gateway is that the answer has not
+    changed -- a fact about the models, rather than a switch in a file.
+    """
     assert main(["--config", str(workspace), "run", "--no-pull"]) == 0
     out = capsys.readouterr().out
+    assert "shipped" in out
 
-    assert (tmp_path / "out" / "cheap_bulk.json").is_file(), "the opted-in profile shipped"
-    assert not (tmp_path / "out" / "quick_chat.json").exists(), "the other one did not"
-    assert "held (no auto_apply)" in out and "quick_chat" in out
+    assert (tmp_path / "out" / "cheap_bulk.json").is_file(), "every seat ships"
+    assert (tmp_path / "out" / "quick_chat.json").is_file(), "including this one"
 
-    # ...and it was decided all the same, which is the point
     decisions = Store(tmp_path / "sieve.db").decisions()
     decided = {d.profile for d in decisions}
     assert {"cheap_bulk", "quick_chat"} <= decided
+
+    # the same run again reaches the same answer, and says so rather than
+    # writing it out a second time
+    assert main(["--config", str(workspace), "run", "--no-pull"]) == 0
+    again = capsys.readouterr().out
+    assert "no list changed, so nothing was written" in again
 
 
 def test_every_profile_writes_a_decision_every_run(workspace: Path, tmp_path: Path) -> None:
@@ -150,7 +142,7 @@ def test_a_failed_source_does_not_stop_the_run(
     the benchmark site looks like.
     """
     monkeypatch.setenv("SIEVE_FIXTURES", "1")
-    config = _workspace(tmp_path, {"cheap_bulk": True})
+    config = _workspace(tmp_path)
     assert main(["--config", str(config), "pull", "aa_llm", "gw"]) == 0
 
     monkeypatch.chdir(tmp_path)  # no tests/fixtures here, so the player finds nothing

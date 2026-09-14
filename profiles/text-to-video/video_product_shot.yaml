@@ -1,7 +1,6 @@
 name: video_product_shot
 modality: text-to-video
-purpose: short product clips with a moving camera and readable text
-...
+purpose: "short product clips with a moving camera and readable text"
 weights:
   quality: 0.35
   moving_camera: 0.25

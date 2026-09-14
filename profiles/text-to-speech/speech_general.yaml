@@ -1,7 +1,6 @@
 name: speech_general
 modality: text-to-speech
-purpose: reading text aloud
-...
+purpose: "reading text aloud"
 weights:
   quality: 0.7
   maturity: 0.2

@@ -33,12 +33,25 @@ SHIP_MAX = 10
 
 
 def clamp_ship(value: Any) -> int | None:
-    """`ship` as a whole number in 1..10, or None when it is not a number."""
+    """An old `policy.chain` as a `ship`: a whole number in 1..10.
+
+    Clamped, because it is a translation rather than a setting somebody typed:
+    a chain of 20 meant "as many as you have" and the nearest thing this says
+    is ten. An explicit `ship` is never clamped -- it is validated, and a file
+    saying 40 is a file to fix.
+    """
     try:
         number = int(value)
     except (TypeError, ValueError):
         return None
     return max(SHIP_MIN, min(SHIP_MAX, number))
+
+
+def _whole(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _ignored(key: str) -> str:
@@ -50,7 +63,7 @@ def clean_profile(raw: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
     body = dict(raw)
     warnings: list[str] = []
 
-    ship = clamp_ship(body.get("ship"))
+    ship = _whole(body.get("ship"))
     policy = body.get("policy")
     if ship is None and isinstance(policy, Mapping):
         ship = clamp_ship(policy.get("chain"))
@@ -93,7 +106,7 @@ def clean_settings(raw: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
     body = dict(raw)
     warnings: list[str] = []
 
-    ship = clamp_ship(body.get("ship"))
+    ship = _whole(body.get("ship"))
     if ship is None:
         ship = clamp_ship(body.get("list_length"))
     body.pop("list_length", None)

@@ -52,7 +52,7 @@ def test_each_board_is_read_in_the_unit_it_publishes() -> None:
     A thousand images is a thousand images and a minute is sixty seconds, so the
     conversions are arithmetic. What must never happen is a per-image number
     landing under a per-second unit, because `cost_per_task` would then read it
-    against the wrong `Shape` field and silently produce a cost.
+    against the wrong `TaskShape` field and silently produce a cost.
     """
     by_modality = {b.modality: b for b in BOARDS}
 
@@ -94,8 +94,8 @@ def test_a_cross_modality_comparison_is_impossible_by_construction() -> None:
     """
     from datetime import UTC, datetime
 
-    from sieve.contracts import Price, Shape
-    from sieve.scoring.weigh import cost_per_task
+    from sieve.contracts import Price
+    from sieve.scoring.weigh import TaskShape, cost_per_task
 
     def priced(unit: str, rate: float) -> Price:
         return Price(
@@ -106,7 +106,7 @@ def test_a_cross_modality_comparison_is_impossible_by_construction() -> None:
             observed_at=datetime.now(UTC),
         )
 
-    images_only = Shape(images=4)
+    images_only = TaskShape(images=4)
     assert cost_per_task(priced("usd_per_image", 0.211), images_only) == pytest.approx(0.844)
     assert cost_per_task(priced("usd_per_second", 0.2), images_only) is None
 

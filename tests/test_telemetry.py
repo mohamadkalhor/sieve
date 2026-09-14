@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from sieve.api.app import create_app
 from sieve.config import Config, Paths, StoreConfig
-from sieve.contracts import InventoryConfig, Shape, SourceConfig, TargetConfig, TelemetryEvent
+from sieve.contracts import InventoryConfig, SourceConfig, TargetConfig, TelemetryEvent
 from sieve.http import FixturePlayer
 from sieve.plugins import SOURCES, load
 from sieve.scoring.pulse import observed_tokens_out, percentile, pulse
@@ -159,7 +159,9 @@ def test_cost_uses_the_tokens_a_model_really_burns() -> None:
         output=10.0,
         observed_at=NOW,
     )
-    shape = Shape.model_validate({"in": 1000, "out": 1000})
+    from sieve.scoring.weigh import TaskShape
+
+    shape = TaskShape(in_tokens=1000, out_tokens=1000)
 
     assumed = cost_per_task(price, shape)
     measured = cost_per_task(price, shape, tokens_out=4000.0)
@@ -177,11 +179,8 @@ def test_posting_events_moves_a_models_health_and_its_rank(workspace: Config) ->
     """The acceptance line: telemetry has to change the answer, or it is decoration."""
     app = create_app(workspace)
     with TestClient(app) as client:
-        # cheap_bulk floors on `intelligence` alone. `coder` also requires tools,
-        # reasoning and a 200k context, and this workspace pulls only Artificial
-        # Analysis -- which publishes no capabilities -- so nothing would clear it.
         before = client.get("/v1/rankings/cheap_bulk?refresh=1").json()
-        ranked_before = [r["model_id"] for r in before["ranks"] if not r.get("excluded_by")]
+        ranked_before = [r["model_id"] for r in before["ranks"] if r["position"] > 0]
         assert ranked_before, "the recording must produce a ranking to move"
 
         leader = ranked_before[0]

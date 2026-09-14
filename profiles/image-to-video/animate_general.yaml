@@ -1,7 +1,6 @@
 name: animate_general
 modality: image-to-video
-purpose: animating a still image
-...
+purpose: "animating a still image"
 weights:
   quality: 0.7
   maturity: 0.2

@@ -1,7 +1,6 @@
 name: image_general
 modality: text-to-image
-purpose: everyday image generation
-...
+purpose: "everyday image generation"
 weights:
   quality: 0.7
   maturity: 0.2

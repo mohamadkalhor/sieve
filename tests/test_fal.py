@@ -338,8 +338,7 @@ def test_compute_seconds_are_not_output_seconds() -> None:
     means something else, so they never share a unit -- and a compute-second
     price is deliberately not costable against any shape.
     """
-    from sieve.contracts import Shape
-    from sieve.scoring.weigh import cost_per_task
+    from sieve.scoring.weigh import TaskShape, cost_per_task
     from sieve.sources.fal import parse_rates
 
     compute = parse_rates("Your request will cost **$0.00111** per compute second")
@@ -355,7 +354,7 @@ def test_compute_seconds_are_not_output_seconds() -> None:
         per_unit=0.00111,
         observed_at=datetime.now(UTC),
     )
-    assert cost_per_task(priced, Shape(seconds=5)) is None, (
+    assert cost_per_task(priced, TaskShape(seconds=5)) is None, (
         "hardware time must not be costed against the length of the output"
     )
 
