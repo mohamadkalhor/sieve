@@ -19,16 +19,21 @@ def dominates(
 ) -> bool:
     """True when `better` is >= on every axis and > on at least one.
 
-    An axis where either side is unmeasured is skipped: an absent measurement is
-    not evidence of being worse, and treating it as such would prune models for
-    the crime of being new.
+    An axis the `worse` side never measured is skipped: an absent measurement
+    is not evidence of being worse, and treating it as such would prune models
+    for the crime of being new. The other direction is not symmetric: a model
+    that is itself unmeasured on an axis the other one scored on cannot claim
+    to beat it there, so it cannot dominate at all. Without this rule a model
+    known only for its price "dominated" every flagship on price alone.
     """
     strictly_better = False
     compared = 0
     for axis in axes:
         left, right = better.get(axis), worse.get(axis)
-        if left is None or right is None:
+        if right is None:
             continue
+        if left is None:
+            return False
         compared += 1
         if left < right:
             return False

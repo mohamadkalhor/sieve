@@ -611,3 +611,17 @@ def test_pareto_prune_never_prunes_on_an_unmeasured_axis() -> None:
         ]
         assert shared, f"{model_id} pruned with no axis measured on both sides"
         assert all(rows[by][a] >= rows[model_id][a] for a in shared)  # type: ignore[operator]
+
+
+def test_a_model_known_only_for_its_price_dominates_nothing() -> None:
+    """The live bug: a cheap model with no quality measurements pruned Opus 5."""
+    weights = {"reasoning": 0.4, "intelligence": 0.35, "cost": 0.25}
+    rows: dict[str, dict[str, float | None]] = {
+        "flagship": {"reasoning": 0.95, "intelligence": 0.99, "cost": 0.36},
+        "cheap_unknown": {"reasoning": None, "intelligence": None, "cost": 0.73},
+        "cheap_measured": {"reasoning": 0.96, "intelligence": 0.99, "cost": 0.8},
+    }
+    assert not dominates(rows["cheap_unknown"], rows["flagship"], list(weights))
+    dominated = pareto_prune(rows, weights)
+    assert dominated.get("flagship") == "cheap_measured", "a measured better model still prunes"
+    assert "cheap_unknown" not in dominated.values()
