@@ -219,6 +219,10 @@ class Connector(_Model):
     #: `admin_token_env`, `timeout`.
     options: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime | None = None
+    #: whose router this is (`users.id`). NULL on a box where nobody has signed
+    #: in: a connector is never shared, because writing a combo to it spends
+    #: somebody's token.
+    owner_id: str | None = None
 
     def token(self) -> str | None:
         """The secret this connector needs, read from the environment only."""

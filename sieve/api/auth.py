@@ -111,6 +111,10 @@ class Token:
     name: str
     scopes: frozenset[str]
     sha256: str
+    #: The `users.id` whose rows this call may see and write. None on a box
+    #: where nobody has signed in and only `SIEVE_TOKENS` is configured -- the
+    #: single-user case, where every row is unowned and everything matches.
+    owner_id: str | None = None
 
     def allows(self, scope: str) -> bool:
         return scope in self.scopes

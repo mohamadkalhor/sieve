@@ -507,17 +507,27 @@ class Store:
         sql += " ORDER BY inventory, local_id"
         return [self._reachable(r) for r in self.db.execute(sql)]
 
-    def local_ids(self) -> dict[str, list[str]]:
+    def local_ids(self, owner_id: str | None = None) -> dict[str, list[str]]:
         """Canonical model id -> the local ids that serve it, right now.
 
         Stale rows are left out on purpose: this map is what a chain resolves
         through, and a chain is a routing instruction, not a history.
+
+        With an `owner_id`, only what *that person's* connectors serve: a chain
+        is seated on their routers, and a local id nobody they own can reach is
+        not somewhere they can send traffic.
         """
+        sql = (
+            "SELECT r.model_id AS model_id, r.local_id AS local_id FROM reachable r"
+            " LEFT JOIN connectors c ON c.id = r.connector_id"
+            " WHERE r.model_id IS NOT NULL AND r.stale=0"
+        )
+        args: tuple[Any, ...] = ()
+        if owner_id is not None:
+            sql += " AND IFNULL(c.owner_id,'') = IFNULL(?,'')"
+            args = (owner_id,)
         out: dict[str, list[str]] = {}
-        for r in self.db.execute(
-            "SELECT model_id, local_id FROM reachable"
-            " WHERE model_id IS NOT NULL AND stale=0 ORDER BY local_id"
-        ):
+        for r in self.db.execute(sql + " ORDER BY r.local_id", args):
             out.setdefault(r["model_id"], []).append(r["local_id"])
         return out
 
@@ -541,22 +551,43 @@ class Store:
             last_error=r["last_error"],
             options=json.loads(r["options"] or "{}"),
             created_at=_dt(r["created_at"]) if r["created_at"] else None,
+            owner_id=r["owner_id"],
         )
 
-    def has_connectors(self) -> bool:
-        """Whether anything has been seeded yet. One row is enough to know."""
-        return self.db.execute("SELECT 1 FROM connectors LIMIT 1").fetchone() is not None
+    @staticmethod
+    def _owned(owner_id: str | None, column: str = "owner_id") -> str:
+        """`WHERE` fragment for one owner's rows, NULL included."""
+        return f"IFNULL({column},'') = IFNULL(?,'')"
 
-    def connectors(self) -> list[Connector]:
-        rows = self.db.execute("SELECT * FROM connectors ORDER BY name")
-        return [self._connector(r) for r in rows]
+    def has_connectors(self, owner_id: str | None = None) -> bool:
+        """Whether anything has been seeded yet. One row is enough to know."""
+        sql = "SELECT 1 FROM connectors"
+        args: tuple[Any, ...] = ()
+        if owner_id is not None:
+            sql += f" WHERE {self._owned(owner_id)}"
+            args = (owner_id,)
+        return self.db.execute(sql + " LIMIT 1", args).fetchone() is not None
+
+    def connectors(self, owner_id: str | None = None) -> list[Connector]:
+        """Every connector, or only this owner's. A connector is never shared:
+        it is somebody's router, holding their token, and a combo written to it
+        is written with their credentials."""
+        sql = "SELECT * FROM connectors"
+        args: tuple[Any, ...] = ()
+        if owner_id is not None:
+            sql += f" WHERE {self._owned(owner_id)}"
+            args = (owner_id,)
+        return [self._connector(r) for r in self.db.execute(sql + " ORDER BY name", args)]
 
     def connector(self, connector_id: str) -> Connector | None:
         row = self.db.execute("SELECT * FROM connectors WHERE id=?", (connector_id,)).fetchone()
         return self._connector(row) if row else None
 
-    def connector_named(self, name: str) -> Connector | None:
-        row = self.db.execute("SELECT * FROM connectors WHERE name=?", (name,)).fetchone()
+    def connector_named(self, name: str, owner_id: str | None = None) -> Connector | None:
+        row = self.db.execute(
+            f"SELECT * FROM connectors WHERE name=? AND {self._owned(owner_id)}",
+            (name, owner_id),
+        ).fetchone()
         return self._connector(row) if row else None
 
     def add_connector(self, connector: Connector) -> Connector:
@@ -564,8 +595,8 @@ class Store:
         with self.tx() as db:
             db.execute(
                 "INSERT INTO connectors (id, name, kind, base_url, token_env, read, write,"
-                " poll_minutes, last_pull_at, last_push_at, last_error, options, created_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " poll_minutes, last_pull_at, last_push_at, last_error, options, created_at,"
+                " owner_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 self._connector_row(connector),
             )
         return connector
@@ -576,7 +607,7 @@ class Store:
             db.execute(
                 "INSERT OR REPLACE INTO connectors (id, name, kind, base_url, token_env,"
                 " read, write, poll_minutes, last_pull_at, last_push_at, last_error,"
-                " options, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " options, created_at, owner_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 self._connector_row(connector),
             )
         return connector
@@ -597,6 +628,7 @@ class Store:
             c.last_error,
             json.dumps(c.options),
             _iso(c.created_at) if c.created_at else _iso(now()),
+            c.owner_id,
         )
 
     def delete_connector(self, connector_id: str) -> bool:
@@ -660,38 +692,48 @@ class Store:
         row = self.db.execute("SELECT at FROM snapshots ORDER BY at DESC LIMIT 1").fetchone()
         return _dt(row["at"]) if row else None
 
-    def put_ranking(self, ranking: Ranking) -> None:
+    def put_ranking(self, ranking: Ranking, owner_id: str | None = None) -> None:
         with self.tx() as db:
             db.execute(
-                "INSERT OR REPLACE INTO rankings (snapshot, profile, modality, at, json)"
-                " VALUES (?,?,?,?,?)",
+                "INSERT INTO rankings (snapshot, profile, modality, at, json, owner_id)"
+                " VALUES (?,?,?,?,?,?)"
+                " ON CONFLICT(snapshot,profile,IFNULL(owner_id,''))"
+                " DO UPDATE SET modality=excluded.modality, at=excluded.at, json=excluded.json",
                 (
                     ranking.snapshot,
                     ranking.profile,
                     ranking.modality,
                     _iso(ranking.computed_at),
                     ranking.model_dump_json(),
+                    owner_id,
                 ),
             )
 
-    def ranking(self, profile: str, snapshot: str | None = None) -> Ranking | None:
+    def ranking(
+        self, profile: str, snapshot: str | None = None, owner_id: str | None = None
+    ) -> Ranking | None:
+        owned = self._owned(owner_id)
         if snapshot:
             row = self.db.execute(
-                "SELECT json FROM rankings WHERE profile=? AND snapshot=?",
-                (profile, snapshot),
+                f"SELECT json FROM rankings WHERE profile=? AND snapshot=? AND {owned}",
+                (profile, snapshot, owner_id),
             ).fetchone()
         else:
             row = self.db.execute(
-                "SELECT json FROM rankings WHERE profile=? ORDER BY at DESC LIMIT 1",
-                (profile,),
+                f"SELECT json FROM rankings WHERE profile=? AND {owned} ORDER BY at DESC LIMIT 1",
+                (profile, owner_id),
             ).fetchone()
         return Ranking.model_validate_json(row["json"]) if row else None
 
-    def put_chain(self, chain: Chain) -> None:
+    def put_chain(self, chain: Chain, owner_id: str | None = None) -> None:
         with self.tx() as db:
             db.execute(
-                "INSERT OR REPLACE INTO chains (profile, computed_at, primary_model,"
-                " incumbent, incumbent_since, json) VALUES (?,?,?,?,?,?)",
+                "INSERT INTO chains (profile, computed_at, primary_model,"
+                " incumbent, incumbent_since, json, owner_id) VALUES (?,?,?,?,?,?,?)"
+                " ON CONFLICT(IFNULL(owner_id,''),profile) DO UPDATE SET"
+                " computed_at=excluded.computed_at, primary_model=excluded.primary_model,"
+                " incumbent=excluded.incumbent, incumbent_since=excluded.incumbent_since,"
+                " json=excluded.json",
                 (
                     chain.profile,
                     _iso(chain.computed_at),
@@ -699,17 +741,26 @@ class Store:
                     chain.incumbent,
                     _iso(chain.incumbent_since) if chain.incumbent_since else None,
                     chain.model_dump_json(),
+                    owner_id,
                 ),
             )
 
-    def chain(self, profile: str) -> Chain | None:
-        row = self.db.execute("SELECT json FROM chains WHERE profile=?", (profile,)).fetchone()
+    def chain(self, profile: str, owner_id: str | None = None) -> Chain | None:
+        row = self.db.execute(
+            f"SELECT json FROM chains WHERE profile=? AND {self._owned(owner_id)}",
+            (profile, owner_id),
+        ).fetchone()
         return Chain.model_validate_json(row["json"]) if row else None
 
-    def chains(self) -> list[Chain]:
+    def chains(self, owner_id: str | None = None) -> list[Chain]:
+        sql = "SELECT json FROM chains"
+        args: tuple[Any, ...] = ()
+        if owner_id is not None:
+            sql += f" WHERE {self._owned(owner_id)}"
+            args = (owner_id,)
         return [
             Chain.model_validate_json(r["json"])
-            for r in self.db.execute("SELECT json FROM chains ORDER BY profile")
+            for r in self.db.execute(sql + " ORDER BY profile", args)
         ]
 
     # ------------------------------------------------------------------ #

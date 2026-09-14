@@ -23,68 +23,96 @@ def default_settings(profile: Profile) -> ProfileSettings:
     )
 
 
-def seed(store: Store, directory: Any) -> None:
-    if store.db.execute("SELECT 1 FROM profiles LIMIT 1").fetchone():
+def mine(owner_id: str | None, column: str = "owner_id") -> tuple[str, tuple[Any, ...]]:
+    """`WHERE` fragment matching exactly this owner's rows, NULL included.
+
+    `owner_id = ?` never matches NULL, and NULL is what an unowned row carries
+    on a box where nobody has signed in yet -- which is every box running only
+    on `SIEVE_TOKENS`. `IFNULL` on both sides is the one comparison that means
+    "mine" for a person and for nobody alike.
+    """
+    return f"IFNULL({column},'') = IFNULL(?,'')", (owner_id,)
+
+
+def visible(owner_id: str | None, column: str = "owner_id") -> tuple[str, tuple[Any, ...]]:
+    """`WHERE` fragment for what this owner may read: their own, plus shared."""
+    clause, args = mine(owner_id, column)
+    return f"({clause} OR visibility='shared')", args
+
+
+def seed(store: Store, directory: Any, owner_id: str | None = None) -> None:
+    """Import the shipped profiles once, into a store that holds none of theirs."""
+    clause, args = mine(owner_id)
+    if store.db.execute(f"SELECT 1 FROM profiles WHERE {clause} LIMIT 1", args).fetchone():
         return
-    stamp = _iso(datetime.now(UTC))
-    with store.tx() as db:
-        for profile in load_profiles(directory):
-            db.execute(
-                "INSERT INTO profiles(name,modality,json,settings,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-                (
-                    profile.name,
-                    profile.modality,
-                    profile.model_dump_json(),
-                    default_settings(profile).model_dump_json(),
-                    stamp,
-                    stamp,
-                ),
-            )
+    for profile in load_profiles(directory):
+        put_profile(store, profile, owner_id=owner_id)
 
 
-def profiles(store: Store) -> list[Profile]:
+def profiles(store: Store, owner_id: str | None = None, shared: bool = True) -> list[Profile]:
+    clause, args = visible(owner_id) if shared else mine(owner_id)
     return [
         Profile.model_validate_json(r["json"])
-        for r in store.db.execute("SELECT json FROM profiles ORDER BY name")
+        for r in store.db.execute(f"SELECT json FROM profiles WHERE {clause} ORDER BY name", args)
     ]
 
 
-def profile(store: Store, name: str) -> Profile | None:
-    row = store.db.execute("SELECT json FROM profiles WHERE name=?", (name,)).fetchone()
+def _row(store: Store, name: str, owner_id: str | None, shared: bool = True) -> Any:
+    clause, args = visible(owner_id) if shared else mine(owner_id)
+    return store.db.execute(
+        f"SELECT * FROM profiles WHERE name=? AND {clause}", (name, *args)
+    ).fetchone()
+
+
+def profile(store: Store, name: str, owner_id: str | None = None) -> Profile | None:
+    row = _row(store, name, owner_id)
     return Profile.model_validate_json(row["json"]) if row else None
 
 
-def settings(store: Store, name: str) -> ProfileSettings | None:
-    row = store.db.execute("SELECT settings FROM profiles WHERE name=?", (name,)).fetchone()
+def owner_of(store: Store, name: str, owner_id: str | None = None) -> str | None:
+    """Whose profile this is, as far as `owner_id` can see it."""
+    row = _row(store, name, owner_id)
+    return row["owner_id"] if row else None
+
+
+def settings(store: Store, name: str, owner_id: str | None = None) -> ProfileSettings | None:
+    row = _row(store, name, owner_id)
     return ProfileSettings.model_validate_json(row["settings"]) if row else None
 
 
 def put_profile(
-    store: Store, value: Profile, value_settings: ProfileSettings | None = None
+    store: Store,
+    value: Profile,
+    value_settings: ProfileSettings | None = None,
+    owner_id: str | None = None,
 ) -> None:
     stamp = _iso(datetime.now(UTC))
-    current = settings(store, value.name)
+    current = settings(store, value.name, owner_id)
     selected = value_settings or current or default_settings(value)
     with store.tx() as db:
         db.execute(
-            "INSERT INTO profiles(name,modality,json,settings,created_at,updated_at) VALUES(?,?,?,?,?,?) "
-            "ON CONFLICT(name) DO UPDATE SET modality=excluded.modality,json=excluded.json,settings=excluded.settings,updated_at=excluded.updated_at",
+            "INSERT INTO profiles(name,modality,json,settings,owner_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) "
+            "ON CONFLICT(IFNULL(owner_id,''),name) DO UPDATE SET modality=excluded.modality,json=excluded.json,settings=excluded.settings,updated_at=excluded.updated_at",
             (
                 value.name,
                 value.modality,
                 value.model_dump_json(),
                 selected.model_dump_json(),
+                owner_id,
                 stamp,
                 stamp,
             ),
         )
 
 
-def put_settings(store: Store, name: str, value: ProfileSettings) -> None:
+def put_settings(
+    store: Store, name: str, value: ProfileSettings, owner_id: str | None = None
+) -> None:
+    clause, args = mine(owner_id)
     with store.tx() as db:
         db.execute(
-            "UPDATE profiles SET settings=?, updated_at=? WHERE name=?",
-            (value.model_dump_json(), _iso(datetime.now(UTC)), name),
+            f"UPDATE profiles SET settings=?, updated_at=? WHERE name=? AND {clause}",
+            (value.model_dump_json(), _iso(datetime.now(UTC)), name, *args),
         )
 
 
@@ -126,29 +154,39 @@ def update_settings(current: ProfileSettings, patch: dict[str, Any]) -> ProfileS
     return result
 
 
-def create(store: Store, value: Profile, value_settings: ProfileSettings | None = None) -> None:
-    if profile(store, value.name):
+def create(
+    store: Store,
+    value: Profile,
+    value_settings: ProfileSettings | None = None,
+    owner_id: str | None = None,
+) -> None:
+    if profile(store, value.name, owner_id):
         raise ValueError("exists")
-    put_profile(store, value, value_settings)
+    put_profile(store, value, value_settings, owner_id=owner_id)
 
 
-def rename(store: Store, old: str, new: str) -> None:
-    held = profile(store, old)
+def rename(store: Store, old: str, new: str, owner_id: str | None = None) -> None:
+    held = profile(store, old, owner_id)
     if held is None:
         raise KeyError(old)
-    if profile(store, new):
+    if profile(store, new, owner_id):
         raise ValueError("exists")
     renamed = held.model_copy(update={"name": new})
+    clause, args = mine(owner_id)
     with store.tx() as db:
         db.execute(
-            "UPDATE profiles SET name=?, json=?, updated_at=? WHERE name=?",
-            (new, renamed.model_dump_json(), _iso(datetime.now(UTC)), old),
+            f"UPDATE profiles SET name=?, json=?, updated_at=? WHERE name=? AND {clause}",
+            (new, renamed.model_dump_json(), _iso(datetime.now(UTC)), old, *args),
         )
-        db.execute("UPDATE chains SET profile=? WHERE profile=?", (new, old))
+        db.execute(
+            f"UPDATE profile_models SET profile=? WHERE profile=? AND {clause}", (new, old, *args)
+        )
+        db.execute(f"UPDATE chains SET profile=? WHERE profile=? AND {clause}", (new, old, *args))
+        db.execute(f"UPDATE outcomes SET profile=? WHERE profile=? AND {clause}", (new, old, *args))
         db.execute("UPDATE decisions SET profile=? WHERE profile=?", (new, old))
 
 
-def set_purpose(store: Store, name: str, purpose: str) -> Profile:
+def set_purpose(store: Store, name: str, purpose: str, owner_id: str | None = None) -> Profile:
     """Rewrite what a profile is *for*, and nothing else.
 
     The description is the only part of a profile a person edits often, and
@@ -156,29 +194,33 @@ def set_purpose(store: Store, name: str, purpose: str) -> Profile:
     which meant a page had to hold, and re-send, every weight and constraint it
     never asked about. One field, one call.
     """
-    held = profile(store, name)
+    held = profile(store, name, owner_id)
     if held is None:
         raise KeyError(name)
     updated = held.model_copy(update={"purpose": purpose})
+    clause, args = mine(owner_id)
     with store.tx() as db:
         db.execute(
-            "UPDATE profiles SET json=?, updated_at=? WHERE name=?",
-            (updated.model_dump_json(), _iso(datetime.now(UTC)), name),
+            f"UPDATE profiles SET json=?, updated_at=? WHERE name=? AND {clause}",
+            (updated.model_dump_json(), _iso(datetime.now(UTC)), name, *args),
         )
     return updated
 
 
-def delete(store: Store, name: str) -> bool:
+def delete(store: Store, name: str, owner_id: str | None = None) -> bool:
+    clause, args = mine(owner_id)
     with store.tx() as db:
-        db.execute("DELETE FROM chains WHERE profile=?", (name,))
-        cur = db.execute("DELETE FROM profiles WHERE name=?", (name,))
+        db.execute(f"DELETE FROM chains WHERE profile=? AND {clause}", (name, *args))
+        db.execute(f"DELETE FROM profile_models WHERE profile=? AND {clause}", (name, *args))
+        cur = db.execute(f"DELETE FROM profiles WHERE name=? AND {clause}", (name, *args))
     return bool(cur.rowcount)
 
 
-def status(store: Store, name: str, model_id: str) -> dict[str, Any]:
+def status(store: Store, name: str, model_id: str, owner_id: str | None = None) -> dict[str, Any]:
+    clause, args = mine(owner_id)
     row = store.db.execute(
-        "SELECT status,pin_order FROM profile_models WHERE profile=? AND model_id=?",
-        (name, model_id),
+        f"SELECT status,pin_order FROM profile_models WHERE profile=? AND model_id=? AND {clause}",
+        (name, model_id, *args),
     ).fetchone()
     return {
         "profile": name,
@@ -188,63 +230,89 @@ def status(store: Store, name: str, model_id: str) -> dict[str, Any]:
     }
 
 
-def put_status(store: Store, name: str, model_id: str, state: str) -> dict[str, Any]:
+def put_status(
+    store: Store, name: str, model_id: str, state: str, owner_id: str | None = None
+) -> dict[str, Any]:
     if state not in {"active", "pinned", "removed"}:
         raise ValueError("status must be active, pinned or removed")
+    clause, args = mine(owner_id)
     order = None
     if state == "pinned":
         row = store.db.execute(
-            "SELECT COALESCE(MAX(pin_order),0)+1 n FROM profile_models WHERE profile=?", (name,)
+            f"SELECT COALESCE(MAX(pin_order),0)+1 n FROM profile_models WHERE profile=? AND {clause}",
+            (name, *args),
         ).fetchone()
         order = row["n"]
     with store.tx() as db:
         db.execute(
-            "INSERT INTO profile_models(profile,model_id,status,pin_order) VALUES(?,?,?,?) ON CONFLICT(profile,model_id) DO UPDATE SET status=excluded.status,pin_order=excluded.pin_order",
-            (name, model_id, state, order),
+            "INSERT INTO profile_models(profile,model_id,status,pin_order,owner_id) VALUES(?,?,?,?,?) ON CONFLICT(IFNULL(owner_id,''),profile,model_id) DO UPDATE SET status=excluded.status,pin_order=excluded.pin_order",
+            (name, model_id, state, order, owner_id),
         )
-    return status(store, name, model_id)
+    return status(store, name, model_id, owner_id)
 
 
-def statuses(store: Store, name: str) -> dict[str, tuple[str, int | None]]:
+def statuses(
+    store: Store, name: str, owner_id: str | None = None
+) -> dict[str, tuple[str, int | None]]:
+    clause, args = mine(owner_id)
     return {
         r["model_id"]: (r["status"], r["pin_order"])
-        for r in store.db.execute("SELECT * FROM profile_models WHERE profile=?", (name,))
+        for r in store.db.execute(
+            f"SELECT * FROM profile_models WHERE profile=? AND {clause}", (name, *args)
+        )
     }
 
 
-def live_prefixes(store: Store) -> set[str]:
+def live_prefixes(store: Store, owner_id: str | None = None) -> set[str]:
     """The router-local prefixes the last successful pull actually served.
 
-    `store.reachable()` is already only the fresh rows, so a provider that went
-    dark stops contributing a prefix here the moment the next pull lands.
+    Scoped to this owner's own connectors when there is one: a multiplier is a
+    negotiated rate on *your* router, and a prefix only somebody else's gateway
+    serves is not a knob you have.
     """
-    return {r.local_id.split("/", 1)[0] for r in store.reachable() if "/" in r.local_id}
+    sql = (
+        "SELECT DISTINCT r.local_id FROM reachable r"
+        " LEFT JOIN connectors c ON c.id = r.connector_id"
+        " WHERE r.stale=0"
+    )
+    args: tuple[Any, ...] = ()
+    if owner_id is not None:
+        clause, args = mine(owner_id, "c.owner_id")
+        sql += f" AND {clause}"
+    return {
+        r["local_id"].split("/", 1)[0] for r in store.db.execute(sql, args) if "/" in r["local_id"]
+    }
 
 
-def sync_prefixes(store: Store) -> None:
+def sync_prefixes(store: Store, owner_id: str | None = None) -> None:
     with store.tx() as db:
-        for prefix in live_prefixes(store):
+        for prefix in live_prefixes(store, owner_id):
             db.execute(
-                "INSERT OR IGNORE INTO cost_multipliers(prefix,multiplier) VALUES(?,1.0)", (prefix,)
+                "INSERT INTO cost_multipliers(prefix,multiplier,owner_id) VALUES(?,1.0,?)"
+                " ON CONFLICT(IFNULL(owner_id,''),prefix) DO NOTHING",
+                (prefix, owner_id),
             )
 
 
-def multipliers(store: Store) -> dict[str, float]:
-    """Every multiplier the table holds, whether or not its prefix is reachable.
+def multipliers(store: Store, owner_id: str | None = None) -> dict[str, float]:
+    """Every multiplier this owner holds, whether or not its prefix is reachable.
 
     This is the stored truth, so it is what a configuration export copies and an
     import restores: unplugging a router for an afternoon must not silently drop
     the number somebody tuned. `live_multipliers` is the answer to the different
     question -- which of these is in effect right now.
     """
-    sync_prefixes(store)
+    sync_prefixes(store, owner_id)
+    clause, args = mine(owner_id)
     return {
         r["prefix"]: r["multiplier"]
-        for r in store.db.execute("SELECT * FROM cost_multipliers ORDER BY prefix")
+        for r in store.db.execute(
+            f"SELECT * FROM cost_multipliers WHERE {clause} ORDER BY prefix", args
+        )
     }
 
 
-def live_multipliers(store: Store) -> dict[str, float]:
+def live_multipliers(store: Store, owner_id: str | None = None) -> dict[str, float]:
     """The multipliers whose prefix the last successful pull actually served.
 
     What the API shows. A multiplier on a prefix nothing serves is not a price,
@@ -252,26 +320,31 @@ def live_multipliers(store: Store) -> dict[str, float]:
     wired to nothing -- which is exactly what 37 retired `oc-go/*` ids left
     behind. The row stays in the table either way.
     """
-    live = live_prefixes(store)
-    return {prefix: value for prefix, value in multipliers(store).items() if prefix in live}
+    live = live_prefixes(store, owner_id)
+    return {
+        prefix: value for prefix, value in multipliers(store, owner_id).items() if prefix in live
+    }
 
 
-def put_multipliers(store: Store, values: dict[str, float]) -> dict[str, float]:
+def put_multipliers(
+    store: Store, values: dict[str, float], owner_id: str | None = None
+) -> dict[str, float]:
     if any(v < 0 for v in values.values()):
         raise ValueError("multipliers must be non-negative")
     with store.tx() as db:
         for prefix, value in values.items():
             db.execute(
-                "INSERT INTO cost_multipliers VALUES(?,?) ON CONFLICT(prefix) DO UPDATE SET multiplier=excluded.multiplier",
-                (prefix, value),
+                "INSERT INTO cost_multipliers(prefix,multiplier,owner_id) VALUES(?,?,?)"
+                " ON CONFLICT(IFNULL(owner_id,''),prefix) DO UPDATE SET multiplier=excluded.multiplier",
+                (prefix, value, owner_id),
             )
-    return live_multipliers(store)
+    return live_multipliers(store, owner_id)
 
 
-def add_outcome(store: Store, value: Outcome) -> None:
+def add_outcome(store: Store, value: Outcome, owner_id: str | None = None) -> None:
     with store.tx() as db:
         db.execute(
-            "INSERT INTO outcomes(profile,model_id,local_id,ok,seconds,vote,note,at) VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT INTO outcomes(profile,model_id,local_id,ok,seconds,vote,note,at,owner_id) VALUES(?,?,?,?,?,?,?,?,?)",
             (
                 value.profile,
                 value.model_id,
@@ -281,15 +354,19 @@ def add_outcome(store: Store, value: Outcome) -> None:
                 value.vote,
                 value.note,
                 _iso(value.at),
+                owner_id,
             ),
         )
 
 
-def experience(store: Store, name: str, at: datetime | None = None) -> list[dict[str, Any]]:
+def experience(
+    store: Store, name: str, at: datetime | None = None, owner_id: str | None = None
+) -> list[dict[str, Any]]:
     cutoff = _iso((at or datetime.now(UTC)) - timedelta(days=30))
+    clause, args = mine(owner_id)
     rows = store.db.execute(
-        "SELECT model_id,COUNT(*) n,SUM(ok) successes FROM outcomes WHERE profile=? AND at>=? GROUP BY model_id ORDER BY model_id",
-        (name, cutoff),
+        f"SELECT model_id,COUNT(*) n,SUM(ok) successes FROM outcomes WHERE profile=? AND at>=? AND {clause} GROUP BY model_id ORDER BY model_id",
+        (name, cutoff, *args),
     )
     return [
         {
@@ -353,9 +430,14 @@ def rerank_cached(
 
 
 def controlled_ids(
-    store: Store, name: str, ranked: list[Any], limit: int, floor: float
+    store: Store,
+    name: str,
+    ranked: list[Any],
+    limit: int,
+    floor: float,
+    owner_id: str | None = None,
 ) -> list[str]:
-    states = statuses(store, name)
+    states = statuses(store, name, owner_id)
     pinned = sorted(
         ((order or 0, model) for model, (state, order) in states.items() if state == "pinned")
     )
@@ -373,14 +455,20 @@ def controlled_ids(
     return out[:limit]
 
 
-def chain_for(store: Store, name: str, ranked: list[Any], at: datetime | None = None) -> Any:
+def chain_for(
+    store: Store,
+    name: str,
+    ranked: list[Any],
+    at: datetime | None = None,
+    owner_id: str | None = None,
+) -> Any:
     from sieve.contracts import Chain
 
-    cfg = settings(store, name)
+    cfg = settings(store, name, owner_id)
     if cfg is None:
         return None
-    ids = controlled_ids(store, name, ranked, cfg.list_length, cfg.floor_score)
-    local = store.local_ids()
+    ids = controlled_ids(store, name, ranked, cfg.list_length, cfg.floor_score, owner_id)
+    local = store.local_ids(owner_id=owner_id)
     ids = [model for model in ids if local.get(model)]
     if not ids:
         return None
