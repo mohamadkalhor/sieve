@@ -8,6 +8,7 @@ a unit file.
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Request
@@ -95,6 +96,10 @@ def post_token(
         )
     except ValueError as exc:
         return error(400, "bad_token", str(exc))
+    except sqlite3.IntegrityError:
+        # Two calls minting the same name at once: the second is told so, in
+        # the same sentence, rather than becoming a 500 on a page.
+        return error(409, "exists", "a token of that name already exists")
     return {**made.json(), "secret": secret}
 
 

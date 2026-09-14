@@ -277,3 +277,24 @@ def test_a_token_round_trip_is_mint_use_revoke(box: Config) -> None:
             ).status_code
             == 401
         )
+
+
+def test_a_revoked_tokens_name_is_free_again(box: Config) -> None:
+    """Minting `cron` twice used to raise on the index and answer 500."""
+    store, _boss, ada, _bo = seats(box)
+    ada_secret = secret_for(store, ada)
+    store.close()
+
+    with TestClient(create_app(box)) as client:
+        first = client.post("/v1/tokens", json={"name": "nightly"}, headers=auth(ada_secret))
+        assert first.status_code == 201
+        again = client.post("/v1/tokens", json={"name": "nightly"}, headers=auth(ada_secret))
+        assert again.status_code == 400 and again.json()["error"]["code"] == "bad_token"
+
+        assert (
+            client.delete(f"/v1/tokens/{first.json()['id']}", headers=auth(ada_secret)).status_code
+            == 200
+        )
+        reborn = client.post("/v1/tokens", json={"name": "nightly"}, headers=auth(ada_secret))
+        assert reborn.status_code == 201
+        assert reborn.json()["secret"] != first.json()["secret"]

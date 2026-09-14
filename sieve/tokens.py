@@ -87,12 +87,21 @@ def tokens(store: Store, owner_id: str) -> list[ScriptToken]:
 
 
 def mint(store: Store, owner_id: str, name: str, scopes: set[str]) -> tuple[ScriptToken, str]:
-    """Make a token. Returns the record and the secret, which is shown once."""
+    """Make a token. Returns the record and the secret, which is shown once.
+
+    Two live tokens of one person may not share a name -- that is the label she
+    revokes by -- but a revoked one holds nothing, so its name is free again.
+    """
     name = name.strip()
     if not name:
         raise ValueError("a token needs a name")
     if not scopes:
         raise ValueError("a token needs at least one scope")
+    held = store.db.execute(
+        "SELECT 1 FROM tokens WHERE owner_id=? AND name=? AND revoked=0", (owner_id, name)
+    ).fetchone()
+    if held:
+        raise ValueError(f"you already have a token called {name!r}")
     secret = PREFIX + secrets.token_urlsafe(32)
     made = ScriptToken(
         id=uuid.uuid4().hex[:12],
