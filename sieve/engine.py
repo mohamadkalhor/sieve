@@ -560,6 +560,21 @@ def run(
     return result
 
 
+def operates_box(store: Store, owner_id: str | None) -> bool:
+    """Whether this seat may write the routers `sieve.toml` names.
+
+    Those blocks describe the machine, not a person, so only the gate owner --
+    or nobody-in-particular, on a box where no one has signed in -- writes
+    them. A member ships to the connectors they added and nowhere else.
+    """
+    if owner_id is None:
+        return True
+    from sieve import owners
+
+    who = owners.by_id(store, owner_id)
+    return who is not None and who.role == "owner"
+
+
 def apply_targets(
     cfg: Config,
     chains: list[Chain],
@@ -586,9 +601,10 @@ def apply_targets(
     # Only this person's connectors: a write goes out on somebody's token, and
     # `[targets.*]` from sieve.toml stays the box operator's business.
     by_name = {c.name: c for c in owned.connectors(owner_id)}
+    from_config = list(cfg.targets) if operates_box(owned, owner_id) else []
     wanted = targets or [
         *(name for name, c in by_name.items() if c.write),
-        *(name for name in cfg.targets if name not in by_name),
+        *(name for name in from_config if name not in by_name),
     ]
     results: list[TargetResult] = []
     for name in wanted:

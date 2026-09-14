@@ -407,6 +407,19 @@ def _count(store: Store, table: str) -> int:
     return int(row["n"]) if row else 0
 
 
+def _people(store: Store) -> list[tuple[str, str | None]]:
+    """Everyone this run works for, as (name to log, owner id).
+
+    A box where nobody has signed in yet still has exactly one seat: the rows
+    the migration left unowned, which is every box running on `SIEVE_TOKENS`
+    alone. Once people exist, the run visits each of them in turn, so one
+    person's profiles are never ranked against another person's routers.
+    """
+    from sieve import owners
+
+    return [(u.slug, u.id) for u in owners.users(store)] or [("everyone", None)]
+
+
 def _pull_sources(cfg: Config, store: Store, config_path: str) -> Outcome:
     """Every enabled source, into the store. Inventories are a different step."""
     from sieve import cli
@@ -435,15 +448,22 @@ def _harvest_connectors(cfg: Config, store: Store, config_path: str) -> Outcome:
     from sieve.profiles import control as profile_control
 
     failures = cli._refresh_inventories(cfg, store, http_client(), None)
-    # A gateway that started serving `newvendor/...` has to get a multiplier
-    # row, or its models are priced as though the negotiated rate were 1.0.
-    profile_control.sync_prefixes(store)
+    # A gateway is listed once however many people are on this box -- reading a
+    # router is not per-person work. What is per-person is the price: a prefix
+    # somebody's own gateway started serving has to get a multiplier row of
+    # *theirs*, or its models are priced as though the negotiated rate were 1.0.
+    people = _people(store)
+    prefixes = 0
+    for label, owner_id in people:
+        profile_control.sync_prefixes(store, owner_id)
+        mine = len(profile_control.multipliers(store, owner_id))
+        prefixes += mine
+        print(f"{label}: {len(store.connectors(owner_id))} connectors, {mine} cost prefixes")
     rows = store.reachable()
     matched = sum(1 for r in rows if r.model_id)
-    prefixes = len(profile_control.multipliers(store))
     summary = (
-        f"{len(store.connectors())} connectors, {len(rows)} models found "
-        f"({matched} matched), {prefixes} cost prefixes"
+        f"{len(people)} users, {len(store.connectors())} connectors, "
+        f"{len(rows)} models found ({matched} matched), {prefixes} cost prefixes"
     )
     if failures:
         return Outcome(summary, f"{failures} connector(s) could not be listed; see the log")
@@ -451,7 +471,7 @@ def _harvest_connectors(cfg: Config, store: Store, config_path: str) -> Outcome:
 
 
 def _ship_profiles(cfg: Config, store: Store, actor: str) -> Outcome:
-    """Rank, decide, and ship the combos of profiles that asked to be shipped.
+    """Rank, decide, and ship every person's combos onto their own routers.
 
     The same three rules `sieve run` always had: a source being down does not
     stop it, nothing ships unless the profile set `auto_apply`, and every
@@ -462,34 +482,45 @@ def _ship_profiles(cfg: Config, store: Store, actor: str) -> Outcome:
     from sieve.engine import run as engine_run
     from sieve.profiles.load import load_profiles
 
-    profiles = list(load_profiles(cfg.profiles_dir))
-    result = engine_run(cfg, profiles=profiles, dry_run=False, actor=actor, store=store)
-    for decision in result.decisions:
-        print(f"{decision.profile}: {decision.reason}  [{decision.actor}]")
-    for warning in result.warnings:
-        print(f"warning: {warning}")
+    people = _people(store)
+    ranked = decided = shipped = failures = 0
+    for label, owner_id in people:
+        profiles = list(load_profiles(cfg.profiles_dir, store, owner_id))
+        if not profiles:
+            print(f"{label}: no profiles")
+            continue
+        result = engine_run(
+            cfg, profiles=profiles, dry_run=False, actor=actor, store=store, owner_id=owner_id
+        )
+        ranked += len(result.rankings)
+        decided += len(result.decisions)
+        for decision in result.decisions:
+            print(f"{label}: {decision.profile}: {decision.reason}  [{decision.actor}]")
+        for warning in result.warnings:
+            print(f"{label}: warning: {warning}")
 
-    opted_in = {p.name for p in profiles if p.policy.auto_apply}
-    shipping = [c for c in result.chains if c.profile in opted_in]
-    held = sorted({c.profile for c in result.chains} - opted_in)
+        opted_in = {p.name for p in profiles if p.policy.auto_apply}
+        shipping = [c for c in result.chains if c.profile in opted_in]
+        held = sorted({c.profile for c in result.chains} - opted_in)
 
-    failures = 0
-    if not shipping:
-        print("apply: no profile has auto_apply, so nothing shipped")
-    else:
-        for outcome in apply_targets(cfg, shipping, dry_run=False, actor=actor, store=store):
+        if not shipping:
+            print(f"{label}: apply: no profile has auto_apply, so nothing shipped")
+            continue
+        for outcome in apply_targets(
+            cfg, shipping, dry_run=False, actor=actor, store=store, owner_id=owner_id
+        ):
             if outcome.error:
                 failures += 1
-                print(f"{outcome.target}: {outcome.error}")
+                print(f"{label}: {outcome.target}: {outcome.error}")
             else:
-                print(f"{outcome.target}: wrote {', '.join(outcome.written) or '(nothing)'}")
+                print(
+                    f"{label}: {outcome.target}: wrote {', '.join(outcome.written) or '(nothing)'}"
+                )
+        shipped += len(shipping)
         if held:
-            print(f"held (no auto_apply): {', '.join(held)}")
+            print(f"{label}: held (no auto_apply): {', '.join(held)}")
 
-    summary = (
-        f"{len(result.rankings)} ranked, {len(result.decisions)} decided, "
-        f"{len(shipping)} combos shipped"
-    )
+    summary = f"{len(people)} users, {ranked} ranked, {decided} decided, {shipped} combos shipped"
     if failures:
         return Outcome(summary, f"{failures} target(s) refused the write; see the log")
     return Outcome(summary)
