@@ -713,10 +713,33 @@ def get_experience(request: Request, name: str, _: Read = None) -> Any:
     return control.experience(store, name, None, owner_id)
 
 
+#: how many models below the line the page may show under "show more"
+NEXT_UP = 10
+
+
+def listed(rank: Any, names: dict[str, str]) -> dict[str, Any]:
+    """One row of a shipped list, as a page draws it."""
+    return {
+        "id": rank.model_id,
+        "name": names.get(rank.model_id) or rank.model_id,
+        "local_ids": rank.local_ids,
+        "score": rank.final,
+    }
+
+
 @router.post("/profiles/{name}/preview")
 def preview(
     request: Request, name: str, body: Annotated[dict[str, Any], Body()], _: Read = None
 ) -> Any:
+    """What these weights would ship, without shipping it.
+
+    The answer is the list itself -- the top `ship` reachable models, in score
+    order -- and the ten behind it, so a page can show what is next in line
+    without asking twice. Meant to be called on every slider move: it reweighs
+    the axis values the stored ranking already holds rather than rebuilding the
+    observation table, and only a profile with no stored ranking at all pays
+    for a full one.
+    """
     cfg, store = config_of(request), store_of(request)
     owner_id = owner_of(request)
     found = control.profile(store, name, owner_id)
@@ -724,7 +747,7 @@ def preview(
     if found is None or current is None:
         return error(404, "not_found", f"no profile {name!r}")
     try:
-        proposed, _warnings = control.update_settings(current, body)
+        proposed, warnings = control.update_settings(current, body)
     except (ValidationError, ValueError, TypeError) as exc:
         return error(400, "bad_settings", str(exc))
     ranking = store.ranking(name, None, owner_id)
@@ -735,8 +758,19 @@ def preview(
         )
         store.put_ranking(ranking, owner_id)
     ranking = control.rerank_cached(ranking, proposed.weights)
-    ids = control.shipped_ids(ranking.ranks, proposed.ship)
-    return {"profile": name, "models": ids, "settings": proposed, "ranking": ranking}
+    names = store.model_names(found.modality)
+    ships = control.shipped_rows(ranking.ranks, proposed.ship)
+    cut = len(ships)
+    after = [r for r in ranking.ranks if r.position > cut][:NEXT_UP]
+    return {
+        "profile": name,
+        "ship": proposed.ship,
+        "models": [listed(r, names) for r in ships],
+        "next": [listed(r, names) for r in after],
+        "settings": proposed,
+        "computed_at": ranking.computed_at,
+        "warnings": warnings,
+    }
 
 
 @router.get("/profiles/{name}/history")
@@ -854,11 +888,27 @@ def apply_profile(
     store.put_ranking(ranking, owner_id)
     store.put_chain(chain, owner_id)
     results = []
+    combos: list[str] = []
     for connector in store.connectors(owner_id):
         if connector.write:
-            results.append(ship(store, connector, [chain]))
+            outcome = ship(store, connector, [chain])
+            results.append(outcome)
+            combos.extend(str(c) for c in (outcome.detail.get("combos") or []))
             log_applied(store, connector, [chain], token.name)
-    return {"chain": chain, "results": results}
+    names = store.model_names(found.modality)
+    return {
+        "chain": chain,
+        # what a person needs to read back: the combo this went out as, and
+        # the list it now holds. A page that says "shipped" and cannot name
+        # what it shipped is asking to be trusted.
+        "combos": sorted(set(combos)),
+        "models": [
+            {"id": model_id, "name": names.get(model_id) or model_id}
+            for model_id in [chain.primary, *chain.fallbacks]
+        ],
+        "shipped_at": chain.computed_at,
+        "results": results,
+    }
 
 
 @router.post("/profiles/{name}/evaluate")
@@ -953,50 +1003,54 @@ def recommend(
     reachable_only: bool = True,
     _: Read = None,
 ) -> Any:
+    """The chain this profile shipped, in the order it shipped it.
+
+    The same answer the gateway is routing on -- not a fresh opinion. A caller
+    asking what to call and a router already holding a combo must agree, or the
+    recommendation is describing a list nobody is using. Only a profile that
+    has never shipped falls back to its ranking.
+    """
     store = store_of(request)
     owner_id = owner_of(request)
     chain = store.chain(profile, owner_id)
 
-    found = ranking_for(request, profile)
-    if isinstance(found, JSONResponse):
-        if chain is None:
-            return found
-        ranking = None
-    else:
-        ranking = found
-
-    models: list[dict[str, Any]] = []
-    if ranking is not None:
-        for rank in ranking.ranks:
-            if rank.position == 0:
-                continue
-            if reachable_only and not rank.reachable:
-                continue
-            models.append(
-                {
-                    "id": rank.model_id,
-                    "local_ids": rank.local_ids,
-                    "final": rank.final,
-                    "confidence": rank.confidence,
-                }
-            )
-            if len(models) >= n:
-                break
-    elif chain is not None:
-        for model_id in [chain.primary, *chain.fallbacks][:n]:
-            models.append(
+    if chain is not None:
+        ordered = [chain.primary, *chain.fallbacks][:n]
+        return {
+            "profile": profile,
+            "models": [
                 {
                     "id": model_id,
                     "local_ids": chain.local.get(model_id, []),
                     "final": None,
                     "confidence": None,
                 }
-            )
-    return {
-        "profile": profile,
-        "models": models,
-        "computed_at": (ranking.computed_at if ranking else chain.computed_at),  # type: ignore[union-attr]
-    }
+                for model_id in ordered
+            ],
+            "computed_at": chain.computed_at,
+        }
+
+    found = ranking_for(request, profile)
+    if isinstance(found, JSONResponse):
+        return found
+
+    models: list[dict[str, Any]] = []
+    for rank in found.ranks:
+        if rank.position == 0:
+            continue
+        if reachable_only and not rank.reachable:
+            continue
+        models.append(
+            {
+                "id": rank.model_id,
+                "local_ids": rank.local_ids,
+                "final": rank.final,
+                "confidence": rank.confidence,
+            }
+        )
+        if len(models) >= n:
+            break
+    return {"profile": profile, "models": models, "computed_at": found.computed_at}
 
 
 @router.post("/apply")

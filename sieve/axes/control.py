@@ -110,6 +110,7 @@ def row(
     ).fetchone()
     return {
         **held.model_dump(mode="json"),
+        "meaning": meaning(held),
         "fields_count": len(held.fields),
         "profiles": profiles_using(store, name, held.modality, owner_id),
         "builtin": bool(meta["builtin"]) if meta else False,
@@ -117,6 +118,19 @@ def row(
         # second call; NULL means the shared vocabulary, not a missing owner.
         "owner_id": meta["owner_id"] if meta else None,
     }
+
+
+def meaning(held: Axis) -> str:
+    """One line saying what this axis means, for the person moving its slider.
+
+    `describes` is that line wherever an axis has one -- "thinks through
+    multi-step problems" -- and it is the only prose most axes carry. An axis
+    written without one still gets a sentence rather than an empty row, because
+    a slider with no label is a slider nobody moves twice.
+    """
+    said = (held.describes or "").strip().splitlines()
+    first = said[0].strip() if said else ""
+    return first or f"how a model does on {held.label.lower()}"
 
 
 def rows(

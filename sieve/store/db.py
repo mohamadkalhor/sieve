@@ -213,6 +213,20 @@ class Store:
                     )
         return rows
 
+    def model_names(self, modality: Modality | None = None) -> dict[str, str]:
+        """Canonical id -> the name a person reads, in one query.
+
+        `models()` costs an alias lookup per row, which is most of a second on
+        this catalogue. A list that only has to say "GPT 6 Astra" next to an id
+        does not need the aliases, the release date or the effort ladder.
+        """
+        sql = "SELECT id, name FROM models"
+        args: tuple[Any, ...] = ()
+        if modality:
+            sql += " WHERE modality = ?"
+            args = (modality,)
+        return {r["id"]: r["name"] for r in self.db.execute(sql, args)}
+
     def models(self, modality: Modality | None = None) -> list[ModelRef]:
         sql = "SELECT * FROM models"
         args: tuple[Any, ...] = ()
