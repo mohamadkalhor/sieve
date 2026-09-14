@@ -185,11 +185,27 @@ def ensure_schedules(store: Store) -> None:
             )
 
 
-def schedules(store: Store) -> list[Schedule]:
-    ensure_schedules(store)
+def schedules(store: Store, *, ensure: bool = False) -> list[Schedule]:
+    """The four rows, read.
+
+    Reading used to seed first, which made `GET /v1/status` -- polled by the
+    status box every three seconds on two pages -- a write. `INSERT OR IGNORE`
+    that ignores every row still takes the write lock, so the poll collided
+    with whatever else was writing and came back as a bare 500 saying "database
+    is locked"; the scheduler hit the same wall from the other side. The rows
+    are seeded where a write belongs: at startup (`Runner.__init__`), on the
+    scheduler tick, and before a schedule is changed -- and, once, for a
+    database that does not have them yet.
+    """
+    rows = [_schedule(r) for r in store.db.execute("SELECT * FROM schedules")]
+    # A store that has never been started has no rows to read, and a reader
+    # asking first is not a reason to answer nothing. That seeds once, on a
+    # fresh database; a box that has run before never writes from here again.
+    if ensure or len(rows) < len(STEPS):
+        ensure_schedules(store)
+        rows = [_schedule(r) for r in store.db.execute("SELECT * FROM schedules")]
     # The composite first: it is the row the status box leads with.
     order = {step: index for index, step in enumerate(("full", *SINGLE_STEPS))}
-    rows = [_schedule(r) for r in store.db.execute("SELECT * FROM schedules")]
     return sorted(rows, key=lambda s: order.get(s.step, 99))
 
 
@@ -219,6 +235,7 @@ def put_schedule(
         hour, minute = _hhmm(at_time)
         if f"{hour:02d}:{minute:02d}" != at_time.strip():
             raise ValueError("at_time must be HH:MM in 24-hour clock")
+    ensure_schedules(store)
     current = schedule_for(store, step)
     assert current is not None  # ensure_schedules made it
     with store.tx() as db:
@@ -539,10 +556,19 @@ def execute(cfg: Config, store: Store, step: str, *, actor: str, config_path: st
                 errors.append(f"{one}: {outcome.error}")
             print(outcome.summary)
         return Outcome(" · ".join(parts), "; ".join(errors) or None)
+    # A pull and a harvest change what a ranking would read. A pull writes a
+    # new snapshot and so is a new cache key anyway; a harvest changes rows
+    # under the snapshot that is already built, and that view has to go.
     if step == "pull_sources":
-        return _pull_sources(cfg, store, config_path)
+        try:
+            return _pull_sources(cfg, store, config_path)
+        finally:
+            store.invalidate_views()
     if step == "harvest_connectors":
-        return _harvest_connectors(cfg, store, config_path)
+        try:
+            return _harvest_connectors(cfg, store, config_path)
+        finally:
+            store.invalidate_views()
     if step == "ship_profiles":
         return _ship_profiles(cfg, store, actor)
     raise ValueError(f"no such step {step!r}; have {', '.join(STEPS)}")
@@ -736,7 +762,7 @@ class Scheduler(threading.Thread):
         """Fire every step whose moment has passed since it last fired."""
         moment = at or now()
         fired: list[str] = []
-        for schedule in schedules(self.runner.store):
+        for schedule in schedules(self.runner.store, ensure=True):
             if schedule.mode == "off":
                 continue
             # A schedule that has never fired starts counting now rather than

@@ -7,6 +7,8 @@ Errors are always `{"error": {"code": ..., "message": ...}}`.
 from __future__ import annotations
 
 import os
+import sqlite3
+import traceback
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -19,16 +21,16 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from sieve import __version__
+from sieve import __version__, owners
 from sieve.api.routes.config import router as config_router
 from sieve.api.routes.connectors import router as connectors_router
 from sieve.api.routes.identity import router as identity_router
 from sieve.api.routes.runs import router as runs_router
 from sieve.api.routes.v1 import router as v1_router
-from sieve import owners
 from sieve.axes import control as axis_control
 from sieve.config import Config, default_config, load_config
 from sieve.connectors import seed_from_toml
+from sieve.engine import RankingBusyError
 from sieve.profiles import control as profile_control
 from sieve.runs import Runner, Scheduler
 from sieve.store import Store
@@ -112,6 +114,50 @@ def create_app(config: Config | None = None) -> FastAPI:
                 }
             },
         )
+
+    def envelope(status: int, code: str, message: str, **extra: Any) -> JSONResponse:
+        body: dict[str, Any] = {"error": {"code": code, "message": message, **extra}}
+        headers = {"Retry-After": str(extra["retry_after"])} if "retry_after" in extra else None
+        return JSONResponse(status_code=status, content=body, headers=headers)
+
+    def is_locked(exc: BaseException) -> bool:
+        return isinstance(exc, sqlite3.OperationalError) and "database is locked" in str(exc)
+
+    @app.exception_handler(sqlite3.OperationalError)
+    async def sqlite_error(_: Request, exc: sqlite3.OperationalError) -> JSONResponse:
+        """A locked database is a queue, not a fault.
+
+        SQLite serialises writers; a busy_timeout that runs out means the box
+        is writing something long, and the honest answer is "come back", not a
+        500. Anything else SQLite raises is a real fault and says so.
+        """
+        if not is_locked(exc):
+            traceback.print_exception(exc)
+            return envelope(500, "store_error", "the store could not answer that")
+        return envelope(
+            503,
+            "database_locked",
+            "the store is busy with another write; try again in a moment",
+            retry_after=2,
+        )
+
+    @app.exception_handler(RankingBusyError)
+    async def ranking_busy(_: Request, exc: RankingBusyError) -> JSONResponse:
+        return envelope(503, "ranking_busy", str(exc), retry_after=10)
+
+    @app.exception_handler(Exception)
+    async def unhandled(_: Request, exc: Exception) -> JSONResponse:
+        """Every 500 in the envelope, whatever raised it.
+
+        Without this, Starlette re-raises and uvicorn writes a bare
+        `Internal Server Error` in text/plain, which a client parsing JSON
+        reads as a broken server rather than a failed call. The traceback goes
+        to the log, where it belongs; the caller gets a code and a sentence.
+        """
+        if is_locked(exc):
+            return await sqlite_error(_, exc)  # type: ignore[arg-type]
+        traceback.print_exception(exc)
+        return envelope(500, "internal_error", "something went wrong; the log has the detail")
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
