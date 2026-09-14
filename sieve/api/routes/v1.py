@@ -727,7 +727,7 @@ def put_profile_settings(
         return error(404, "not_found", f"no profile {name!r}")
     try:
         after = control.update_settings(before, body)
-    except (ValidationError, ValueError) as exc:
+    except (ValidationError, ValueError, TypeError) as exc:
         return error(400, "bad_settings", str(exc))
     found = control.profile(store, name, owner_id)
     assert found is not None
@@ -866,7 +866,7 @@ def preview(
         return error(404, "not_found", f"no profile {name!r}")
     try:
         proposed = control.update_settings(current, body)
-    except (ValidationError, ValueError) as exc:
+    except (ValidationError, ValueError, TypeError) as exc:
         return error(400, "bad_settings", str(exc))
     ranking = store.ranking(name, None, owner_id)
     if ranking is None:
