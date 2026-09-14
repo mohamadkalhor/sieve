@@ -68,6 +68,23 @@ def refresh(store: Store, connector: Connector, registry: Any) -> PullCount:
     )
 
 
+def slug_for_connector(store: Store, connector: Connector) -> str | None:
+    """The name-suffix this connector's combos carry, or None for the owner's.
+
+    A connector belongs to one person, so the combos on it are named after
+    *them*, not after whoever triggered the run. The gate owner gets None,
+    which keeps the bare `sieve-<profile>` names already live on his gateway.
+    """
+    if connector.owner_id is None:
+        return None
+    from sieve import owners
+
+    who = owners.by_id(store, connector.owner_id)
+    if who is None or who.role == "owner":
+        return None
+    return who.slug
+
+
 def ship(
     store: Store,
     connector: Connector,
@@ -83,6 +100,7 @@ def ship(
     profile it is about.
     """
     adapter = adapter_for(connector)
+    slug = slug_for_connector(store, connector)
     planned: dict[str, list[str]] = {}
     skipped: dict[str, str] = {}
     for chain in sorted(chains, key=lambda c: c.profile):
@@ -90,7 +108,7 @@ def ship(
         if not models:
             skipped[chain.profile] = "no reachable local id in the chain"
             continue
-        planned[combo_name(chain.profile)] = models
+        planned[combo_name(chain.profile, slug)] = models
 
     detail: dict[str, Any] = {
         "connector": connector.id,

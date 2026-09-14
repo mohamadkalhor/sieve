@@ -17,7 +17,7 @@ from fastapi import APIRouter, Body, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ValidationError
 
-from sieve.api.auth import Token, actor_for, require_read
+from sieve.api.auth import Token, actor_for, owner_of_request, require_read
 from sieve.api.auth import require as require_scope
 from sieve.api.sse import events
 from sieve.axes import control as axis_control
@@ -80,6 +80,28 @@ def store_of(request: Request) -> Store:
     return store
 
 
+def owner_of(request: Request) -> str | None:
+    """Whose rows this call may see and write.
+
+    Every route that touches a profile, connector, axis, multiplier or outcome
+    passes this down. None means "the unowned rows", which is the whole store on
+    a box where nobody has signed in -- so a single-user install behaves exactly
+    as it did before several people were possible.
+    """
+    return owner_of_request(request)
+
+
+def visible_or_404(found: Any, kind: str, name: str) -> JSONResponse | None:
+    """404 for a row this caller cannot see.
+
+    Deliberately not 403: telling somebody that `judge` exists but is not theirs
+    is telling them what another person named their profile.
+    """
+    if found is None:
+        return error(404, "not_found", f"no {kind} {name!r}")
+    return None
+
+
 def error(status: int, code: str, message: str, **extra: Any) -> JSONResponse:
     return JSONResponse(
         status_code=status, content={"error": {"code": code, "message": message}, **extra}
@@ -120,10 +142,12 @@ def _profiles_module() -> Any:
         raise OwnerMissingError("sieve.profiles.load", "B") from exc
 
 
-def load_profile(cfg: Config, name: str, store: Store | None = None) -> Profile | None:
+def load_profile(
+    cfg: Config, name: str, store: Store | None = None, owner_id: str | None = None
+) -> Profile | None:
     if store is not None:
-        control.seed(store, cfg.profiles_dir)
-        return control.profile(store, name)
+        control.seed(store, cfg.profiles_dir, owner_id)
+        return control.profile(store, name, owner_id)
     for profile in _profiles_module().load_profiles(cfg.profiles_dir):
         if profile.name == name:
             found: Profile = profile
@@ -168,9 +192,39 @@ def get_modalities(request: Request, _: Read = None) -> list[dict[str, Any]]:
 
 def _axes_store(request: Request) -> Store:
     cfg, store = config_of(request), store_of(request)
-    control.seed(store, cfg.profiles_dir)
+    control.seed(store, cfg.profiles_dir, owner_of(request))
     axis_control.seed(store, cfg.axes_dir)
     return store
+
+
+def shared_axis_refused(store: Store, name: str, modality: Any, owner_id: str | None) -> Any:
+    """403 when somebody who is not the owner tries to write the shared word.
+
+    A builtin axis is the vocabulary everybody scores against. One person
+    redefining "latency" for the whole box would silently move every other
+    person's rankings, so a member who edits one is told no; what they may do
+    instead -- keep their own axis of that name -- is what `axis_control.put`
+    with their `owner_id` does, and the Axes page offers.
+    """
+    if owner_id is None:
+        return None
+    row = store.db.execute(
+        "SELECT 1 FROM axes WHERE name=? AND owner_id IS NULL"
+        + (" AND modality=?" if modality else ""),
+        (name, modality) if modality else (name,),
+    ).fetchone()
+    if row is None:
+        return None
+    from sieve import owners
+
+    who = owners.by_id(store, owner_id)
+    if who is not None and who.role == "owner":
+        return None
+    return error(
+        403,
+        "shared_axis",
+        f"axis {name!r} is shared; only the owner may change it",
+    )
 
 
 @router.get("/axes")
@@ -179,12 +233,12 @@ def get_axes(
     modality: Modality | None = None,
     _: Read = None,
 ) -> list[dict[str, object]]:
-    return axis_control.rows(_axes_store(request), modality)
+    return axis_control.rows(_axes_store(request), modality, owner_of(request))
 
 
 @router.get("/axes/{name}")
 def get_axis(request: Request, name: str, modality: Modality | None = None, _: Read = None) -> Any:
-    return axis_control.row(_axes_store(request), name, modality) or error(
+    return axis_control.row(_axes_store(request), name, modality, owner_of(request)) or error(
         404, "not_found", f"no axis {name!r}"
     )
 
@@ -203,12 +257,20 @@ def post_axis(
     token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     store = _axes_store(request)
-    if axis_control.axis(store, value.name, value.modality):
+    owner_id = owner_of(request)
+    refused = shared_axis_refused(store, value.name, value.modality, owner_id)
+    if refused:
+        return refused
+    held = store.db.execute(
+        "SELECT 1 FROM axes WHERE name=? AND modality=? AND IFNULL(owner_id,'')=IFNULL(?,'')",
+        (value.name, value.modality, owner_id),
+    ).fetchone()
+    if held:
         return error(409, "exists", f"axis {value.name!r} already exists for {value.modality}")
     problem = _axis_problem(store, value)
     if problem:
         return problem
-    axis_control.put(store, value, builtin=False)
+    axis_control.put(store, value, builtin=False, owner_id=owner_id)
     log_decision(
         store,
         value.name,
@@ -218,7 +280,7 @@ def post_axis(
         value.model_dump(mode="json"),
         f"axis {value.name} created by {token.name}",
     )
-    return axis_control.row(store, value.name)
+    return axis_control.row(store, value.name, value.modality, owner_id)
 
 
 @router.put("/axes/{name}")
@@ -229,16 +291,20 @@ def put_axis(
     token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     store = _axes_store(request)
-    before = axis_control.row(store, name, value.modality)
+    owner_id = owner_of(request)
+    before = axis_control.row(store, name, value.modality, owner_id)
     if before is None:
         return error(404, "not_found", f"no axis {name!r} for {value.modality}")
     if value.name != name:
         return error(400, "bad_request", "the body's name must match the path")
+    refused = shared_axis_refused(store, name, value.modality, owner_id)
+    if refused:
+        return refused
     problem = _axis_problem(store, value)
     if problem:
         return problem
-    axis_control.put(store, value)
-    after = axis_control.row(store, name, value.modality)
+    axis_control.put(store, value, builtin=False, owner_id=owner_id)
+    after = axis_control.row(store, name, value.modality, owner_id)
     log_decision(
         store, name, "weights", token.name, before, after, f"axis {name} updated by {token.name}"
     )
@@ -254,14 +320,18 @@ def delete_axis(
     force: bool = False,
 ) -> Any:
     store = _axes_store(request)
-    before = axis_control.row(store, name, modality)
+    owner_id = owner_of(request)
+    before = axis_control.row(store, name, modality, owner_id)
     if before is None:
         return error(404, "not_found", f"no axis {name!r}")
     held_modality = str(before["modality"])
-    users = axis_control.profiles_using(store, name, held_modality)
+    refused = shared_axis_refused(store, name, held_modality, owner_id)
+    if refused:
+        return refused
+    users = axis_control.profiles_using(store, name, held_modality, owner_id)
     if users and not force:
         return error(409, "axis_in_use", f"used by {', '.join(users)}", profiles=users)
-    axis_control.delete(store, name, modality=held_modality, force=force)
+    axis_control.delete(store, name, modality=held_modality, force=force, owner_id=owner_id)
     reason = f"axis {name} deleted by {token.name}"
     if users:
         reason += "; profile weights set to 0"
@@ -280,7 +350,7 @@ def get_models(
     _: Read = None,
 ) -> dict[str, Any]:
     store = store_of(request)
-    local = store.local_ids()
+    local = store.local_ids(owner_of(request))
     models = store.models(modality)
     if q:
         needle = q.lower()
@@ -308,7 +378,7 @@ def get_model(request: Request, model_id: str, _: Read = None) -> Any:
     store = store_of(request)
     for model in store.models():
         if model.id == model_id:
-            local = store.local_ids()
+            local = store.local_ids(owner_of(request))
             return {
                 **model.model_dump(mode="json"),
                 "reachable": model.id in local,
@@ -329,21 +399,38 @@ def get_model(request: Request, model_id: str, _: Read = None) -> Any:
 def get_profiles(request: Request, modality: Modality | None = None, _: Read = None) -> Any:
     cfg = config_of(request)
     store = store_of(request)
-    control.seed(store, cfg.profiles_dir)
-    profiles = control.profiles(store)
+    owner_id = owner_of(request)
+    control.seed(store, cfg.profiles_dir, owner_id)
+    profiles = control.profiles(store, owner_id)
     return [p for p in profiles if modality is None or p.modality == modality]
 
 
 @router.get("/profiles/{name}")
 def get_profile(request: Request, name: str, _: Read = None) -> Any:
     cfg = config_of(request)
-    profile = load_profile(cfg, name, store_of(request))
+    profile = load_profile(cfg, name, store_of(request), owner_of(request))
     return profile or error(404, "not_found", f"no profile {name!r}")
 
 
-def _save(cfg: Config, profile: Profile, store: Store | None = None) -> None:
+def _save(
+    cfg: Config, profile: Profile, store: Store | None = None, owner_id: str | None = None
+) -> None:
+    """Write a profile back: always to the store, to YAML only when it is the
+    box's own.
+
+    `profiles/*.yaml` is the shipped seed every new member is given a copy of.
+    A member saving their `judge` there would rewrite what the next person is
+    seeded with, so their edits stay in the store, which is where their profile
+    lives anyway.
+    """
     if store is not None:
-        control.put_profile(store, profile)
+        control.put_profile(store, profile, owner_id=owner_id)
+    if owner_id is not None and store is not None:
+        from sieve import owners
+
+        who = owners.by_id(store, owner_id)
+        if who is not None and who.role != "owner":
+            return
     try:
         saver = import_module("sieve.profiles.save")
     except ModuleNotFoundError as exc:
@@ -359,11 +446,12 @@ def put_profile(
     token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
+    owner_id = owner_of(request)
     if profile.name != name:
         return error(400, "bad_request", "the body's name must match the path")
     try:
-        before = load_profile(cfg, name, store)
-        _save(cfg, profile, store)
+        before = load_profile(cfg, name, store, owner_id)
+        _save(cfg, profile, store, owner_id)
     except OwnerMissingError:
         return not_built(Profile, "B", "sieve.profiles.save")
     log_decision(
@@ -386,8 +474,9 @@ def patch_weights(
     token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
+    owner_id = owner_of(request)
     try:
-        profile = load_profile(cfg, name, store)
+        profile = load_profile(cfg, name, store, owner_id)
     except OwnerMissingError:
         return not_built(Profile, "B", "sieve.profiles.load")
     if profile is None:
@@ -396,7 +485,7 @@ def patch_weights(
     if abs(total - 1.0) > 0.001:
         return error(400, "bad_weights", f"weights must sum to 1 +/- 0.001, got {total:.4f}")
     updated = profile.model_copy(update={"weights": weights})
-    _save(cfg, updated, store)
+    _save(cfg, updated, store, owner_id)
     log_decision(
         store, name, "weights", token.name, profile.weights, weights, f"weights set by {token.name}"
     )
@@ -411,15 +500,16 @@ def patch_policy(
     token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
+    owner_id = owner_of(request)
     try:
-        profile = load_profile(cfg, name, store)
+        profile = load_profile(cfg, name, store, owner_id)
     except OwnerMissingError:
         return not_built(Profile, "B", "sieve.profiles.load")
     if profile is None:
         return error(404, "not_found", f"no profile {name!r}")
     merged = profile.policy.model_copy(update=policy)
     updated = profile.model_copy(update={"policy": merged})
-    _save(cfg, updated, store)
+    _save(cfg, updated, store, owner_id)
     log_decision(
         store,
         name,
@@ -446,8 +536,9 @@ def patch_constraints(
     to send `{"tools": false}`, which reads as "require the absence of tools".
     """
     cfg, store = config_of(request), store_of(request)
+    owner_id = owner_of(request)
     try:
-        profile = load_profile(cfg, name, store)
+        profile = load_profile(cfg, name, store, owner_id)
     except OwnerMissingError:
         return not_built(Profile, "B", "sieve.profiles.load")
     if profile is None:
@@ -463,7 +554,7 @@ def patch_constraints(
         )
 
     updated = profile.model_copy(update={"require": require})
-    _save(cfg, updated, store)
+    _save(cfg, updated, store, owner_id)
     log_decision(
         store,
         name,
@@ -490,8 +581,9 @@ def patch_shape(
     otherwise look like the models had changed.
     """
     cfg, store = config_of(request), store_of(request)
+    owner_id = owner_of(request)
     try:
-        profile = load_profile(cfg, name, store)
+        profile = load_profile(cfg, name, store, owner_id)
     except OwnerMissingError:
         return not_built(Profile, "B", "sieve.profiles.load")
     if profile is None:
@@ -503,7 +595,7 @@ def patch_shape(
         return error(400, "bad_shape", str(exc.errors()[0].get("msg", exc)))
 
     updated = profile.model_copy(update={"shape": merged})
-    _save(cfg, updated, store)
+    _save(cfg, updated, store, owner_id)
     log_decision(
         store,
         name,
@@ -531,6 +623,7 @@ def post_profile(
     changing two numbers is how anybody actually makes one.
     """
     cfg, store = config_of(request), store_of(request)
+    owner_id = owner_of(request)
     name = str(body.get("name") or "").strip()
     source = str(body.get("from") or "").strip()
 
@@ -545,12 +638,12 @@ def post_profile(
     if not source and not body.get("modality"):
         return error(400, "bad_request", "a new profile needs `from` or `modality`")
 
-    control.seed(store, cfg.profiles_dir)
-    existing = {p.name for p in control.profiles(store)}
-    original = control.profile(store, source)
+    control.seed(store, cfg.profiles_dir, owner_id)
+    existing = {p.name for p in control.profiles(store, owner_id)}
+    original = control.profile(store, source, owner_id)
     if original is None and body.get("modality"):
         original = next(
-            (p for p in control.profiles(store) if p.modality == body["modality"]), None
+            (p for p in control.profiles(store, owner_id) if p.modality == body["modality"]), None
         )
 
     if name in existing:
@@ -566,7 +659,7 @@ def post_profile(
             "purpose": str(body.get("purpose") or f"cloned from {source}"),
         }
     )
-    _save(cfg, updated, store)
+    _save(cfg, updated, store, owner_id)
     log_decision(
         store,
         name,
@@ -582,8 +675,9 @@ def post_profile(
 @router.get("/profiles/{name}/settings")
 def get_profile_settings(request: Request, name: str, _: Read = None) -> Any:
     cfg, store = config_of(request), store_of(request)
-    control.seed(store, cfg.profiles_dir)
-    value = control.settings(store, name)
+    owner_id = owner_of(request)
+    control.seed(store, cfg.profiles_dir, owner_id)
+    value = control.settings(store, name, owner_id)
     return value or error(404, "not_found", f"no profile {name!r}")
 
 
@@ -595,15 +689,16 @@ def put_profile_settings(
     token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
-    control.seed(store, cfg.profiles_dir)
-    before = control.settings(store, name)
+    owner_id = owner_of(request)
+    control.seed(store, cfg.profiles_dir, owner_id)
+    before = control.settings(store, name, owner_id)
     if before is None:
         return error(404, "not_found", f"no profile {name!r}")
     try:
         after = control.update_settings(before, body)
     except (ValidationError, ValueError) as exc:
         return error(400, "bad_settings", str(exc))
-    control.put_settings(store, name, after)
+    control.put_settings(store, name, after, owner_id)
     log_decision(
         store,
         name,
@@ -619,9 +714,10 @@ def put_profile_settings(
 @router.get("/profiles/{name}/models/{model_id:path}/status")
 def get_model_status(request: Request, name: str, model_id: str, _: Read = None) -> Any:
     store = store_of(request)
-    if control.profile(store, name) is None:
+    owner_id = owner_of(request)
+    if control.profile(store, name, owner_id) is None:
         return error(404, "not_found", f"no profile {name!r}")
-    return control.status(store, name, model_id)
+    return control.status(store, name, model_id, owner_id)
 
 
 @router.put("/profiles/{name}/models/{model_id:path}/status")
@@ -633,11 +729,12 @@ def put_model_status(
     token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     store = store_of(request)
-    if control.profile(store, name) is None:
+    owner_id = owner_of(request)
+    if control.profile(store, name, owner_id) is None:
         return error(404, "not_found", f"no profile {name!r}")
-    before = control.status(store, name, model_id)
+    before = control.status(store, name, model_id, owner_id)
     try:
-        after = control.put_status(store, name, model_id, body.get("status", ""))
+        after = control.put_status(store, name, model_id, body.get("status", ""), owner_id)
     except ValueError as exc:
         return error(400, "bad_status", str(exc))
     log_decision(
@@ -664,12 +761,13 @@ def put_cost_multipliers(
     token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
     store = store_of(request)
-    before = control.live_multipliers(store)
+    owner_id = owner_of(request)
+    before = control.live_multipliers(store, owner_id)
     try:
-        after = control.put_multipliers(store, body)
+        after = control.put_multipliers(store, body, owner_id)
     except ValueError as exc:
         return error(400, "bad_multiplier", str(exc))
-    for profile in control.profiles(store):
+    for profile in control.profiles(store, owner_id):
         log_decision(
             store,
             profile.name,
@@ -687,18 +785,20 @@ def post_outcome(
     request: Request, outcome: Outcome, token: Annotated[Token, Depends(require_scope("telemetry"))]
 ) -> Any:
     store = store_of(request)
-    if control.profile(store, outcome.profile) is None:
+    owner_id = owner_of(request)
+    if control.profile(store, outcome.profile, owner_id) is None:
         return error(404, "not_found", f"no profile {outcome.profile!r}")
-    control.add_outcome(store, outcome)
+    control.add_outcome(store, outcome, owner_id)
     return {"accepted": 1}
 
 
 @router.get("/profiles/{name}/experience")
 def get_experience(request: Request, name: str, _: Read = None) -> Any:
     store = store_of(request)
-    if control.profile(store, name) is None:
+    owner_id = owner_of(request)
+    if control.profile(store, name, owner_id) is None:
         return error(404, "not_found", f"no profile {name!r}")
-    return control.experience(store, name)
+    return control.experience(store, name, None, owner_id)
 
 
 @router.post("/profiles/{name}/preview")
@@ -706,26 +806,30 @@ def preview(
     request: Request, name: str, body: Annotated[dict[str, Any], Body()], _: Read = None
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
-    found = control.profile(store, name)
-    current = control.settings(store, name)
+    owner_id = owner_of(request)
+    found = control.profile(store, name, owner_id)
+    current = control.settings(store, name, owner_id)
     if found is None or current is None:
         return error(404, "not_found", f"no profile {name!r}")
     try:
         proposed = control.update_settings(current, body)
     except (ValidationError, ValueError) as exc:
         return error(400, "bad_settings", str(exc))
-    ranking = store.ranking(name)
+    ranking = store.ranking(name, None, owner_id)
     if ranking is None:
         weights = {axis: item.value for axis, item in proposed.weights.items()}
         candidate = found.model_copy(update={"weights": weights})
         ranking = rank_profile(
             cfg, store, candidate, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
         )
-        store.put_ranking(ranking)
-    observed = {row["model_id"]: row["experience"] for row in control.experience(store, name)}
+        store.put_ranking(ranking, owner_id)
+    observed = {
+        row["model_id"]: row["experience"]
+        for row in control.experience(store, name, None, owner_id)
+    }
     ranking = control.rerank_cached(ranking, proposed.weights, proposed.experience_weight, observed)
     ids = control.controlled_ids(
-        store, name, ranking.ranks, proposed.list_length, proposed.floor_score
+        store, name, ranking.ranks, proposed.list_length, proposed.floor_score, owner_id
     )
     return {"profile": name, "models": ids, "settings": proposed, "ranking": ranking}
 
@@ -752,16 +856,17 @@ def rename_profile(
     being fixed.
     """
     store = store_of(request)
+    owner_id = owner_of(request)
     new = str(body.get("name") or "").strip()
     purpose = body.get("purpose")
     if not new and purpose is None:
         return error(400, "bad_request", "give a new `name`, a new `purpose`, or both")
 
     if purpose is not None:
-        before = control.profile(store, name)
+        before = control.profile(store, name, owner_id)
         if before is None:
             return error(404, "not_found", f"no profile {name!r}")
-        rewritten = control.set_purpose(store, name, str(purpose))
+        rewritten = control.set_purpose(store, name, str(purpose), owner_id)
         log_decision(
             store,
             name,
@@ -776,14 +881,14 @@ def rename_profile(
 
     if not _PROFILE_NAME.match(new):
         return error(400, "bad_request", "a valid new name is required")
-    held = control.profile(store, name)
+    held = control.profile(store, name, owner_id)
     if held is None:
         return error(404, "not_found", f"no profile {name!r}")
     try:
-        control.rename(store, name, new)
+        control.rename(store, name, new, owner_id)
     except ValueError:
         return error(409, "exists", f"a profile named {new!r} already exists")
-    after = control.profile(store, new)
+    after = control.profile(store, new, owner_id)
     log_decision(
         store,
         new,
@@ -804,13 +909,14 @@ def delete_profile(
     force: bool = False,
 ) -> Any:
     store = store_of(request)
-    if control.profile(store, name) is None:
+    owner_id = owner_of(request)
+    if control.profile(store, name, owner_id) is None:
         return error(404, "not_found", f"no profile {name!r}")
-    if not force and any(c.write for c in store.connectors()):
+    if not force and any(c.write for c in store.connectors(owner_id)):
         return error(
             409, "in_use", "a write connector may still hold this profile combo; use ?force=1"
         )
-    control.delete(store, name)
+    control.delete(store, name, owner_id)
     return {"deleted": name, "actor": token.name}
 
 
@@ -821,8 +927,9 @@ def apply_profile(
     from sieve.connectors.loop import log_applied, ship
 
     cfg, store = config_of(request), store_of(request)
-    found = control.profile(store, name)
-    selected = control.settings(store, name)
+    owner_id = owner_of(request)
+    found = control.profile(store, name, owner_id)
+    selected = control.settings(store, name, owner_id)
     if found is None or selected is None:
         return error(404, "not_found", f"no profile {name!r}")
     weights = {axis: item.value for axis, item in selected.weights.items()}
@@ -830,13 +937,13 @@ def apply_profile(
     ranking = rank_profile(
         cfg, store, found, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
     )
-    chain = control.chain_for(store, name, ranking.ranks)
+    chain = control.chain_for(store, name, ranking.ranks, None, owner_id)
     if chain is None:
         return error(409, "empty_list", "no reachable models remain")
-    store.put_ranking(ranking)
+    store.put_ranking(ranking, owner_id)
     store.put_chain(chain)
     results = []
-    for connector in store.connectors():
+    for connector in store.connectors(owner_id):
         if connector.write:
             results.append(ship(store, connector, [chain]))
             log_applied(store, connector, [chain], token.name)
@@ -847,8 +954,9 @@ def apply_profile(
 def evaluate(request: Request, name: str, authorization: Auth = None, _: Read = None) -> Any:
     """Dry run: ranking, chain and the decision that would be taken. Nothing stored."""
     cfg, store = config_of(request), store_of(request)
+    owner_id = owner_of(request)
     try:
-        profile = load_profile(cfg, name, store)
+        profile = load_profile(cfg, name, store, owner_id)
     except OwnerMissingError:
         return not_built(Ranking, "B", "sieve.profiles.load")
     if profile is None:
@@ -870,7 +978,9 @@ def evaluate(request: Request, name: str, authorization: Auth = None, _: Read = 
     policy = deps.policy
     chain = decision = None
     if policy is not None:
-        chain, decision = policy.decide(profile, store.chain(name), ranking, datetime.now(UTC))
+        chain, decision = policy.decide(
+            profile, store.chain(name, owner_id), ranking, datetime.now(UTC)
+        )
         if decision is not None:
             decision = decision.model_copy(update={"actor": actor_for(request, authorization)})
     return {
@@ -894,7 +1004,8 @@ def ranking_for(request: Request, profile: str) -> Ranking | JSONResponse:
     404 telling it to run a command it has never heard of.
     """
     store, cfg = store_of(request), config_of(request)
-    stored = store.ranking(profile)
+    owner_id = owner_of(request)
+    stored = store.ranking(profile, None, owner_id)
     if stored is not None:
         return stored
     try:
@@ -932,7 +1043,8 @@ def recommend(
     _: Read = None,
 ) -> Any:
     store = store_of(request)
-    chain = store.chain(profile)
+    owner_id = owner_of(request)
+    chain = store.chain(profile, owner_id)
 
     found = ranking_for(request, profile)
     if isinstance(found, JSONResponse):
@@ -983,9 +1095,10 @@ def post_apply(
     token: Annotated[Token, Depends(require_scope("apply"))],
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
+    owner_id = owner_of(request)
     wanted = body.get("profiles") or []
     targets = body.get("targets") or None
-    chains = [c for c in store.chains() if not wanted or c.profile in wanted]
+    chains = [c for c in store.chains(owner_id) if not wanted or c.profile in wanted]
     if not chains:
         return error(404, "not_found", "no computed chains to apply; run sieve plan --store")
     results = apply_targets(
@@ -1020,7 +1133,7 @@ def post_telemetry(
     store = store_of(request)
 
     canonical: dict[str, str] = {}
-    for model_id, local_ids in store.local_ids().items():
+    for model_id, local_ids in store.local_ids(owner_of(request)).items():
         for local_id in local_ids:
             canonical[local_id] = model_id
 
@@ -1061,7 +1174,7 @@ def get_health(
     figures = pulse_of(events, now, hours=hours)
     health_now = health_of(events, now)
     series = health_series(events, now)
-    local = store.local_ids()
+    local = store.local_ids(owner_of(request))
 
     names: set[str] = set(figures) | set(health_now)
     if reachable:

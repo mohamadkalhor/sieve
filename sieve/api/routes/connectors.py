@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from sieve.api.auth import Token
 from sieve.api.auth import require as require_scope
-from sieve.api.routes.v1 import Read, config_of, error, store_of
+from sieve.api.routes.v1 import Read, config_of, error, owner_of, store_of
 from sieve.api.sse import events
 from sieve.connectors.base import ConnectorError
 from sieve.connectors.loop import build_registry, refresh
@@ -97,7 +97,7 @@ def row(connector: Connector) -> dict[str, Any]:
 def connectors_of(request: Request) -> Store:
     """The store, with the one-time migration from `sieve.toml` already done."""
     store = store_of(request)
-    seed_from_toml(config_of(request), store)
+    seed_from_toml(config_of(request), store, owner_of(request))
     return store
 
 
@@ -136,8 +136,19 @@ def problem(body: ConnectorBody) -> str | None:
     return None
 
 
-def found(store: Store, connector_id: str) -> Connector | None:
-    return store.connector(connector_id)
+def found(store: Store, connector_id: str, owner_id: str | None = None) -> Connector | None:
+    """One connector, if this caller may see it.
+
+    A connector is never shared: it holds somebody's token and writing a combo
+    to it spends their credentials. Somebody else's id reads as absent, not as
+    forbidden, so the answer does not confirm that it exists.
+    """
+    connector = store.connector(connector_id)
+    if connector is None:
+        return None
+    if (connector.owner_id or "") != (owner_id or ""):
+        return None
+    return connector
 
 
 # --------------------------------------------------------------------------- #
@@ -147,12 +158,12 @@ def found(store: Store, connector_id: str) -> Connector | None:
 
 @router.get("")
 def list_connectors(request: Request, _: Read = None) -> list[dict[str, Any]]:
-    return [row(c) for c in connectors_of(request).connectors()]
+    return [row(c) for c in connectors_of(request).connectors(owner_of(request))]
 
 
 @router.get("/{connector_id}")
 def get_connector(request: Request, connector_id: str, _: Read = None) -> Any:
-    connector = found(connectors_of(request), connector_id)
+    connector = found(connectors_of(request), connector_id, owner_of(request))
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
     return row(connector)
@@ -166,7 +177,7 @@ def get_connector_models(request: Request, connector_id: str, _: Read = None) ->
     guess at keeps `model_id` null and is listed for a person to alias.
     """
     store = connectors_of(request)
-    connector = found(store, connector_id)
+    connector = found(store, connector_id, owner_of(request))
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
     rows = store.reachable_for(connector_id)
@@ -194,11 +205,13 @@ def create_connector(
     reason = problem(body)
     if reason:
         return error(400, "bad_request", reason)
-    if store.connector_named(body.name):
+    owner_id = owner_of(request)
+    if store.connector_named(body.name, owner_id):
         return error(409, "conflict", f"a connector named {body.name!r} already exists")
     connector = Connector(
         id=uuid.uuid4().hex[:12],
         created_at=datetime.now(UTC),
+        owner_id=owner_id,
         **body.model_dump(),
     )
     store.add_connector(connector)
@@ -214,7 +227,7 @@ def update_connector(
     token: Annotated[Token, Depends(require_scope("apply"))],
 ) -> Any:
     store = connectors_of(request)
-    connector = found(store, connector_id)
+    connector = found(store, connector_id, owner_of(request))
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
     changes = body.model_dump(exclude_none=True)
@@ -222,7 +235,7 @@ def update_connector(
     reason = problem(ConnectorBody(**merged.model_dump(include=set(ConnectorBody.model_fields))))
     if reason:
         return error(400, "bad_request", reason)
-    clash = store.connector_named(merged.name)
+    clash = store.connector_named(merged.name, owner_of(request))
     if clash is not None and clash.id != connector.id:
         return error(409, "conflict", f"a connector named {merged.name!r} already exists")
     store.put_connector(merged)
@@ -237,7 +250,7 @@ def delete_connector(
     token: Annotated[Token, Depends(require_scope("apply"))],
 ) -> Any:
     store = connectors_of(request)
-    connector = found(store, connector_id)
+    connector = found(store, connector_id, owner_of(request))
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
     store.delete_connector(connector_id)
@@ -263,7 +276,7 @@ def test_connector(request: Request, connector_id: str, _: Read = None) -> Any:
     same person who is allowed to read every ranking on the site.
     """
     store = connectors_of(request)
-    connector = found(store, connector_id)
+    connector = found(store, connector_id, owner_of(request))
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
     try:
@@ -283,7 +296,7 @@ def pull_connector(request: Request, connector_id: str, _: Read = None) -> Any:
     changes nothing about what is routed through it.
     """
     cfg, store = config_of(request), connectors_of(request)
-    connector = found(store, connector_id)
+    connector = found(store, connector_id, owner_of(request))
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
     try:

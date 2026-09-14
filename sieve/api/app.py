@@ -22,6 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from sieve import __version__
 from sieve.api.routes.config import router as config_router
 from sieve.api.routes.connectors import router as connectors_router
+from sieve.api.routes.identity import router as identity_router
 from sieve.api.routes.runs import router as runs_router
 from sieve.api.routes.v1 import router as v1_router
 from sieve.axes import control as axis_control
@@ -113,6 +114,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         return {"status": "ok", "version": __version__}
 
     app.include_router(v1_router)
+    app.include_router(identity_router)
     app.include_router(connectors_router)
     app.include_router(config_router)
     app.include_router(runs_router)

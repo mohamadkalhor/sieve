@@ -75,9 +75,15 @@ class NineRouterError(RuntimeError):
     """Misconfiguration or a refusal. Never a silent no-op."""
 
 
-def combo_name(profile: str) -> str:
-    """The combo a profile owns. Stable, prefixed, and its own namespace."""
-    return f"{MANAGED_PREFIX}{profile}"
+def combo_name(profile: str, slug: str | None = None) -> str:
+    """The combo a profile owns. Stable, prefixed, and its own namespace.
+
+    A member's combos carry their slug -- `sieve-judge-ana` -- because two
+    people may each keep a `judge` and one router may serve both. The gate
+    owner's keep the bare `sieve-judge` they already have: renaming the combos
+    on a running gateway would repoint live traffic to nothing.
+    """
+    return f"{MANAGED_PREFIX}{profile}-{slug}" if slug else f"{MANAGED_PREFIX}{profile}"
 
 
 def chain_models(chain: Chain) -> list[str]:
