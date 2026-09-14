@@ -444,6 +444,7 @@
               step="0.01"
               aria-label={labels[axis] ?? axis}
               value={weights[axis]}
+              style:--share={barWidth(weights[axis])}
               oninput={(event) => move(axis, Number(event.currentTarget.value))}
             />
           </div>
@@ -534,14 +535,10 @@
         {#each models ?? [] as row, index (row.id)}
           <div class="row">
             <span class="mono rank">{index + 1}</span>
-            <div class="model">
-              <div class="model-name">{row.name}</div>
-              <div class="mono model-id">{row.local_ids[0] ?? row.id}</div>
-            </div>
-            <div class="score">
-              <div class="bar"><div class="fill" style:width={barWidth(row.score)}></div></div>
-              <span class="mono number">{row.score.toFixed(2)}</span>
-            </div>
+            <div class="model-name">{row.name}</div>
+            <div class="mono model-id">{row.local_ids[0] ?? row.id}</div>
+            <div class="bar"><div class="fill" style:width={barWidth(row.score)}></div></div>
+            <span class="mono number">{row.score.toFixed(2)}</span>
           </div>
         {/each}
 
@@ -549,14 +546,10 @@
           {#each showMore ? next : next.slice(0, 2) as row, index (row.id)}
             <div class="row after" class:first={index === 0}>
               <span class="mono rank">{(models?.length ?? 0) + index + 1}</span>
-              <div class="model">
-                <div class="model-name">{row.name}</div>
-                <div class="mono model-id">{row.local_ids[0] ?? row.id}</div>
-              </div>
-              <div class="score">
-                <div class="bar"><div class="fill" style:width={barWidth(row.score)}></div></div>
-                <span class="mono number">{row.score.toFixed(2)}</span>
-              </div>
+              <div class="model-name">{row.name}</div>
+              <div class="mono model-id">{row.local_ids[0] ?? row.id}</div>
+              <div class="bar"><div class="fill" style:width={barWidth(row.score)}></div></div>
+              <span class="mono number">{row.score.toFixed(2)}</span>
             </div>
           {/each}
           {#if next.length > 2}
@@ -841,7 +834,12 @@
   .slider::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: 2px;
-    background: var(--panel2);
+    /* the share this axis carries, filled from the left */
+    background: linear-gradient(
+      to right,
+      var(--accent) 0 var(--share, 0%),
+      var(--panel2) var(--share, 0%) 100%
+    );
   }
   .slider::-moz-range-track {
     height: 4px;
@@ -980,37 +978,37 @@
 
   .row {
     display: grid;
-    grid-template-columns: 28px 1fr 220px;
-    gap: 0 16px;
+    grid-template-columns: 28px minmax(0, 1fr) 176px 34px;
+    grid-template-areas:
+      'rank name bar num'
+      'rank id bar num';
+    gap: 2px 16px;
     align-items: center;
     padding: 14px 0;
     border-top: 1px solid var(--rule);
   }
   .rank {
+    grid-area: rank;
     font-size: 13px;
     color: var(--accent);
-  }
-  .model {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
+    align-self: center;
   }
   .model-name {
+    grid-area: name;
     font-size: 16px;
     font-weight: 600;
+    align-self: end;
+    min-width: 0;
   }
   .model-id {
+    grid-area: id;
     font-size: 11px;
     color: var(--muted);
-  }
-  .score {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    align-self: start;
+    min-width: 0;
   }
   .bar {
-    flex: 1;
+    grid-area: bar;
     height: 8px;
     background: var(--panel2);
     border-radius: 4px;
@@ -1021,8 +1019,8 @@
     background: var(--accent);
   }
   .number {
+    grid-area: num;
     font-size: 12px;
-    width: 34px;
     text-align: right;
   }
 
@@ -1133,15 +1131,31 @@
       font-size: 14px;
     }
     .row {
-      grid-template-columns: 14px minmax(0, 1fr);
-      gap: 12px;
+      grid-template-columns: 14px minmax(0, 1fr) auto;
+      grid-template-areas:
+        'rank name num'
+        'rank bar bar'
+        'rank id id';
+      gap: 5px 12px;
       padding: 12px 0;
+      align-items: baseline;
     }
-    .score {
-      grid-column: 2;
+    .rank {
+      align-self: start;
     }
     .model-name {
       font-size: 15px;
+      align-self: baseline;
+    }
+    .bar {
+      height: 6px;
+      border-radius: 3px;
+    }
+    .fill {
+      height: 6px;
+    }
+    .number {
+      font-size: 13px;
     }
     .history li {
       grid-template-columns: minmax(0, 1fr);
