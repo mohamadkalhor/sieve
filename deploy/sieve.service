@@ -33,7 +33,12 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 ReadWritePaths=/opt/sieve/data /opt/sieve/out /opt/sieve/profiles
 
-MemoryMax=400M
+# The box has 4 GB. 400M was set when a ranking was a scan of the observation
+# table and the service sat at 142 MiB; once several of those overlapped, the
+# cap was reached, the process swapped, and everything stopped answering for
+# twenty-two minutes. The scan is gone and the built views are bounded, so this
+# is headroom for a run and a few requests at once, not a licence to grow.
+MemoryMax=1G
 TasksMax=64
 
 [Install]
