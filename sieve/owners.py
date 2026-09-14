@@ -195,8 +195,13 @@ def adopt_orphans(store: Store, user_id: str) -> dict[str, int]:
     counts: dict[str, int] = {}
     with store.tx() as db:
         for table, extra in _ADOPTED:
+            # OR IGNORE: a row this person already owns under the same key is
+            # the answer to the unowned one beside it -- a `1.0` multiplier a
+            # refresh minted for a prefix he had already tuned, say. Adoption
+            # must never be the thing that stops the service from starting.
             cursor = db.execute(
-                f"UPDATE {table} SET owner_id=? WHERE owner_id IS NULL{extra}", (user_id,)
+                f"UPDATE OR IGNORE {table} SET owner_id=? WHERE owner_id IS NULL{extra}",
+                (user_id,),
             )
             if cursor.rowcount:
                 counts[table] = int(cursor.rowcount)
