@@ -1,9 +1,16 @@
 """The run: pull -> catalog -> axes -> rankings -> chains -> decisions.
 
 This module is the seam. It owns the order of operations (PLAN section 5) and
-the constraint gate, and calls the pure functions of CONTRACTS section 3 by
-name. Owner modules that have not landed yet are reported as warnings, never
-as tracebacks, so every other part stays runnable.
+calls the pure functions of CONTRACTS section 3 by name. Owner modules that
+have not landed yet are reported as warnings, never as tracebacks, so every
+other part stays runnable.
+
+**A profile is its weights.** The list a profile ships is the top `ship`
+reachable models by weighted score, in score order, and nothing else takes a
+model out of it: no Pareto pruning, no confidence floor, no score floor, no
+requirements, no pins, no holds, no experience weighting. Every one of those
+was a second opinion fighting the weights, and a weight you cannot see the
+effect of is not a control.
 """
 
 from __future__ import annotations
@@ -22,12 +29,10 @@ from sieve.config import Config
 from sieve.contracts import (
     Axis,
     AxisScore,
-    Capability,
     Chain,
     Decision,
     EngineResult,
     Modality,
-    ModelRef,
     Observation,
     ObsTable,
     Profile,
@@ -35,7 +40,7 @@ from sieve.contracts import (
     Ranking,
     TargetResult,
 )
-from sieve.scoring.efforts import choose_efforts
+from sieve.scoring.weigh import TaskShape
 from sieve.store import Store
 
 #: How many rankings may be computed at once, and how long a caller waits for
@@ -47,6 +52,32 @@ RANKING_SLOTS = max(1, int(os.environ.get("SIEVE_RANK_SLOTS") or 2))
 RANKING_WAIT = float(os.environ.get("SIEVE_RANK_WAIT") or 60.0)
 
 _slots = threading.BoundedSemaphore(RANKING_SLOTS)
+
+#: What one task looks like, per modality, for the sole purpose of turning a
+#: published price into a cost per task. It used to be `Profile.shape`, a
+#: per-profile control nobody could tune without also re-tuning cost against
+#: every other axis. These are the values the shipped profiles carried, now
+#: fixed: cost stays an ordinary axis, and the arithmetic behind it is an
+#: internal default rather than a knob.
+SHAPES: dict[Modality, TaskShape] = {
+    "llm": TaskShape(in_tokens=8000, out_tokens=2000),
+    "text-to-image": TaskShape(images=1),
+    "image-editing": TaskShape(images=1),
+    "text-to-video": TaskShape(seconds=8),
+    "image-to-video": TaskShape(seconds=8),
+    "video-editing": TaskShape(seconds=8),
+    "text-to-speech": TaskShape(chars=5000),
+    "speech-to-text": TaskShape(seconds=600),
+    "speech-to-speech": TaskShape(seconds=300),
+    "music": TaskShape(seconds=30),
+}
+
+#: Every modality has one, so a new modality cannot silently price nothing.
+DEFAULT_SHAPE = TaskShape()
+
+
+def shape_for(modality: Modality) -> TaskShape:
+    return SHAPES.get(modality, DEFAULT_SHAPE)
 
 
 class RankingBusyError(RuntimeError):
@@ -98,14 +129,6 @@ def _optional(module: str, owner: str) -> Any:
         raise OwnerMissingError(module, owner) from exc
 
 
-def _overlay(base: Capability | None, gateway: Capability) -> Capability:
-    """The gateway wins where it speaks: it describes this deployment."""
-    if base is None:
-        return gateway
-    stated = gateway.model_dump(exclude_none=True, exclude_defaults=True)
-    return base.model_copy(update=stated) if stated else base
-
-
 class _AxesModule(Protocol):
     def load_axes(self, directory: Any, modality: Modality) -> list[Axis]: ...
 
@@ -130,10 +153,6 @@ class Deps:
     @property
     def axes_compute(self) -> Any | None:
         return self._get("sieve.axes.compute", "A")
-
-    @property
-    def pareto(self) -> Any | None:
-        return self._get("sieve.scoring.pareto", "A")
 
     @property
     def weigh(self) -> Any | None:
@@ -161,91 +180,8 @@ class Deps:
 
 
 # --------------------------------------------------------------------------- #
-# constraints (PLAN section 4 `require`)
+# cost
 # --------------------------------------------------------------------------- #
-
-
-def inherit_family_capabilities(
-    caps: dict[str, Capability], models: list[ModelRef]
-) -> dict[str, Capability]:
-    """Give every effort mode the capabilities of the model it is a mode of.
-
-    Nothing publishes capabilities per mode. Artificial Analysis, which is the
-    only source that lists the modes at all, publishes **no** capabilities
-    whatsoever; OpenRouter publishes them and carries only the base id. So
-    `gpt-5-6-sol-high` arrived with no `tools`, no `context_window` and no
-    `reasoning`, and every profile with a `require:` block excluded every mode
-    row it had -- silently, and by the reason "excluded by tools", which reads
-    as a fact about the model rather than a gap in the catalogue.
-
-    That made PLAN 2.1a's whole point unreachable: the modes were separated into
-    their own rows and then none of them could ever be seated.
-
-    A mode inherits, it does not override. Anything the mode publishes for
-    itself wins, because a mode that really does differ -- a reasoning mode on a
-    base that has none -- is exactly the case worth keeping.
-    """
-    by_family: dict[str, Capability] = {}
-    for model in models:
-        family = getattr(model, "family", None)
-        if family and model.id == family and model.id in caps:
-            by_family[family] = caps[model.id]
-
-    if not by_family:
-        return caps
-
-    out = dict(caps)
-    for model in models:
-        family = getattr(model, "family", None)
-        if not family or model.id == family:
-            continue
-        parent = by_family.get(family)
-        if parent is None:
-            continue
-        # the mode's own values win; the family fills the gaps
-        out[model.id] = _overlay(parent, caps.get(model.id) or Capability())
-    return out
-
-
-def passes_constraints(
-    profile: Profile,
-    model_id: str,
-    capability: Capability,
-    axis_pct: dict[str, float],
-    appearances: int | None,
-    has_telemetry: bool = True,
-) -> str | None:
-    """None when the model is eligible, otherwise the constraint that excluded it."""
-    require = profile.require
-    # `policy.require_telemetry` is a seat saying "do not put anything here I
-    # have never actually called". A benchmark says a model is good; only your
-    # own traffic says it works for you.
-    if profile.policy.require_telemetry and not has_telemetry:
-        return "require_telemetry"
-    if require.get("tools") and capability.tools is not True:
-        return "tools"
-    if require.get("reasoning") and capability.reasoning is not True:
-        return "reasoning"
-    if require.get("structured_output") and capability.structured_output is not True:
-        return "structured_output"
-    ctx_min = require.get("context_min")
-    if ctx_min is not None and (
-        capability.context_window is None or capability.context_window < int(ctx_min)
-    ):
-        return "context_min"
-    wanted = require.get("input_modalities") or []
-    if wanted and not set(wanted).issubset(set(capability.input_modalities)):
-        return "input_modalities"
-    floors = require.get("min_axis") or {}
-    for axis_name, floor in floors.items():
-        value = axis_pct.get(axis_name)
-        if value is None or value < float(floor):
-            return f"min_axis:{axis_name}"
-    min_app = require.get("min_appearances")
-    if min_app is not None and (appearances is None or appearances < int(min_app)):
-        return "min_appearances"
-    return None
-
 
 #: the synthetic source and field a `cost` axis reads.
 COST_SOURCE = "price"
@@ -260,15 +196,15 @@ def add_cost_observations(
 ) -> tuple[dict[str, float], set[str]]:
     """Put `price:per_task` into the table so a cost axis can rank it.
 
-    Cost is the one axis that cannot be computed once per modality: it is the
-    published price *times this profile's shape*, so a reader paying for 200k
-    input tokens and a chat paying for 2k do not share a cost ranking. The
-    engine therefore derives it per profile and injects it as an observation,
-    which keeps `sieve/axes` free of prices and shapes.
+    Cost is published as a rate -- dollars per million tokens, per image, per
+    second -- and a rate cannot be ranked against a benchmark score. The shape
+    of one task (`SHAPES`) turns it into a price per task, which can be. That
+    shape is fixed per modality on purpose: it is arithmetic, not a preference.
     """
     from sieve.scoring.weigh import cost_per_task
 
     measured = measured_tokens or {}
+    shape = shape_for(profile.modality)
     costs: dict[str, float] = {}
     from_telemetry: set[str] = set()
     # Every priced model, not every *observed* one. Iterating the observed set
@@ -279,10 +215,10 @@ def add_cost_observations(
     for model_id in sorted(obs.prices):
         price = obs.price(model_id)
         # A model whose own traffic has been measured is priced on the tokens
-        # it really burns; everything else falls back to the shape the profile
-        # declares, which is an assumption and is reported as one.
+        # it really burns; everything else falls back to the fixed shape, which
+        # is an assumption and is reported as one.
         tokens_out = measured.get(model_id)
-        cost = cost_per_task(price, profile.shape, tokens_out=tokens_out)
+        cost = cost_per_task(price, shape, tokens_out=tokens_out)
         if cost is None or cost <= 0:
             continue
         costs[model_id] = cost
@@ -301,13 +237,6 @@ def add_cost_observations(
             )
         )
     return costs, from_telemetry
-
-
-def _appearances(obs: ObsTable, model_id: str) -> int | None:
-    for bucket in (obs.latest.get(model_id) or {}).values():
-        if bucket.field == "elo" and bucket.n is not None:
-            return bucket.n
-    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -336,6 +265,29 @@ def rank_profile(
         )
 
 
+def _cheapest_multipliers(
+    store: Store, costs: dict[str, float], local: dict[str, list[str]], owner_id: str | None
+) -> dict[str, float]:
+    """Apply the box's negotiated per-router price multipliers to the costs.
+
+    A router-local prefix can carry a rate multiplier, and one canonical model
+    may be reachable through several prefixes, so the cheapest reachable price
+    is the one that is true for this box. These are a property of the routers,
+    not of a profile: nobody tunes them per seat.
+    """
+    from sieve.profiles import control
+
+    defaults = control.multipliers(store, owner_id)
+    if not defaults:
+        return costs
+    out = dict(costs)
+    for model_id, amount in costs.items():
+        factors = [defaults.get(i.split("/", 1)[0], 1.0) for i in local.get(model_id, [])]
+        if factors:
+            out[model_id] = amount * min(factors)
+    return out
+
+
 def _rank_profile(
     cfg: Config,
     store: Store,
@@ -347,10 +299,10 @@ def _rank_profile(
     owner_id: str | None = None,
 ) -> Ranking:
     at = at or datetime.now(UTC)
-    # The observation table, the catalogue and the published capabilities are
-    # the same for this snapshot whoever asks, so they are built once and held
-    # (`store/cache.py`). `working()` is this call's copy: the cost observations
-    # below are written into it, and the shared one must not see them.
+    # The observation table and the catalogue are the same for this snapshot
+    # whoever asks, so they are built once and held (`store/cache.py`).
+    # `working()` is this call's copy: the cost observations below are written
+    # into it, and the shared one must not see them.
     view = store.cache.view(profile.modality, snapshot)
     obs = view.working()
     # PLAN 2.1: the rate per token is identical across a model's effort modes,
@@ -363,37 +315,18 @@ def _rank_profile(
     )
     costs, costed_from_telemetry = add_cost_observations(obs, profile, at, measured_tokens)
     local = store.local_ids(owner_id)
-    # A router-local prefix can carry a negotiated price multiplier. Since one
-    # canonical model may be available through several prefixes, use its cheapest
-    # reachable effective price; profile overrides win over defaults.
     try:
-        from sieve.profiles import control
-
-        configured = control.settings(store, profile.name, owner_id)
-        defaults = control.multipliers(store, owner_id)
-        overrides = configured.cost_multipliers if configured else {}
-        for model_id, amount in list(costs.items()):
-            factors = [
-                overrides.get(i.split("/", 1)[0], defaults.get(i.split("/", 1)[0], 1.0))
-                for i in local.get(model_id, [])
-            ]
-            if factors:
-                costs[model_id] = amount * min(factors)
-                # replace the just-added cost observation used by the axis
-                bucket = obs.latest.get(model_id, {})
-                key = obs.key(COST_SOURCE, COST_FIELD)
-                if key in bucket:
-                    bucket[key] = bucket[key].model_copy(update={"value": costs[model_id]})
+        adjusted = _cheapest_multipliers(store, costs, local, owner_id)
     except (RuntimeError, AttributeError):
-        pass
-
-    # what a source publishes about the model, with the gateway's own view of
-    # this deployment laid over the top
-    caps = dict(view.capabilities)
-    caps = inherit_family_capabilities(caps, view.models)
-    for reachable in store.reachable(unmatched=False):
-        if reachable.model_id:
-            caps[reachable.model_id] = _overlay(caps.get(reachable.model_id), reachable.capability)
+        adjusted = costs
+    for model_id, amount in adjusted.items():
+        if amount == costs.get(model_id):
+            continue
+        costs[model_id] = amount
+        bucket = obs.latest.get(model_id, {})
+        key = obs.key(COST_SOURCE, COST_FIELD)
+        if key in bucket:
+            bucket[key] = bucket[key].model_copy(update={"value": amount})
 
     axes_load, axes_compute, weigh_mod = deps.axes_load, deps.axes_compute, deps.weigh
     if axes_load is None or axes_compute is None or weigh_mod is None:
@@ -406,7 +339,11 @@ def _rank_profile(
     axis_control.seed(store, cfg.axes_dir)
     axes: list[Axis] = axis_control.axes(store, profile.modality, owner_id)
     wanted = {a.name for a in axes if a.name in profile.weights}
-    pool = obs.models()
+    # Every model with a measurement or a price, plus every model this box can
+    # actually reach. A reachable model nobody has benchmarked scores 0 and
+    # ranks last, which is the truth; leaving it out of the ranking entirely
+    # would make "every reachable model has a position" a lie.
+    pool = sorted(set(obs.models()) | set(local))
 
     # axis values, per axis, over the whole modality pool
     per_axis: dict[str, dict[str, tuple[float | None, float]]] = {}
@@ -421,73 +358,7 @@ def _rank_profile(
             name: per_axis[name].get(model_id, (None, 0.0)) for name in per_axis
         }
 
-    # who has actually been called, for `policy.require_telemetry`
-    called = {event.model for event in store.telemetry(since=at - timedelta(days=7))}
-
-    # constraints first
-    excluded: dict[str, str] = {}
-    for model_id in pool:
-        pct = {n: v for n, (v, _c) in axes_by_model[model_id].items() if v is not None}
-        reason = passes_constraints(
-            profile,
-            model_id,
-            caps.get(model_id, Capability()),
-            pct,
-            _appearances(obs, model_id),
-            has_telemetry=model_id in called,
-        )
-        if reason:
-            excluded[model_id] = reason
-
-    # then the effort modes this profile does not want. AA publishes one row
-    # per mode at one price, so an untouched family competes with itself and a
-    # chain fills with six settings of one model. Only rows that already
-    # cleared the constraints are candidates: preferring a cheaper mode must
-    # never resurrect one the profile just rejected.
-    effort_aside: dict[str, str] = {}
-    if profile.prefer_effort:
-        catalogue = {m.id: (m.family, m.effort) for m in view.models}
-        effort_aside = choose_efforts(
-            {m: catalogue[m] for m in pool if m not in excluded and m in catalogue},
-            profile.prefer_effort,
-        )
-
-    # then Pareto pruning among reachable, eligible models
-    dominated: dict[str, str] = {}
-    pareto = deps.pareto
-    if pareto is not None:
-        rows = {
-            m: {n: v for n, (v, _c) in axes_by_model[m].items()}
-            for m in pool
-            if m not in excluded and m not in effort_aside and m in local
-        }
-        dominated = pareto.pareto_prune(rows, profile.weights)
-
     scored = weigh_mod.weigh(profile, axes_by_model)
-
-    # Experience is deliberately profile-local: Laplace smoothing gives an
-    # untried model a neutral 0.5 and avoids one lucky call becoming certainty.
-    try:
-        from sieve.profiles import control
-
-        selected = control.settings(store, profile.name, owner_id)
-        if selected and selected.experience_weight:
-            observed = {
-                row["model_id"]: row["experience"]
-                for row in control.experience(store, profile.name, at, owner_id)
-            }
-            share = selected.experience_weight
-            for model_id, (score, confidence, contributions) in list(scored.items()):
-                value = observed.get(model_id, 0.5)
-                contributions = {**contributions, "experience": share * value}
-                scored[model_id] = (
-                    (1.0 - share) * score + share * value,
-                    confidence,
-                    contributions,
-                )
-                axes_by_model[model_id]["experience"] = (value, 1.0)
-    except (RuntimeError, AttributeError):
-        pass
 
     health_mod = deps.health
     health_by_model: dict[str, float] = {}
@@ -519,24 +390,20 @@ def _rank_profile(
                 final=score * health_value,
                 axes=axis_scores,
                 cost_per_task=costs.get(model_id),
-                # phase 2 part 3 will set this to "telemetry" for a model whose
-                # own traffic has been measured; until then every cost is the
-                # profile's declared shape, which cannot separate effort modes.
                 cost_from=(
                     None
                     if model_id not in costs
                     else ("telemetry" if model_id in costed_from_telemetry else "shape")
                 ),
-                dominated_by=dominated.get(model_id),
-                excluded_by=excluded.get(model_id)
-                or effort_aside.get(model_id)
-                or ("min_confidence" if confidence < profile.policy.min_confidence else None),
             )
         )
 
-    eligible = [r for r in ranks if not r.excluded_by and not r.dominated_by]
-    eligible.sort(key=lambda r: r.final, reverse=True)
-    for position, rank in enumerate(eligible, start=1):
+    # The whole rule: reachable models, in score order. A model you cannot call
+    # has no position, because it cannot be shipped; everything you can call
+    # has one, because nothing else may take it out of the list.
+    reachable = [r for r in ranks if r.reachable]
+    reachable.sort(key=lambda r: (-r.final, r.model_id))
+    for position, rank in enumerate(reachable, start=1):
         rank.position = position
 
     ranking = Ranking(
@@ -544,12 +411,12 @@ def _rank_profile(
         modality=profile.modality,
         computed_at=at,
         snapshot=snapshot,
-        ranks=eligible + [r for r in ranks if r.excluded_by or r.dominated_by],
+        ranks=reachable + [r for r in ranks if not r.reachable],
     )
 
     explain_mod = deps.explain
-    if explain_mod is not None and eligible:
-        eligible[0].flip = explain_mod.explain(ranking, profile)
+    if explain_mod is not None and reachable:
+        reachable[0].flip = explain_mod.explain(ranking, profile)
     return ranking
 
 
@@ -563,7 +430,7 @@ def decide_chain(
     at: datetime | None = None,
     owner_id: str | None = None,
 ) -> tuple[Chain | None, Decision | None]:
-    """Apply the profile's policy to the new ranking. Every call is a decision row."""
+    """The list this ranking says to ship, and whether it changed."""
     at = at or datetime.now(UTC)
     incumbent = store.chain(profile.name, owner_id)
     policy_mod = deps.policy

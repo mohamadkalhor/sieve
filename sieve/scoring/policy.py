@@ -1,70 +1,35 @@
-"""When the top pick is allowed to change.
+"""What ships, and whether that is news.
 
-Without hysteresis a model list flaps: two models within noise of each other
-trade places every hour, every trade rewrites a gateway config, and nobody
-trusts the tool. So a challenger has to clear a *margin* in points on a 0-100
-scale, an incumbent that has held the seat too long has to re-earn it, and an
-incumbent that has stopped working loses it immediately.
+A profile is its weights. The list it ships is the top `ship` reachable models
+by weighted score, in score order -- recomputed on every run, with nothing
+standing between the score and the list.
 
-Every evaluation writes a decision row -- including the ones where nothing
-happened. "held: challenger +1.4 inside margin 3.0" is the sentence that stops
-someone asking why the list did not move.
+There used to be hysteresis here: a challenger had to clear a margin in points,
+an incumbent that had held the seat too long had to re-earn it, and a model
+that had stopped working lost the seat immediately. All three were ways of
+arguing with the weights after the fact, and between them they made it
+impossible to tell what moving a slider would do. Health still counts -- it is
+multiplied into the score itself, in the ranking -- so a model that has stopped
+working falls out on its own, by scoring lower, which is the honest version of
+the same rule.
+
+Every evaluation still writes a decision row, the ones where nothing happened
+included: "held: the list is unchanged" is the sentence that stops someone
+asking why the gateway did not move.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sieve.contracts import Chain, Decision, Profile, Rank, Ranking
 
-#: scores are 0-1; `policy.margin` is stated in points, so compare in points.
-POINTS = 100.0
 
-
-def _points(value: float) -> float:
-    return value * POINTS
-
-
-def _signed(points: float) -> str:
-    """`+4.2` / `-1.3` -- never `+-1.3`."""
-    return f"{points:+.1f}"
-
-
-def _ranked(ranking: Ranking) -> list[Rank]:
-    return sorted(
-        (r for r in ranking.ranks if r.position > 0 and not r.excluded_by and not r.dominated_by),
-        key=lambda r: r.position,
-    )
-
-
-def _reachable(ranking: Ranking) -> list[Rank]:
-    return [r for r in _ranked(ranking) if r.reachable]
-
-
-def _chain_from(
-    profile: Profile,
-    ranking: Ranking,
-    candidates: list[Rank],
-    incumbent: Chain | None,
-    now: datetime,
-    primary: str,
-) -> Chain:
-    ordered = [primary] + [r.model_id for r in candidates if r.model_id != primary]
-    cut = ordered[: max(1, profile.policy.chain)]
-    local = {r.model_id: r.local_ids for r in candidates if r.model_id in cut}
-    held_since = (
-        incumbent.incumbent_since if incumbent is not None and incumbent.primary == primary else now
-    )
-    return Chain(
-        profile=profile.name,
-        computed_at=ranking.computed_at or now,
-        primary=cut[0],
-        fallbacks=cut[1:],
-        local=local,
-        incumbent=primary,
-        incumbent_since=held_since,
-    )
+def shipped(ranking: Ranking, ship: int) -> list[Rank]:
+    """The rows this ranking would ship: top `ship` reachable, in score order."""
+    ranked = sorted((r for r in ranking.ranks if r.position > 0), key=lambda r: r.position)
+    return ranked[: max(1, ship)]
 
 
 def _decision(profile: Profile, kind: str, reason: str, before: object, after: object) -> Decision:
@@ -80,102 +45,57 @@ def _decision(profile: Profile, kind: str, reason: str, before: object, after: o
     )
 
 
-def tenure_days(incumbent: Chain | None, now: datetime) -> int | None:
-    if incumbent is None or incumbent.incumbent_since is None:
-        return None
-    return (now - incumbent.incumbent_since).days
+def chain_from(
+    profile: Profile,
+    ranking: Ranking,
+    rows: list[Rank],
+    incumbent: Chain | None,
+    now: datetime,
+) -> Chain:
+    """One chain out of the rows that ship, in the order they ship."""
+    ids = [r.model_id for r in rows]
+    held_since = (
+        incumbent.incumbent_since
+        if incumbent is not None and [incumbent.primary, *incumbent.fallbacks] == ids
+        else now
+    )
+    return Chain(
+        profile=profile.name,
+        computed_at=ranking.computed_at or now,
+        primary=ids[0],
+        fallbacks=ids[1:],
+        local={r.model_id: r.local_ids for r in rows},
+        incumbent=ids[0],
+        incumbent_since=held_since,
+    )
 
 
 def decide(
     profile: Profile, incumbent: Chain | None, ranking: Ranking, now: datetime
 ) -> tuple[Chain | None, Decision | None]:
-    """Apply the profile's policy. Returns the chain to keep and what was decided."""
-    policy = profile.policy
-    candidates = _reachable(ranking)
-
-    if not candidates:
+    """The list to ship, and whether it differs from the one last shipped."""
+    rows = shipped(ranking, profile.ship)
+    if not rows:
         reason = "hold: nothing reachable ranks for this profile"
         return incumbent, _decision(profile, "hold", reason, None, None)
 
-    challenger = candidates[0]
-    held = incumbent.primary if incumbent is not None else None
+    chain = chain_from(profile, ranking, rows, incumbent, now)
+    after = [chain.primary, *chain.fallbacks]
+    before = [incumbent.primary, *incumbent.fallbacks] if incumbent is not None else []
 
-    # nobody holds the seat yet: the leader takes it, and that is a switch.
-    if held is None:
-        chain = _chain_from(profile, ranking, candidates, incumbent, now, challenger.model_id)
-        reason = f"switch: {challenger.model_id} takes primary, no incumbent"
-        return chain, _decision(profile, "switch", reason, None, challenger.model_id)
+    if before == after:
+        reason = f"hold: the list is unchanged, {after[0]} still leads"
+        return chain, _decision(profile, "hold", reason, before, after)
 
-    incumbent_rank = next((r for r in _ranked(ranking) if r.model_id == held), None)
-
-    # the incumbent has fallen out of the list entirely
-    if incumbent_rank is None:
-        chain = _chain_from(profile, ranking, candidates, incumbent, now, challenger.model_id)
-        reason = (
-            f"switch: {challenger.model_id} over {held}, "
-            f"{held} no longer ranks (unreachable or excluded)"
-        )
-        return chain, _decision(profile, "switch", reason, held, challenger.model_id)
-
-    # it is still the leader: nothing to decide
-    if challenger.model_id == held:
-        chain = _chain_from(profile, ranking, candidates, incumbent, now, held)
-        runner = candidates[1] if len(candidates) > 1 else None
-        if runner is not None:
-            lead = _points(incumbent_rank.final - runner.final)
-            reason = f"hold: {held} still leads by {_signed(lead)}"
-        else:
-            reason = f"hold: {held} is the only reachable model"
-        return chain, _decision(profile, "hold", reason, held, held)
-
-    gap = _points(challenger.final - incumbent_rank.final)
-
-    # health first: a model that has stopped working loses the seat now
-    if incumbent_rank.health < policy.suspend_below_health:
-        chain = _chain_from(profile, ranking, candidates, incumbent, now, challenger.model_id)
-        reason = (
-            f"suspend: {held} health {incumbent_rank.health:.2f} < "
-            f"{policy.suspend_below_health:.2f}, {challenger.model_id} takes primary"
-        )
-        return chain, _decision(profile, "suspend", reason, held, challenger.model_id)
-
-    # then tenure: an old incumbent re-contests the seat with no margin
-    tenure = tenure_days(incumbent, now)
-    if tenure is not None and tenure > policy.max_tenure_days:
-        chain = _chain_from(profile, ranking, candidates, incumbent, now, challenger.model_id)
-        reason = (
-            f"switch: tenure {tenure} d > {policy.max_tenure_days} d, margin waived, "
-            f"{challenger.model_id} leads by {_signed(gap)}"
-        )
-        return chain, _decision(profile, "switch", reason, held, challenger.model_id)
-
-    # then the margin
-    if gap >= policy.margin:
-        chain = _chain_from(profile, ranking, candidates, incumbent, now, challenger.model_id)
-        reason = (
-            f"switch: {challenger.model_id} over {held} by {_signed(gap)}, "
-            f"margin {policy.margin:.1f}{_top_axis(challenger, incumbent_rank)}"
-        )
-        return chain, _decision(profile, "switch", reason, held, challenger.model_id)
-
-    # nothing changes, and the chain stays exactly as it was
-    reason = (
-        f"hold: challenger {challenger.model_id} {_signed(gap)} inside margin {policy.margin:.1f}"
-    )
-    return incumbent, _decision(profile, "hold", reason, held, held)
+    reason = f"switch: the list changed, {after[0]} leads{_carried(rows)}"
+    return chain, _decision(profile, "switch", reason, before or None, after)
 
 
-def _top_axis(challenger: Rank, incumbent: Rank) -> str:
-    """` (agentic_coding +0.31)` -- the axis carrying most of the gap."""
-    held = {a.axis: a.contribution for a in incumbent.axes}
-    gaps = [(a.axis, a.contribution - held.get(a.axis, 0.0)) for a in challenger.axes]
-    gaps = [g for g in gaps if g[1] > 0]
-    if not gaps:
+def _carried(rows: list[Rank]) -> str:
+    """` (reasoning 0.31)` -- the axis carrying most of the leader's score."""
+    if not rows or not rows[0].axes:
         return ""
-    axis, delta = max(gaps, key=lambda pair: pair[1])
-    return f" ({axis} +{delta:.2f})"
-
-
-def next_evaluation(profile: Profile, last: datetime) -> datetime:
-    """When tenure alone would re-open the seat."""
-    return last + timedelta(days=profile.policy.max_tenure_days)
+    axis = max(rows[0].axes, key=lambda a: a.contribution)
+    if axis.contribution <= 0:
+        return ""
+    return f" ({axis.axis} {axis.contribution:.2f})"

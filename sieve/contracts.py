@@ -310,6 +310,7 @@ class WeightSetting(_Model):
 
 
 class ProfileSettings(_Model):
+    ship: int = Field(default=4, ge=1, le=10)
     list_length: int = Field(default=5, ge=1, le=100)
     floor_score: float = Field(default=0.0, ge=0.0, le=1.0)
     price_sensitivity: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -335,6 +336,10 @@ class Profile(_Model):
     modality: Modality
     purpose: str
     weights: dict[str, float]
+    #: how many models the profile ships: the first is used, the rest are
+    #: fallbacks. The whole list, and the only number on it that is not a
+    #: weight.
+    ship: int = Field(default=4, ge=1, le=10)
     require: dict[str, Any] = Field(default_factory=dict)
     shape: Shape = Field(default_factory=Shape)
     policy: Policy = Field(default_factory=Policy)

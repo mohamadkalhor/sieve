@@ -876,14 +876,8 @@ def preview(
             cfg, store, candidate, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
         )
         store.put_ranking(ranking, owner_id)
-    observed = {
-        row["model_id"]: row["experience"]
-        for row in control.experience(store, name, None, owner_id)
-    }
-    ranking = control.rerank_cached(ranking, proposed.weights, proposed.experience_weight, observed)
-    ids = control.controlled_ids(
-        store, name, ranking.ranks, proposed.list_length, proposed.floor_score, owner_id
-    )
+    ranking = control.rerank_cached(ranking, proposed.weights)
+    ids = control.shipped_ids(ranking.ranks, proposed.ship)
     return {"profile": name, "models": ids, "settings": proposed, "ranking": ranking}
 
 

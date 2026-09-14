@@ -597,8 +597,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_run_legacy(args: argparse.Namespace) -> int:
-    """The loop: pull every enabled source, evaluate every profile, decide, and
-    apply **only** where the profile opted in with `policy.auto_apply`.
+    """The loop: pull every enabled source, rank every profile, and ship the
+    lists that changed.
 
     This is what the timer calls. Three things make it safe to leave running:
 
@@ -606,9 +606,8 @@ def cmd_run_legacy(args: argparse.Namespace) -> int:
       are still in the store, and a ranking computed from them is far better
       than no ranking at all. The failure is counted, reported, and the exit
       code says so, so a monitor still sees it.
-    - **Nothing ships unless a profile asked for it.** `auto_apply` is per
-      profile and defaults to false, so adding a target does not silently put it
-      in charge of every seat.
+    - **Only a list that changed is written.** A run that reaches the same
+      answer costs the routers nothing.
     - **Every profile writes a decision row every run**, including a hold. A
       run that changed nothing has to be as visible as one that changed
       everything, or "the schedule is working" and "the schedule is stuck" look
@@ -639,16 +638,16 @@ def cmd_run_legacy(args: argparse.Namespace) -> int:
     for warning in result.warnings:
         _out(f"warning: {warning}")
 
-    # -- apply, but only where the profile asked ------------------------ #
-    opted_in = {p.name for p in profiles if p.policy.auto_apply}
-    shipping = [c for c in result.chains if c.profile in opted_in]
-    held_back = sorted({c.profile for c in result.chains} - opted_in)
+    # -- apply, where the list actually changed -------------------------- #
+    changed = {d.profile for d in result.decisions if d.kind == "switch"}
+    shipping = [c for c in result.chains if c.profile in changed]
+    held_back = sorted({c.profile for c in result.chains} - changed)
 
     apply_failures = 0
     if not shipping:
         _out(
-            "apply: no profile has auto_apply, so nothing shipped"
-            + (f" ({len(held_back)} computed and held)" if held_back else "")
+            "apply: no list changed, so nothing was written"
+            + (f" ({len(held_back)} unchanged)" if held_back else "")
         )
     else:
         outcomes = apply_targets(
@@ -667,7 +666,7 @@ def cmd_run_legacy(args: argparse.Namespace) -> int:
             else:
                 _out(f"{outcome.target}: {verb} {', '.join(outcome.written) or '(nothing)'}")
         if held_back:
-            _out(f"held (no auto_apply): {', '.join(held_back)}")
+            _out(f"unchanged: {', '.join(held_back)}")
 
     took = (datetime.now(UTC) - started).total_seconds()
     _out(
@@ -857,7 +856,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_apply)
 
     p = sub.add_parser(
-        "run", help="one step of the loop, or `full`: harvest, pull, ship where auto_apply"
+        "run", help="one step of the loop, or `full`: harvest, pull, ship what changed"
     )
     p.add_argument(
         "step",

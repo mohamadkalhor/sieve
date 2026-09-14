@@ -490,10 +490,11 @@ def _harvest_connectors(cfg: Config, store: Store, config_path: str) -> Outcome:
 def _ship_profiles(cfg: Config, store: Store, actor: str) -> Outcome:
     """Rank, decide, and ship every person's combos onto their own routers.
 
-    The same three rules `sieve run` always had: a source being down does not
-    stop it, nothing ships unless the profile set `auto_apply`, and every
-    profile writes a decision row -- a hold included -- so "ran and changed
-    nothing" is distinct from "did not run".
+    A source being down does not stop it, every profile writes a decision row
+    -- a hold included -- so "ran and changed nothing" is distinct from "did
+    not run", and the lists that changed are shipped. There is no opt-in any
+    more: a seat exists to be routed to, and one that ranked a new list and
+    kept it to itself was a seat nobody could trust.
     """
     from sieve.engine import apply_targets
     from sieve.engine import run as engine_run
@@ -516,12 +517,14 @@ def _ship_profiles(cfg: Config, store: Store, actor: str) -> Outcome:
         for warning in result.warnings:
             print(f"{label}: warning: {warning}")
 
-        opted_in = {p.name for p in profiles if p.policy.auto_apply}
-        shipping = [c for c in result.chains if c.profile in opted_in]
-        held = sorted({c.profile for c in result.chains} - opted_in)
+        changed = {d.profile for d in result.decisions if d.kind == "switch"}
+        shipping = [c for c in result.chains if c.profile in changed]
+        held = sorted({c.profile for c in result.chains} - changed)
 
         if not shipping:
-            print(f"{label}: apply: no profile has auto_apply, so nothing shipped")
+            print(f"{label}: apply: no list changed, so nothing was written")
+            if held:
+                print(f"{label}: unchanged: {', '.join(held)}")
             continue
         for outcome in apply_targets(
             cfg, shipping, dry_run=False, actor=actor, store=store, owner_id=owner_id
@@ -535,7 +538,7 @@ def _ship_profiles(cfg: Config, store: Store, actor: str) -> Outcome:
                 )
         shipped += len(shipping)
         if held:
-            print(f"{label}: held (no auto_apply): {', '.join(held)}")
+            print(f"{label}: unchanged: {', '.join(held)}")
 
     summary = f"{len(people)} users, {ranked} ranked, {decided} decided, {shipped} combos shipped"
     if failures:

@@ -15,7 +15,29 @@ ranked low.
 
 from __future__ import annotations
 
-from sieve.contracts import Price, Profile, Shape
+from dataclasses import dataclass
+
+from sieve.contracts import Price, Profile
+
+
+@dataclass(frozen=True)
+class TaskShape:
+    """What one task looks like, for turning a published rate into a price.
+
+    Not a profile control. A rate -- dollars per million tokens, per image, per
+    second -- cannot be ranked against a benchmark score until something says
+    how much of it one task uses, and that something is arithmetic the same for
+    every seat on a modality. `sieve.engine.SHAPES` holds one per modality.
+    """
+
+    in_tokens: int | None = None
+    out_tokens: int | None = None
+    cached: float | None = None
+    images: int | None = None
+    seconds: float | None = None
+    chars: int | None = None
+    megapixels: float | None = None
+    requests: int | None = None
 
 AxesByModel = dict[str, dict[str, tuple[float | None, float]]]
 Scored = dict[str, tuple[float, float, dict[str, float]]]
@@ -52,14 +74,14 @@ def rank_order(scored: Scored) -> list[str]:
 
 
 def cost_per_task(
-    price: Price | None, shape: Shape, *, tokens_out: float | None = None
+    price: Price | None, shape: TaskShape, *, tokens_out: float | None = None
 ) -> float | None:
-    """What one task on this model costs, in USD, at the profile's shape.
+    """What one task on this model costs, in USD, at the modality's shape.
 
     None when the price or the shape is missing: an unknown cost must stay
     unknown, so the `cost` axis reports it unmeasured rather than free.
 
-    `tokens_out`, when given, replaces the shape's declared output tokens with
+    `tokens_out`, when given, replaces the shape's output tokens with
     what this model **actually burned** on real calls. It is the only thing that
     can separate the effort modes of one model: every mode is served at the same
     price per token, so the rate is identical and the token count is the whole

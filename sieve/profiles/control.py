@@ -17,8 +17,7 @@ def _iso(value: datetime) -> str:
 
 def default_settings(profile: Profile) -> ProfileSettings:
     return ProfileSettings(
-        list_length=profile.policy.chain,
-        auto_apply=profile.policy.auto_apply,
+        ship=profile.ship,
         weights={name: WeightSetting(value=value) for name, value in profile.weights.items()},
     )
 
@@ -428,13 +427,14 @@ def experience(
     ]
 
 
-def rerank_cached(
-    ranking: Ranking,
-    weights: dict[str, WeightSetting],
-    experience_weight: float,
-    observed_experience: dict[str, float],
-) -> Ranking:
-    """Reweight cached axis values without rebuilding the observation table."""
+def rerank_cached(ranking: Ranking, weights: dict[str, WeightSetting]) -> Ranking:
+    """Reweight cached axis values without rebuilding the observation table.
+
+    The same arithmetic the engine does, over the axis values a ranking already
+    carries: weights in, score out, reachable models in score order. It is what
+    makes a slider answer in milliseconds instead of seconds, and it has to
+    agree with the engine to the last decimal or the preview is a lie.
+    """
     ranks = []
     for row in ranking.ranks:
         axes = {axis.axis: axis for axis in row.axes}
@@ -450,10 +450,6 @@ def rerank_cached(
             score += contribution
             if value is not None:
                 confidence += setting.value * coverage
-        if experience_weight:
-            value = observed_experience.get(row.model_id, 0.5)
-            contributions["experience"] = experience_weight * value
-            score = (1.0 - experience_weight) * score + experience_weight * value
         updated_axes = [
             axis.model_copy(update={"contribution": contributions.get(axis.axis, 0.0)})
             for axis in row.axes
@@ -469,39 +465,28 @@ def rerank_cached(
                 }
             )
         )
-    eligible = [row for row in ranks if not row.excluded_by and not row.dominated_by]
-    eligible.sort(key=lambda row: (-row.final, row.model_id))
-    for position, row in enumerate(eligible, start=1):
+    reachable = [row for row in ranks if row.reachable]
+    reachable.sort(key=lambda row: (-row.final, row.model_id))
+    for position, row in enumerate(reachable, start=1):
         row.position = position
     return ranking.model_copy(
-        update={"ranks": eligible + [row for row in ranks if row.excluded_by or row.dominated_by]}
+        update={"ranks": reachable + [row for row in ranks if not row.reachable]}
     )
 
 
-def controlled_ids(
-    store: Store,
-    name: str,
-    ranked: list[Any],
-    limit: int,
-    floor: float,
-    owner_id: str | None = None,
-) -> list[str]:
-    states = statuses(store, name, owner_id)
-    pinned = sorted(
-        ((order or 0, model) for model, (state, order) in states.items() if state == "pinned")
-    )
-    out = [model for _, model in pinned]
-    for row in ranked:
-        state = states.get(row.model_id, ("active", None))[0]
-        if (
-            state == "active"
-            and row.reachable
-            and row.position > 0
-            and row.final >= floor
-            and row.model_id not in out
-        ):
-            out.append(row.model_id)
-    return out[:limit]
+def shipped_rows(ranked: list[Any], ship: int) -> list[Any]:
+    """The rows that ship: the top `ship` reachable ones, in score order.
+
+    Nothing else takes a model out. There used to be pins, holds, a score floor
+    and a confidence floor here, each of them a way of overruling the weights
+    after the fact, and between them they made the sliders unreadable.
+    """
+    ordered = sorted((row for row in ranked if row.position > 0), key=lambda row: row.position)
+    return ordered[: max(1, ship)]
+
+
+def shipped_ids(ranked: list[Any], ship: int) -> list[str]:
+    return [row.model_id for row in shipped_rows(ranked, ship)]
 
 
 def chain_for(
@@ -516,7 +501,7 @@ def chain_for(
     cfg = settings(store, name, owner_id)
     if cfg is None:
         return None
-    ids = controlled_ids(store, name, ranked, cfg.list_length, cfg.floor_score, owner_id)
+    ids = shipped_ids(ranked, cfg.ship)
     local = store.local_ids(owner_id=owner_id)
     ids = [model for model in ids if local.get(model)]
     if not ids:

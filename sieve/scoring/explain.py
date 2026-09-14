@@ -128,9 +128,5 @@ def why(ranking: Ranking, profile: Profile) -> dict[str, object]:
         "carried_by": carrying[0] if carrying else None,
         "confidence": leader.confidence,
         "flip": explain(ranking, profile),
-        "excluded": [
-            {"model_id": r.model_id, "reason": r.excluded_by or r.dominated_by}
-            for r in ranking.ranks
-            if r.excluded_by or r.dominated_by
-        ],
+        "unreachable": [r.model_id for r in ranking.ranks if not r.reachable],
     }
