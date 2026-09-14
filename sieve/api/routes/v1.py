@@ -258,9 +258,9 @@ def post_axis(
 ) -> Any:
     store = _axes_store(request)
     owner_id = owner_of(request)
-    refused = shared_axis_refused(store, value.name, value.modality, owner_id)
-    if refused:
-        return refused
+    # Creating an axis of your own is not a write to the shared one, even when
+    # it carries the same word: the shared row keeps its NULL owner and its
+    # meaning, and this person scores against their own copy from here on.
     held = store.db.execute(
         "SELECT 1 FROM axes WHERE name=? AND modality=? AND IFNULL(owner_id,'')=IFNULL(?,'')",
         (value.name, value.modality, owner_id),

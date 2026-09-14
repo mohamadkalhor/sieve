@@ -35,6 +35,18 @@ def _visible(owner_id: str | None) -> tuple[str, tuple[Any, ...]]:
     return f"({clause} OR owner_id IS NULL OR visibility='shared')", args
 
 
+def _readable(store: Store, owner_id: str | None) -> tuple[str, tuple[Any, ...]]:
+    """What this seat may read: the whole box for the gate owner, their own
+    axes plus the shared vocabulary for everybody else."""
+    if owner_id is not None:
+        from sieve import owners
+
+        who = owners.by_id(store, owner_id)
+        if who is not None and who.role == "owner":
+            return "1=1", ()
+    return _visible(owner_id)
+
+
 def seed(store: Store, directory: str | Path) -> None:
     """Import shipped YAML only into a store that has no builtin axes.
 
@@ -55,7 +67,7 @@ def seed(store: Store, directory: str | Path) -> None:
 
 def axes(store: Store, modality: str | None = None, owner_id: str | None = None) -> list[Axis]:
     """Readable axes, one per name: this owner's copy wins over the shared one."""
-    clause, args = _visible(owner_id)
+    clause, args = _readable(store, owner_id)
     sql = f"SELECT json, owner_id FROM axes WHERE {clause}"
     if modality is not None:
         sql, args = sql + " AND modality=?", (*args, modality)
@@ -74,7 +86,7 @@ def axes(store: Store, modality: str | None = None, owner_id: str | None = None)
 def axis(
     store: Store, name: str, modality: str | None = None, owner_id: str | None = None
 ) -> Axis | None:
-    clause, args = _visible(owner_id)
+    clause, args = _readable(store, owner_id)
     sql = f"SELECT json FROM axes WHERE name=? AND {clause}"
     args = (name, *args)
     if modality is not None:
@@ -89,7 +101,7 @@ def row(
     held = axis(store, name, modality, owner_id)
     if held is None:
         return None
-    clause, args = _visible(owner_id)
+    clause, args = _readable(store, owner_id)
     meta = store.db.execute(
         f"SELECT builtin, owner_id FROM axes WHERE name=? AND modality=? AND {clause}"
         " ORDER BY (owner_id IS NULL)",

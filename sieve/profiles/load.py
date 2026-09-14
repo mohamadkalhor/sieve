@@ -58,7 +58,9 @@ def load_profiles(
         from sieve.profiles import control
 
         control.seed(store, directory, owner_id)
-        yield from control.profiles(store, owner_id)
+        # Owned, not merely readable: a run writes combos outward, and shipping
+        # somebody else's shared profile onto your router is not reading it.
+        yield from control.profiles(store, owner_id, shared=False)
         return
     for file in profile_files(directory):
         yield parse_profile(file)

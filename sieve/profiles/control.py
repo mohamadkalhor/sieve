@@ -40,6 +40,23 @@ def visible(owner_id: str | None, column: str = "owner_id") -> tuple[str, tuple[
     return f"({clause} OR visibility='shared')", args
 
 
+def readable(store: Store, owner_id: str | None) -> tuple[str, tuple[Any, ...]]:
+    """`WHERE` fragment for what this seat may read.
+
+    The gate owner reads the whole box -- it is his machine, he is the one who
+    answers for what runs on it, and a support question about a member's seat
+    is otherwise unanswerable. Everybody else reads their own rows plus what is
+    shared, which is the rule for every other seat in this file.
+    """
+    if owner_id is not None:
+        from sieve import owners
+
+        who = owners.by_id(store, owner_id)
+        if who is not None and who.role == "owner":
+            return "1=1", ()
+    return visible(owner_id)
+
+
 def seed(store: Store, directory: Any, owner_id: str | None = None) -> None:
     """Import the shipped profiles once, into a store that holds none of theirs."""
     clause, args = mine(owner_id)
@@ -50,7 +67,7 @@ def seed(store: Store, directory: Any, owner_id: str | None = None) -> None:
 
 
 def profiles(store: Store, owner_id: str | None = None, shared: bool = True) -> list[Profile]:
-    clause, args = visible(owner_id) if shared else mine(owner_id)
+    clause, args = readable(store, owner_id) if shared else mine(owner_id)
     return [
         Profile.model_validate_json(r["json"])
         for r in store.db.execute(f"SELECT json FROM profiles WHERE {clause} ORDER BY name", args)
@@ -58,7 +75,7 @@ def profiles(store: Store, owner_id: str | None = None, shared: bool = True) -> 
 
 
 def _row(store: Store, name: str, owner_id: str | None, shared: bool = True) -> Any:
-    clause, args = visible(owner_id) if shared else mine(owner_id)
+    clause, args = readable(store, owner_id) if shared else mine(owner_id)
     return store.db.execute(
         f"SELECT * FROM profiles WHERE name=? AND {clause}", (name, *args)
     ).fetchone()
