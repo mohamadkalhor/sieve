@@ -15,20 +15,28 @@ const TOKEN = 'ci-secret';
 /** the box is in the layout, so it is on whatever page you opened */
 const box = (page: Page) => page.locator('section[aria-label="Runs"]');
 
-async function withToken(page: Page, path = '/profiles') {
+async function withToken(page: Page, path = '/connectors') {
   await page.goto(path);
   const field = page.locator('label.token input');
   await expect(field).toBeVisible();
   await field.fill(TOKEN);
 }
 
-test('the status box shows the four steps, on every page', async ({ page }) => {
-  for (const path of ['/profiles', '/connectors', '/runs', '/axes']) {
+test('the status box is on Connectors and Runs, and nowhere else', async ({ page }) => {
+  for (const path of ['/connectors', '/runs']) {
     await page.goto(path);
     await expect(box(page).locator('li')).toHaveCount(4);
   }
 
-  await page.goto('/profiles');
+  // it used to sit above every screen, which made Profiles a control panel
+  // with a list under it. These are screens you come to read.
+  for (const path of ['/profiles', '/profiles/coder', '/axes', '/guide', '/field']) {
+    await page.goto(path);
+    await expect(page.locator('h1')).toBeVisible();
+    await expect(box(page)).toHaveCount(0);
+  }
+
+  await page.goto('/connectors');
   const rows = box(page).locator('li');
   await expect(rows.nth(0)).toContainText('Full run');
   await expect(rows.nth(1)).toContainText('Pull sources');
@@ -67,7 +75,7 @@ test('Run now on pull_sources produces a runs row', async ({ page, request }) =>
   expect(after[0].step).toBe('pull_sources');
   expect(after[0].summary).toContain('rows pulled');
 
-  // and the record screen shows it without a reload
+  // and the record screen shows it
   await page.goto('/runs');
   await expect(page.locator('ul.runs li').first()).toContainText('Pull sources');
 });
@@ -94,7 +102,7 @@ test('a schedule can be changed from the box, and the API agrees', async ({ page
 });
 
 test('without a token the box says so and the buttons are dead', async ({ page }) => {
-  await page.goto('/axes');
+  await page.goto('/runs');
   await expect(box(page).locator('button[data-step="full"]')).toBeDisabled();
   await expect(box(page)).toContainText('Sign in');
 });

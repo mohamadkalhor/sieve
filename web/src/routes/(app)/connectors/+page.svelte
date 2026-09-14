@@ -19,6 +19,7 @@
     type ConnectorRow
   } from '$lib/api/client';
   import Chip from '$lib/components/Chip.svelte';
+  import StatusBox from '$lib/components/StatusBox.svelte';
   import { runPulse } from '$lib/refresh.svelte';
   import { session } from '$lib/session.svelte';
   import Empty from '$lib/components/Empty.svelte';
@@ -413,6 +414,13 @@
 {/snippet}
 
 <svelte:head><title>Connectors · Sieve</title></svelte:head>
+
+<!--
+  The loop's controls belong here as well as on Runs: a connector that
+  changed what it serves is the reason to harvest, and this is the screen
+  you are on when you find that out.
+-->
+<StatusBox token={session.token} />
 
 <h1>Connectors</h1>
 <p class="lede">

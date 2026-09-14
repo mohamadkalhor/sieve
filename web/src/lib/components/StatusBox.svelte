@@ -12,6 +12,13 @@
    * go, and has a button that makes it go now. While something is running the
    * row says so with the elapsed time, every button is disabled, and when it
    * finishes every list on the page re-fetches.
+   *
+   * It lives on Connectors and on Runs, and nowhere else. It was in the layout
+   * for a while, which put a control panel above every screen whether you had
+   * come to run something or not; the two screens that are *about* the loop
+   * carry it, and the rest of the app is the thing you came to read. The poll
+   * belongs to the component for the same reason: no box on the page, no
+   * request every thirty seconds.
    */
   import {
     api,
@@ -25,18 +32,67 @@
     type Step
   } from '$lib/api/client';
   import { ago } from '$lib/freshness';
+  import { runPulse } from '$lib/refresh.svelte';
   import { session } from '$lib/session.svelte';
 
   interface Props {
-    status: StatusRow | null;
     /** a bearer token, for a browser with no gate session */
     token?: string;
-    /** the caller polls harder for a while and re-fetches its lists */
-    onchanged?: () => void;
   }
-  let { status = null, token = '', onchanged }: Props = $props();
+  let { token = '' }: Props = $props();
 
   const options = $derived({ token: token || undefined });
+
+  /** every 30 seconds, every 3 while something is running */
+  const SLOW = 30_000;
+  const QUICK = 3_000;
+
+  let status = $state<StatusRow | null>(null);
+
+  /** held outside `$state`: the poll reads them and must not restart itself */
+  let runningId: string | null = null;
+  let impatient = 0;
+  let kick: () => void = () => {};
+
+  $effect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const refresh = async () => {
+      const result = await api.status();
+      if (!alive) return;
+      if (result.ok) {
+        status = result.value;
+        session.adopt(result.value);
+        const going = result.value.runs?.running?.id ?? null;
+        if (runningId && !going) {
+          // it just finished: every list in the app is now looking at stale rows
+          runPulse.bump();
+          impatient = 0;
+        }
+        runningId = going;
+        if (impatient > 0) impatient -= 1;
+      }
+      timer = setTimeout(refresh, runningId || impatient > 0 ? QUICK : SLOW);
+    };
+
+    kick = () => {
+      impatient = 20;
+      clearTimeout(timer);
+      void refresh();
+    };
+
+    void refresh();
+    const onVisible = () => document.visibilityState === 'visible' && kick();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  });
+
+  const onchanged = () => kick();
 
   /** ticks so "running · 1m 20s" counts up without another request */
   let now = $state(new Date());
@@ -85,11 +141,11 @@
         result.error.code === 'run_in_flight'
           ? result.error.message
           : `${STEP_LABEL[step]}: ${explainError(result.error)}`;
-      onchanged?.();
+      onchanged();
       return;
     }
     said = `${STEP_LABEL[step]} started.`;
-    onchanged?.();
+    onchanged();
   }
 
   async function setMode(step: Step, mode: string) {
@@ -103,7 +159,7 @@
     );
     busy = '';
     if (!result.ok) said = explainError(result.error);
-    onchanged?.();
+    onchanged();
   }
 
   async function setAt(step: Step, field: 'at_minute' | 'at_time', raw: string) {
@@ -118,13 +174,13 @@
     const result = await api.saveSchedule(step, body, options);
     busy = '';
     if (!result.ok) said = explainError(result.error);
-    onchanged?.();
+    onchanged();
   }
 
   const locked = $derived(!session.canWrite && !token);
 </script>
 
-<section class="box" aria-label="Runs">
+<section id="runs-status" class="box" aria-label="Runs">
   <header>
     <h2>The loop</h2>
     {#if running}
@@ -385,7 +441,7 @@
     width: 4.2rem;
   }
   /* a clock needs more room than two digits: it was showing `04:3` */
-  .at input[type="time"] {
+  .at input[type='time'] {
     width: 6.6rem;
   }
   .go {

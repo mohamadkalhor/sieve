@@ -12,6 +12,8 @@
   import { ago } from '$lib/freshness';
   import { runPulse } from '$lib/refresh.svelte';
   import Empty from '$lib/components/Empty.svelte';
+  import StatusBox from '$lib/components/StatusBox.svelte';
+  import { session } from '$lib/session.svelte';
 
   let rows = $state<RunRow[]>([]);
   let error = $state<ApiError | null>(null);
@@ -82,6 +84,8 @@
 </script>
 
 <svelte:head><title>Runs · Sieve</title></svelte:head>
+
+<StatusBox token={session.token} />
 
 <h1>Runs</h1>
 <p class="lede">

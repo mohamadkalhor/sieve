@@ -18,10 +18,10 @@ const WIDTHS = [
 ];
 
 const SCREENS = [
-  { name: 'profiles', path: '/profiles' },
-  { name: 'profile-coder', path: '/profiles/coder' },
-  { name: 'connectors', path: '/connectors' },
-  { name: 'runs', path: '/runs' }
+  { name: 'profiles', path: '/profiles', box: false },
+  { name: 'profile-coder', path: '/profiles/coder', box: false },
+  { name: 'connectors', path: '/connectors', box: true },
+  { name: 'runs', path: '/runs', box: true }
 ];
 
 test.beforeAll(() => {
@@ -57,7 +57,11 @@ for (const size of WIDTHS) {
     test(`${screen.name} at ${size.name}px does not scroll sideways`, async ({ page }) => {
       await page.setViewportSize({ width: size.width, height: size.height });
       await page.goto(screen.path);
-      await expect(page.locator('section[aria-label="Runs"]')).toBeVisible();
+      // the box is only on the two screens about runs; everywhere else the
+      // heading is what says the screen has painted
+      await expect(
+        screen.box ? page.locator('#runs-status') : page.locator('h1').first()
+      ).toBeVisible();
       // let the lists arrive before measuring anything
       await page.waitForLoadState('networkidle');
 
