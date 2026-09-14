@@ -246,3 +246,48 @@ def test_a_picture_unit_is_refused_on_a_model_that_makes_sound(tmp_path: Path) -
     assert kept.added == 1 and kept.refused == []
     audible = store.add_prices([price("music", "usd_per_second")])
     assert audible.added == 1 and audible.refused == []
+
+
+# --------------------------------------------------------------------------- #
+# a ranking stored in the old shape
+# --------------------------------------------------------------------------- #
+
+
+def test_a_ranking_written_before_the_rebuild_still_reads() -> None:
+    """This box holds months of stored rankings, every one of them carrying
+    `dominated_by` and `excluded_by` -- the two reasons a model could be taken
+    out of a list, and neither of them a thing any more. Read strictly, each of
+    those rows is a 500 on the first preview after a deploy, which is exactly
+    what it was."""
+    import json
+
+    from sieve.store.db import read_ranking
+
+    body = {
+        "profile": "coder",
+        "modality": "llm",
+        "computed_at": "2026-09-01T00:00:00+00:00",
+        "snapshot": "s1",
+        "ranks": [
+            {
+                "position": 1,
+                "model_id": "a/b",
+                "reachable": True,
+                "local_ids": ["gw/b"],
+                "score": 0.9,
+                "confidence": 1.0,
+                "health": 1.0,
+                "final": 0.9,
+                "axes": [],
+                "cost_per_task": None,
+                "dominated_by": None,
+                "excluded_by": "min_confidence",
+                "flip": None,
+            }
+        ],
+    }
+
+    ranking = read_ranking(json.dumps(body))
+    assert ranking.profile == "coder"
+    assert [r.model_id for r in ranking.ranks] == ["a/b"]
+    assert ranking.ranks[0].position == 1, "it is still the ranking it was"

@@ -17,6 +17,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from sieve.contracts import (
     Capability,
     Chain,
@@ -27,6 +29,7 @@ from sieve.contracts import (
     Observation,
     ObsTable,
     Price,
+    Rank,
     Ranking,
     Reachable,
     TelemetryEvent,
@@ -73,6 +76,28 @@ def _iso(value: datetime) -> str:
 def _dt(raw: str) -> datetime:
     parsed = datetime.fromisoformat(raw)
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def read_ranking(raw: str) -> Ranking:
+    """One stored ranking, however old the shape it was written in.
+
+    A ranking is a cache of a computation, and this box holds months of them:
+    every row written before the rebuild carries `dominated_by` and
+    `excluded_by`, the two reasons a model could be taken out of a list that no
+    longer exist. A strict read turns each of those rows into a 500 on the
+    first preview after a deploy -- which is exactly what it did -- so keys the
+    contract no longer has are dropped on the way in, like everywhere else.
+    """
+    try:
+        return Ranking.model_validate_json(raw)
+    except ValidationError:
+        body = json.loads(raw)
+        keep = set(Rank.model_fields)
+        body["ranks"] = [
+            {key: value for key, value in row.items() if key in keep}
+            for row in body.get("ranks", [])
+        ]
+        return Ranking.model_validate(body)
 
 
 class Store:
@@ -830,7 +855,7 @@ class Store:
                 f"SELECT json FROM rankings WHERE profile=? AND {owned} ORDER BY at DESC LIMIT 1",
                 (profile, owner_id),
             ).fetchone()
-        return Ranking.model_validate_json(row["json"]) if row else None
+        return read_ranking(row["json"]) if row else None
 
     def put_chain(self, chain: Chain, owner_id: str | None = None) -> None:
         with self.tx() as db:
