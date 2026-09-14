@@ -20,3 +20,4 @@ playwright-report/
 uv.lock.bak
 web/node_modules/
 data/runs/
+shots/

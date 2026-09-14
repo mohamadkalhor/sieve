@@ -1229,8 +1229,13 @@ def get_status(request: Request, _: Read = None) -> dict[str, Any]:
     # holding four thousand calls, because none of them were from the last day.
     calls = store.db.execute("SELECT COUNT(*) AS n, MAX(at) AS last FROM telemetry").fetchone()
     from sieve import runs as runs_module
+    from sieve.api.auth import gate_identity
 
     schedules = runs_module.schedules_block(store)
+    # Who gate says is in front of this request, or None. The web pages ask
+    # here so they can stop showing a token box to somebody already signed in;
+    # `/v1/me` (AMS-28) will answer the same question in more detail.
+    signed_in = gate_identity(request)
     return {
         "pulled_at": pulled_at.isoformat() if pulled_at else None,
         "ran_at": ran_at.isoformat() if isinstance(ran_at, datetime) else ran_at,
@@ -1240,6 +1245,17 @@ def get_status(request: Request, _: Read = None) -> dict[str, Any]:
         "sources_enabled": sum(1 for s in cfg.sources.values() if s.enabled),
         "telemetry_calls": calls["n"],
         "telemetry_at": calls["last"],
+        "user": (
+            {
+                "name": signed_in.name,
+                "scopes": sorted(signed_in.scopes),
+                # gate's own roles collapse onto one scope set here, so this
+                # says what the person may do rather than inventing a title.
+                "role": "editor" if signed_in.allows("profiles:write") else "viewer",
+            }
+            if signed_in
+            else None
+        ),
     }
 
 

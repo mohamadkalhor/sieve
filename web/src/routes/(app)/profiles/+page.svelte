@@ -20,12 +20,15 @@
   import type { Modality, Profile } from '$lib/types';
   import Empty from '$lib/components/Empty.svelte';
   import ProfileRow from '$lib/components/ProfileRow.svelte';
+  import { runPulse } from '$lib/refresh.svelte';
+  import { session } from '$lib/session.svelte';
 
   let profiles = $state<Profile[]>([]);
   let error = $state<ApiError | null>(null);
   let loading = $state(true);
   let notice = $state('');
-  let token = $state('');
+  /** one token for the whole app, and none at all when gate signed you in */
+  const token = $derived(session.token);
 
   let modalities = $state<Modality[]>([]);
   let collapsed = $state<Set<string>>(new Set());
@@ -66,6 +69,8 @@
   }
 
   $effect(() => {
+    // a finished run rewrites the rankings and the chains under this list
+    runPulse.seen();
     void load();
   });
 
@@ -159,15 +164,23 @@
   </button>
 </header>
 
-<label class="token">
-  <span>Token (needed to change anything)</span>
-  <input
-    type="password"
-    bind:value={token}
-    placeholder="a token with profiles:write and apply"
-    autocomplete="off"
-  />
-</label>
+<!--
+  The token box only exists for a browser gate does not know. When there is a
+  session it is not hidden with CSS, it is not rendered: a password field that
+  is on the page "just in case" is a thing to fill in, and the whole point is
+  that a signed-in person never has to.
+-->
+{#if !session.signedIn}
+  <label class="token">
+    <span>Token (needed to change anything)</span>
+    <input
+      type="password"
+      bind:value={session.token}
+      placeholder="a token with profiles:write and apply"
+      autocomplete="off"
+    />
+  </label>
+{/if}
 
 {#if adding}
   <form class="add" onsubmit={create}>

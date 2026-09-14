@@ -77,6 +77,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     response = await run(`${API_BASE}${path}`, {
       method: options.method ?? 'GET',
       headers,
+      // gate signs a person in with a cookie, and a cookie that is not sent is
+      // the same as not being signed in: every write asked for a pasted token
+      // while the browser was holding a perfectly good session.
+      credentials: 'include',
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       signal: options.signal
     });
@@ -138,18 +142,82 @@ export interface ModelRow {
   } | null;
 }
 
+/** One of the three named steps of the loop, or all three in order. */
+export type Step = 'full' | 'pull_sources' | 'harvest_connectors' | 'ship_profiles';
+
+export const STEPS: Step[] = ['full', 'pull_sources', 'harvest_connectors', 'ship_profiles'];
+
+export const STEP_LABEL: Record<Step, string> = {
+  full: 'Full run',
+  pull_sources: 'Pull sources',
+  harvest_connectors: 'Harvest connectors',
+  ship_profiles: 'Ship profiles'
+};
+
+export const STEP_SAYS: Record<Step, string> = {
+  full: 'harvest, then pull, then ship',
+  pull_sources: 'fetch the benchmark sources into the store',
+  harvest_connectors: 'ask every connector what it serves, refresh the inventory',
+  ship_profiles: 'rank, decide, and ship the seats that auto-apply'
+};
+
+/** A row of the `runs` table: one press of Run now, or one scheduled firing. */
+export interface RunRow {
+  id: string;
+  step: Step;
+  requested_by: string;
+  started: string;
+  finished: string | null;
+  running: boolean;
+  ok: boolean | null;
+  summary: string | null;
+  error: string | null;
+  /** how long it took, or how long it has been going */
+  seconds: number;
+  has_log: boolean;
+}
+
+/** A row of the `schedules` table, with the next moment it is due. */
+export interface ScheduleRow {
+  step: Step;
+  mode: 'off' | 'hourly' | 'daily';
+  /** minutes past the hour, for `hourly` */
+  at_minute: number;
+  /** HH:MM in `timezone`, for `daily` */
+  at_time: string;
+  timezone: string;
+  last_fired: string | null;
+  next_fire: string | null;
+}
+
+/** Who the API thinks is calling: a gate session, or a token's name. */
+export interface MeRow {
+  name: string;
+  role?: string;
+  scopes?: string[];
+}
+
 /** `GET /v1/status`: when Sieve last looked, and how often it looks. */
 export interface StatusRow {
   /** the last pull of any source, new data or not */
   pulled_at: string | null;
   /** the last decision the scheduled loop recorded */
   ran_at: string | null;
-  /** the configured cadence, e.g. `hourly` */
+  /** the cadence of `full`, read from the schedules table -- not from TOML */
   schedule: string;
   sources_enabled: number;
   /** every call telemetry holds (pruned to thirty days), and the newest one */
   telemetry_calls: number;
   telemetry_at: string | null;
+  /** what is going now and what finished last; absent on an older server */
+  runs?: {
+    running: RunRow | null;
+    last: RunRow | null;
+    last_by_step: Record<string, RunRow | null>;
+  };
+  schedules?: ScheduleRow[];
+  /** the signed-in person, when gate says there is one */
+  user?: MeRow | null;
 }
 
 export interface AxisRow extends Axis {
@@ -339,6 +407,50 @@ const q = (params: Record<string, string | number | boolean | undefined>): strin
 
 export const api = {
   status: (o?: RequestOptions) => request<StatusRow>('/v1/status', o),
+
+  /* -- who is calling, and the loop under hand control (AMS-31) ----------- */
+
+  /** AMS-28 lands `/v1/me`; until then `/v1/status` carries the same answer. */
+  me: (o?: RequestOptions) => request<MeRow>('/v1/me', o),
+
+  schedules: (o?: RequestOptions) => request<ScheduleRow[]>('/v1/schedules', o),
+
+  saveSchedule: (
+    step: Step,
+    body: { mode: string; at_minute?: number; at_time?: string },
+    o?: RequestOptions
+  ) => request<ScheduleRow>(`/v1/schedules/${step}`, { ...o, method: 'PUT', body }),
+
+  /** 202 with the new row, or 409 with `run_in_flight` when one is going. */
+  startRun: (step: Step, o?: RequestOptions) =>
+    request<RunRow>(`/v1/runs/${step}`, { ...o, method: 'POST' }),
+
+  runs: (limit = 20, step?: Step, o?: RequestOptions) =>
+    request<RunRow[]>(`/v1/runs${q({ limit, step })}`, o),
+
+  run: (id: string, o?: RequestOptions) => request<RunRow>(`/v1/runs/${encodeURIComponent(id)}`, o),
+
+  /** The log is text, not JSON, so it does not go through `request`. */
+  runLog: async (id: string, o?: RequestOptions): Promise<Result<string>> => {
+    const run = o?.fetch ?? globalThis.fetch;
+    try {
+      const reply = await run(`${API_BASE}/v1/runs/${encodeURIComponent(id)}/log`, {
+        credentials: 'include',
+        headers: o?.token ? { authorization: `Bearer ${o.token}` } : {}
+      });
+      const text = await reply.text();
+      if (!reply.ok) {
+        return fail({ code: `http_${reply.status}`, message: reply.statusText, status: reply.status });
+      }
+      return ok(text);
+    } catch (cause) {
+      return fail({
+        code: 'unreachable',
+        message: cause instanceof Error ? cause.message : 'the API did not answer',
+        status: 0
+      });
+    }
+  },
 
   modalities: (o?: RequestOptions) => request<ModalityCount[]>('/v1/modalities', o),
 

@@ -19,6 +19,8 @@
     type ConnectorRow
   } from '$lib/api/client';
   import Chip from '$lib/components/Chip.svelte';
+  import { runPulse } from '$lib/refresh.svelte';
+  import { session } from '$lib/session.svelte';
   import Empty from '$lib/components/Empty.svelte';
 
   const KINDS: { value: ConnectorKind; label: string }[] = [
@@ -46,7 +48,8 @@
    * and Add is disabled -- rather than an Add button that 404s on submit.
    */
   let absent = $state(false);
-  let token = $state('');
+  /** one token for the whole app, and none at all when gate signed you in */
+  const token = $derived(session.token);
   let notice = $state('');
 
   let formOpen = $state(false);
@@ -95,6 +98,8 @@
   }
 
   $effect(() => {
+    // a harvest rewrites what every connector is serving
+    runPulse.seen();
     void load();
   });
 
@@ -262,7 +267,32 @@
   let multiplierSaid = $state<Record<string, { ok: boolean; text: string }>>({});
   let savingPrefix = $state('');
 
+  /** how many inventory rows each prefix accounts for, and on which gateway */
+  let served = $state<Record<string, { rows: number; inventories: string[] }>>({});
+
   $effect(() => {
+    runPulse.seen();
+    void (async () => {
+      const inventory = await api.inventory();
+      if (!inventory.ok || !Array.isArray(inventory.value)) return;
+      const counts: Record<string, { rows: number; inventories: string[] }> = {};
+      for (const row of inventory.value) {
+        const prefix = row.local_id.includes('/') ? row.local_id.split('/')[0] : '';
+        if (!prefix) continue;
+        const held = counts[prefix] ?? { rows: 0, inventories: [] };
+        held.rows += 1;
+        if (!held.inventories.includes(row.inventory)) held.inventories.push(row.inventory);
+        counts[prefix] = held;
+      }
+      served = counts;
+    })();
+  });
+
+  /** a prefix you can find is a prefix you can fix: ten gateways is a lot of rows */
+  let hunting = $state('');
+
+  $effect(() => {
+    runPulse.seen();
     void (async () => {
       const result = await api.costMultipliers();
       multipliersLoading = false;
@@ -275,7 +305,12 @@
     })();
   });
 
-  const prefixes = $derived(Object.keys(multipliers ?? {}).sort());
+  const prefixes = $derived(
+    Object.keys(multipliers ?? {})
+      .filter((p) => p.toLowerCase().includes(hunting.trim().toLowerCase()))
+      .sort()
+  );
+  const allPrefixes = $derived(Object.keys(multipliers ?? {}).length);
 
   async function setMultiplier(prefix: string, raw: string, box: HTMLInputElement) {
     const value = Number(raw);
@@ -385,15 +420,17 @@
   only the name of the environment variable that holds one.
 </p>
 
-<label class="token">
-  <span>Token (needed to change anything)</span>
-  <input
-    type="password"
-    bind:value={token}
-    placeholder="a token with apply and profiles:write"
-    autocomplete="off"
-  />
-</label>
+{#if !session.signedIn}
+  <label class="token">
+    <span>Token (needed to change anything)</span>
+    <input
+      type="password"
+      bind:value={session.token}
+      placeholder="a token with apply and profiles:write"
+      autocomplete="off"
+    />
+  </label>
+{/if}
 
 {#if absent}
   <p class="banner" role="status">Connectors API not available on this server yet.</p>
@@ -512,32 +549,58 @@
     <p class="muted">Loading…</p>
   {:else if multipliers === null}
     <p class="banner" role="status">Cost multipliers API not available on this server yet.</p>
-  {:else if prefixes.length === 0}
+  {:else if allPrefixes === 0}
     <p class="muted">
       No prefixes yet. Sieve reads them from the local ids your connectors serve — pull one and they
       appear here.
     </p>
   {:else}
-    <ul class="prefixes">
-      {#each prefixes as prefix (prefix)}
-        {@const last = multiplierSaid[prefix]}
-        <li>
-          <label for={`mult-${prefix}`} class="mono">{prefix}</label>
-          <input
-            id={`mult-${prefix}`}
-            type="number"
-            min="0"
-            step="0.05"
-            value={multipliers?.[prefix] ?? 1}
-            disabled={savingPrefix === prefix}
-            onchange={(e) => void setMultiplier(prefix, e.currentTarget.value, e.currentTarget)}
-          />
-          <span class={last && !last.ok ? 'error one-line' : 'note'}>
-            {savingPrefix === prefix ? 'saving…' : last ? last.text : 'default 1.0'}
-          </span>
-        </li>
-      {/each}
-    </ul>
+    <label class="hunt">
+      <span class="sr">Find a prefix</span>
+      <input type="search" bind:value={hunting} placeholder="find a prefix…" />
+    </label>
+    <div class="tablewrap" data-scrolls>
+      <table class="prefixes">
+        <thead>
+          <tr>
+            <th scope="col">Prefix</th>
+            <th scope="col">Multiplier</th>
+            <th scope="col">Models in inventory</th>
+            <th scope="col">Served by</th>
+            <th scope="col">State</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each prefixes as prefix (prefix)}
+            {@const last = multiplierSaid[prefix]}
+            {@const seen = served[prefix]}
+            <tr>
+              <th scope="row" class="mono">
+                <label for={`mult-${prefix}`}>{prefix}</label>
+              </th>
+              <td>
+                <input
+                  id={`mult-${prefix}`}
+                  type="number"
+                  min="0"
+                  step="0.05"
+                  value={multipliers?.[prefix] ?? 1}
+                  disabled={savingPrefix === prefix}
+                  onchange={(e) => void setMultiplier(prefix, e.currentTarget.value, e.currentTarget)}
+                />
+              </td>
+              <td class="num">{seen?.rows ?? 0}</td>
+              <td class="who">{seen?.inventories.join(', ') || '—'}</td>
+              <td class={last && !last.ok ? 'error one-line' : 'note'}>
+                {savingPrefix === prefix ? 'saving…' : last ? last.text : 'default 1.0'}
+              </td>
+            </tr>
+          {:else}
+            <tr><td colspan="5" class="note">No prefix matches “{hunting}”.</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   {/if}
 </section>
 
@@ -552,22 +615,56 @@
     font-size: 1rem;
     margin: 0;
   }
-  .prefixes {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
-    gap: 0.3rem 0.8rem;
+  .hunt input {
+    background: var(--panel2);
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.78rem;
+    padding: 0.25rem 0.5rem;
+    margin: 0.5rem 0;
+    width: min(18rem, 100%);
   }
-  .prefixes li {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 6rem minmax(0, 8rem);
-    gap: 0.5rem;
-    align-items: center;
-    padding: 0.22rem 0;
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .tablewrap {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    max-width: 100%;
+  }
+  table.prefixes {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.78rem;
+  }
+  table.prefixes th,
+  table.prefixes td {
+    text-align: left;
+    padding: 0.3rem 0.6rem 0.3rem 0;
     border-bottom: 1px solid var(--rule);
-    font-size: 0.8rem;
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  table.prefixes thead th {
+    color: var(--muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  table.prefixes td.who {
+    color: var(--muted);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  table.prefixes input {
+    width: 5rem;
   }
   .prefixes input {
     background: var(--panel2);

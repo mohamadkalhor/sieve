@@ -42,9 +42,11 @@ export function freshness(status: StatusRow | null, now: Date = new Date()): Fre
   // the loop's own record is the better answer; a pull alone is a fallback
   const stamp = status.ran_at ?? status.pulled_at;
   const then = stamp ? new Date(stamp) : null;
-  const every = EVERY[status.schedule];
+  // `off` is a real answer now that the cadence is per step and editable: it
+  // means nobody asked for this to run, which is not the same as overdue.
+  const every = status.schedule === 'off' ? undefined : EVERY[status.schedule];
 
-  let cadence = status.schedule;
+  let cadence = status.schedule === 'off' ? 'not scheduled' : status.schedule;
   let late = false;
   if (then && every) {
     // A timer that fires "hourly" fires on the hour, a few minutes late at

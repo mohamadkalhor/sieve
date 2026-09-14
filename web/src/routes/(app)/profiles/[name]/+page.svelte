@@ -50,6 +50,8 @@
   import AxisBars from '$lib/components/AxisBars.svelte';
   import ConfDots from '$lib/components/ConfDots.svelte';
   import Empty from '$lib/components/Empty.svelte';
+  import { runPulse } from '$lib/refresh.svelte';
+  import { session } from '$lib/session.svelte';
   // aliased: `ProfileSettings` is already the name of the settings *shape*
   import SettingsBlocks from '$lib/components/ProfileSettings.svelte';
   import WeightSlider from '$lib/components/WeightSlider.svelte';
@@ -73,7 +75,8 @@
 
   let loading = $state(true);
   let gone = $state<ApiError | null>(null);
-  let token = $state('');
+  /** one token for the whole app, and none at all when gate signed you in */
+  const token = $derived(session.token);
   let said = $state<{ ok: boolean; text: string } | null>(null);
   let busy = $state('');
 
@@ -143,6 +146,8 @@
   let askedExperience = false;
 
   $effect(() => {
+    // a finished run re-ranks this seat; the preview and the list must follow
+    runPulse.seen();
     const wanted = name;
     loading = true;
     engaged = false;
@@ -347,13 +352,6 @@
       const control = draft.weights[axisName];
       if (control) control.value = weight;
     }
-    touched();
-  }
-
-  function setExact(axis: string, value: number) {
-    const control = draft?.weights[axis];
-    if (!control || !Number.isFinite(value)) return;
-    control.value = Math.min(control.max, Math.max(control.min, value));
     touched();
   }
 
@@ -806,15 +804,17 @@
 {#if gone}
   <Empty error={gone} title={name} hint="Nothing here answers to that name." />
 {:else}
-  <label class="token">
-    <span>Token (needed to change anything)</span>
-    <input
-      type="password"
-      bind:value={token}
-      placeholder="a token with profiles:write and apply"
-      autocomplete="off"
-    />
-  </label>
+  {#if !session.signedIn}
+    <label class="token">
+      <span>Token (needed to change anything)</span>
+      <input
+        type="password"
+        bind:value={session.token}
+        placeholder="a token with profiles:write and apply"
+        autocomplete="off"
+      />
+    </label>
+  {/if}
 
   <div class="three">
     <!-- LEFT: what this seat is ------------------------------------------ -->
@@ -924,69 +924,6 @@
         {/if}
       </section>
 
-      <section class="block">
-        <h2>Name and life</h2>
-        <label class="field">
-          <span>Name</span>
-          <input bind:value={renaming} pattern="[A-Za-z0-9_\-]+" autocomplete="off" />
-        </label>
-        <div class="acts">
-          <button
-            type="button"
-            onclick={() => void rename()}
-            disabled={busy === 'rename' || renaming.trim() === name || !renaming.trim()}
-          >
-            {busy === 'rename' ? 'Renaming…' : 'Rename'}
-          </button>
-        </div>
-        <label class="field">
-          <span>Copy to <small>a new seat with these weights</small></span>
-          <input bind:value={copying} pattern="[A-Za-z0-9_\-]+" placeholder="{name}_cheap" autocomplete="off" />
-        </label>
-        <div class="acts">
-          <button type="button" onclick={() => void copy()} disabled={busy === 'copy' || !copying.trim()}>
-            {busy === 'copy' ? 'Copying…' : 'Copy'}
-          </button>
-          {#if confirming}
-            <span class="confirm">
-              Delete {name}?
-              <button type="button" class="danger" onclick={() => void remove()} disabled={busy === 'delete'}>
-                {busy === 'delete' ? 'Deleting…' : 'Yes, delete'}
-              </button>
-              <button type="button" onclick={() => (confirming = false)}>Keep</button>
-            </span>
-          {:else if forcing}
-            <span class="confirm">
-              <button type="button" class="danger" onclick={() => void remove(true)} disabled={busy === 'delete'}>
-                {busy === 'delete' ? 'Deleting…' : 'Delete anyway'}
-              </button>
-              <button type="button" onclick={() => (forcing = false)}>Keep it</button>
-            </span>
-          {:else}
-            <button type="button" onclick={() => (confirming = true)}>Delete</button>
-          {/if}
-        </div>
-        <p class="hint">
-          Deleting a profile takes its seat off every gateway the next time Sieve writes. It cannot
-          be undone from here.
-        </p>
-      </section>
-
-      {#if profile}
-        <section class="block">
-          <h2>What it refuses, what a task costs, when it changes its mind</h2>
-          <p class="hint">
-            These three save on their own, at once, because they are three decisions and one Apply
-            would make them look like one.
-          </p>
-          <SettingsBlocks
-            {profile}
-            {token}
-            onsaved={(_updated, what) => (said = { ok: true, text: `Saved ${what}.` })}
-            onerror={(failure) => (said = { ok: false, text: explainError(failure) })}
-          />
-        </section>
-      {/if}
     </aside>
 
     <!-- CENTRE: the weights ---------------------------------------------- -->
@@ -1047,17 +984,6 @@
                 disabled={settingsAbsent}
                 value={control.max}
                 onchange={(e) => bound(axis, 'max', Number(e.currentTarget.value))}
-              />
-            </label>
-            <label class="bound exact">
-              <span>value</span>
-              <input
-                type="number"
-                min="0"
-                max="1"
-                step="0.01"
-                value={Number(control.value.toFixed(4))}
-                onchange={(e) => setExact(axis, Number(e.currentTarget.value))}
               />
             </label>
             <button
@@ -1197,6 +1123,73 @@
         <p class={said.ok ? 'notice' : 'error'}>{said.text}</p>
       {/if}
     </section>
+  </div>
+
+  <!-- what this seat is called, and what it refuses ------------------- -->
+  <div class="more">
+      <section class="block">
+        <h2>Name and life</h2>
+        <label class="field">
+          <span>Name</span>
+          <input bind:value={renaming} pattern="[A-Za-z0-9_\-]+" autocomplete="off" />
+        </label>
+        <div class="acts">
+          <button
+            type="button"
+            onclick={() => void rename()}
+            disabled={busy === 'rename' || renaming.trim() === name || !renaming.trim()}
+          >
+            {busy === 'rename' ? 'Renaming…' : 'Rename'}
+          </button>
+        </div>
+        <label class="field">
+          <span>Copy to <small>a new seat with these weights</small></span>
+          <input bind:value={copying} pattern="[A-Za-z0-9_\-]+" placeholder="{name}_cheap" autocomplete="off" />
+        </label>
+        <div class="acts">
+          <button type="button" onclick={() => void copy()} disabled={busy === 'copy' || !copying.trim()}>
+            {busy === 'copy' ? 'Copying…' : 'Copy'}
+          </button>
+          {#if confirming}
+            <span class="confirm">
+              Delete {name}?
+              <button type="button" class="danger" onclick={() => void remove()} disabled={busy === 'delete'}>
+                {busy === 'delete' ? 'Deleting…' : 'Yes, delete'}
+              </button>
+              <button type="button" onclick={() => (confirming = false)}>Keep</button>
+            </span>
+          {:else if forcing}
+            <span class="confirm">
+              <button type="button" class="danger" onclick={() => void remove(true)} disabled={busy === 'delete'}>
+                {busy === 'delete' ? 'Deleting…' : 'Delete anyway'}
+              </button>
+              <button type="button" onclick={() => (forcing = false)}>Keep it</button>
+            </span>
+          {:else}
+            <button type="button" onclick={() => (confirming = true)}>Delete</button>
+          {/if}
+        </div>
+        <p class="hint">
+          Deleting a profile takes its seat off every gateway the next time Sieve writes. It cannot
+          be undone from here.
+        </p>
+      </section>
+
+      {#if profile}
+        <section class="block">
+          <h2>What it refuses, what a task costs, when it changes its mind</h2>
+          <p class="hint">
+            These three save on their own, at once, because they are three decisions and one Apply
+            would make them look like one.
+          </p>
+          <SettingsBlocks
+            {profile}
+            {token}
+            onsaved={(_updated, what) => (said = { ok: true, text: `Saved ${what}.` })}
+            onerror={(failure) => (said = { ok: false, text: explainError(failure) })}
+          />
+        </section>
+      {/if}
   </div>
 
   <!-- ---- the tabs ------------------------------------------------------ -->
@@ -1390,19 +1383,23 @@
     font: inherit;
   }
 
-  .three {
-    display: grid;
-    grid-template-columns: minmax(0, 17rem) minmax(0, 1.2fr) minmax(0, 1.1fr);
-    gap: 1rem;
-    align-items: start;
+  /*
+    One column, in reading order: what the seat is, what shapes its list, the
+    weights, then the list itself. It used to be three columns of unequal
+    height, which meant the list you came to read started two screens down on
+    a laptop and overlapped its own controls on a phone.
+  */
+  .three,
+  .more {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    max-width: 64rem;
   }
-
-  /* ---- left ---- */
+  .more {
+    margin-top: 0.8rem;
+  }
   .side {
-    position: sticky;
-    top: 1rem;
-    max-height: calc(100dvh - 2rem);
-    overflow: auto;
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
@@ -1534,13 +1531,25 @@
   .sum.off {
     color: var(--bad);
   }
+  /*
+    label · slider · value · lock come from WeightSlider's own grid; min, max
+    and remove are this one's. Fixed columns, so nothing slides under anything
+    at any width, and the whole row wraps below 900px rather than squeezing.
+  */
   .axis {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 6rem 6rem 6.5rem auto;
-    gap: 0.4rem;
+    grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem 2rem;
+    gap: 0.4rem 0.5rem;
     align-items: center;
-    padding: 0.25rem 0;
+    padding: 0.3rem 0;
     border-bottom: 1px solid var(--rule);
+  }
+  .axis .bound {
+    justify-content: flex-end;
+    margin-top: 0;
+  }
+  .axis .bound input {
+    width: 3.4rem;
   }
   .describes {
     grid-column: 1 / -1;
@@ -1899,28 +1908,12 @@
     overflow-wrap: anywhere;
   }
 
-  @media (max-width: 1200px) {
-    .three {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    }
-    .side {
-      position: static;
-      max-height: none;
-      overflow: visible;
-    }
-    .list {
-      grid-column: 1 / -1;
-    }
-  }
-  @media (max-width: 760px) {
-    .three {
-      grid-template-columns: minmax(0, 1fr);
-    }
-    .list {
-      grid-column: auto;
-    }
+  @media (max-width: 900px) {
     .axis {
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 2rem;
+    }
+    .axis :global(.slider) {
+      grid-column: 1 / -1;
     }
     .rowacts {
       opacity: 1;
