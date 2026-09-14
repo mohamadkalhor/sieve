@@ -310,16 +310,16 @@ Bearer <secret>` and the scope in the table; reads are open unless
 | GET /v1/axes?modality= | – | Axis[] |
 | GET /v1/models?modality=&reachable=&q= | – | ModelRef + latest observations + prices + reachable |
 | GET /v1/models/{id} | – | one, with full observation history |
-| GET /v1/profiles?modality= · GET /v1/profiles/{name} | – | Profile (SQLite truth; YAML seeds an empty store) |
-| GET · PUT /v1/profiles/{name}/settings | – · profiles:write | list controls, bounded/locked weights, profile multipliers. Weights merge per axis, so a page that knows one slider cannot wipe the others. **Removing an axis:** `{"weights": {"axis": null}}` (what a cleared form row sends) or `{"remove_axes": ["axis", ...]}` (what a script writes) drops it from the profile for real; both spellings may be combined with ordinary weight changes in one call |
+| GET /v1/profiles?modality= · GET /v1/profiles/{name} | – | Profile (SQLite truth; YAML seeds an empty store). Document reads resolve weights through settings, including legacy edits; list, copy and ranking fallback use these effective weights. Document writes replace settings weight values and retain surviving axes' min/max/locked metadata |
+| GET · PUT /v1/profiles/{name}/settings | – · profiles:write | list controls, bounded/locked weights, profile multipliers. Weights merge per axis, so a page that knows one slider cannot wipe the others. **Removing an axis:** `{"weights": {"axis": null}}` (what a cleared form row sends) or `{"remove_axes": ["axis", ...]}` (what a script writes) drops it from the profile for real; both spellings may be combined with ordinary weight changes in one call. After merging/removal, the shared weight validator requires axes visible in GET /v1/axes?modality= for this profile, values in [0,1], and sum 1 ± 0.001; 400 `{error:{code:"bad_weights",message:...}}` names the axis or sum (bounds/settings errors use `bad_settings`). Existing min/max/locked semantics are retained |
 | GET · PUT /v1/profiles/{name}/models/{model_id}/status | – · profiles:write | active · pinned · removed and pin order |
 | GET · PUT /v1/cost-multipliers | – · profiles:write | default multiplier per reachable local-id prefix |
 | POST /v1/outcomes · GET /v1/profiles/{name}/experience | telemetry · – | append-only outcome · 30-day Laplace success score |
 | POST /v1/profiles/{name}/preview | – | unsaved controlled list using partial settings |
-| POST /v1/profiles · PATCH · DELETE /v1/profiles/{name} | profiles:write | create/copy · rename and/or re-describe · guarded delete. **PATCH takes `name`, `purpose`, or both**: `{"purpose": "..."}` alone rewrites the description and touches nothing else (400 with neither, 404 for an unknown profile), so fixing a sentence no longer means PUTting every weight and constraint back |
+| POST /v1/profiles · PATCH · DELETE /v1/profiles/{name} | profiles:write | create/copy (`from` or `copy_from`, optional replacement `weights`) · rename and/or re-describe · guarded delete. POST uses the same axis/[0,1]/sum validator as settings; invalid weights return 400 `bad_weights`. Copy carries effective settings weights. **PATCH takes `name`, `purpose`, or both**: `{"purpose": "..."}` alone rewrites the description and touches nothing else (400 with neither, 404 for an unknown profile), so fixing a sentence no longer means PUTting every weight and constraint back |
 | POST /v1/profiles/{name}/apply · GET /v1/profiles/{name}/history | apply · – | ship controlled chain · decision history |
-| PUT /v1/profiles/{name} | profiles:write | Profile (validated; stored; decision logged) |
-| PATCH /v1/profiles/{name}/weights · /policy | profiles:write | Profile |
+| PUT /v1/profiles/{name} | profiles:write | Replace existing Profile (stored; decision logged); unknown name → 404 `not_found`, "create it with POST /v1/profiles". Same axis/[0,1]/sum validator as settings; 400 `bad_weights` names the axis or sum |
+| PATCH /v1/profiles/{name}/weights · /policy | profiles:write | Profile; /weights replaces weight values using the same axis/[0,1]/sum validator as settings; 400 `bad_weights` names the axis or sum |
 | POST /v1/profiles/{name}/evaluate | – | {ranking, chain, decision} — dry run, nothing stored |
 | GET /v1/rankings/{profile} | – | Ranking (latest) |
 | GET /v1/chains/{profile} | – | Chain |

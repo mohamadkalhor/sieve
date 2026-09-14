@@ -412,6 +412,16 @@ def get_profile(request: Request, name: str, _: Read = None) -> Any:
     return profile or error(404, "not_found", f"no profile {name!r}")
 
 
+def _validate_profile_weights(
+    cfg: Config, store: Store, profile: Profile, owner_id: str | None
+) -> None:
+    axis_control.seed(store, cfg.axes_dir)
+    control.validate_weights(
+        profile.weights,
+        {axis.name for axis in axis_control.axes(store, profile.modality, owner_id)},
+    )
+
+
 def _save(
     cfg: Config, profile: Profile, store: Store | None = None, owner_id: str | None = None
 ) -> None:
@@ -451,7 +461,12 @@ def put_profile(
         return error(400, "bad_request", "the body's name must match the path")
     try:
         before = load_profile(cfg, name, store, owner_id)
+        if before is None:
+            return error(404, "not_found", f"no profile {name!r}; create it with POST /v1/profiles")
+        _validate_profile_weights(cfg, store, profile, owner_id)
         _save(cfg, profile, store, owner_id)
+    except ValueError as exc:
+        return error(400, "bad_weights", str(exc))
     except OwnerMissingError:
         return not_built(Profile, "B", "sieve.profiles.save")
     log_decision(
@@ -481,11 +496,12 @@ def patch_weights(
         return not_built(Profile, "B", "sieve.profiles.load")
     if profile is None:
         return error(404, "not_found", f"no profile {name!r}")
-    total = sum(weights.values())
-    if abs(total - 1.0) > 0.001:
-        return error(400, "bad_weights", f"weights must sum to 1 +/- 0.001, got {total:.4f}")
     updated = profile.model_copy(update={"weights": weights})
-    _save(cfg, updated, store, owner_id)
+    try:
+        _validate_profile_weights(cfg, store, updated, owner_id)
+        _save(cfg, updated, store, owner_id)
+    except ValueError as exc:
+        return error(400, "bad_weights", str(exc))
     log_decision(
         store, name, "weights", token.name, profile.weights, weights, f"weights set by {token.name}"
     )
@@ -625,7 +641,7 @@ def post_profile(
     cfg, store = config_of(request), store_of(request)
     owner_id = owner_of(request)
     name = str(body.get("name") or "").strip()
-    source = str(body.get("from") or "").strip()
+    source = str(body.get("from") or body.get("copy_from") or "").strip()
 
     if not name:
         return error(400, "bad_request", "a new profile needs a `name`")
@@ -659,7 +675,13 @@ def post_profile(
             "purpose": str(body.get("purpose") or f"cloned from {source}"),
         }
     )
-    _save(cfg, updated, store, owner_id)
+    try:
+        if "weights" in body:
+            updated = Profile.model_validate({**updated.model_dump(), "weights": body["weights"]})
+        _validate_profile_weights(cfg, store, updated, owner_id)
+        _save(cfg, updated, store, owner_id)
+    except ValueError as exc:
+        return error(400, "bad_weights", str(exc))
     log_decision(
         store,
         name,
@@ -698,6 +720,17 @@ def put_profile_settings(
         after = control.update_settings(before, body)
     except (ValidationError, ValueError) as exc:
         return error(400, "bad_settings", str(exc))
+    found = control.profile(store, name, owner_id)
+    assert found is not None
+    try:
+        _validate_profile_weights(
+            cfg,
+            store,
+            found.model_copy(update={"weights": {a: w.value for a, w in after.weights.items()}}),
+            owner_id,
+        )
+    except ValueError as exc:
+        return error(400, "bad_weights", str(exc))
     control.put_settings(store, name, after, owner_id)
     log_decision(
         store,
@@ -1009,7 +1042,7 @@ def ranking_for(request: Request, profile: str) -> Ranking | JSONResponse:
     if stored is not None:
         return stored
     try:
-        found = load_profile(cfg, profile)
+        found = load_profile(cfg, profile, store, owner_id)
     except OwnerMissingError:
         return not_built(Ranking, "B", "sieve.profiles.load")
     if found is None:

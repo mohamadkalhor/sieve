@@ -66,11 +66,32 @@ def seed(store: Store, directory: Any, owner_id: str | None = None) -> None:
         put_profile(store, profile, owner_id=owner_id)
 
 
+def validate_weights(weights: dict[str, float], axes: set[str]) -> None:
+    """The same weight rules for every profile write door."""
+    for axis, value in weights.items():
+        if axis not in axes:
+            raise ValueError(f"unknown weight axis {axis!r} for this modality")
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(f"weight {axis!r} must be in [0,1]")
+    total = sum(weights.values())
+    if abs(total - 1.0) > 0.001:
+        raise ValueError(f"weights must sum to 1 +/- 0.001, got {total:.4f}")
+
+
+def _effective_profile(row: Any) -> Profile:
+    """Resolve even legacy documents through their effective settings weights."""
+    value = Profile.model_validate_json(row["json"])
+    selected = ProfileSettings.model_validate_json(row["settings"])
+    return value.model_copy(update={"weights": {a: w.value for a, w in selected.weights.items()}})
+
+
 def profiles(store: Store, owner_id: str | None = None, shared: bool = True) -> list[Profile]:
     clause, args = readable(store, owner_id) if shared else mine(owner_id)
     return [
-        Profile.model_validate_json(r["json"])
-        for r in store.db.execute(f"SELECT json FROM profiles WHERE {clause} ORDER BY name", args)
+        _effective_profile(r)
+        for r in store.db.execute(
+            f"SELECT json,settings FROM profiles WHERE {clause} ORDER BY name", args
+        )
     ]
 
 
@@ -83,7 +104,7 @@ def _row(store: Store, name: str, owner_id: str | None, shared: bool = True) -> 
 
 def profile(store: Store, name: str, owner_id: str | None = None) -> Profile | None:
     row = _row(store, name, owner_id)
-    return Profile.model_validate_json(row["json"]) if row else None
+    return _effective_profile(row) if row else None
 
 
 def owner_of(store: Store, name: str, owner_id: str | None = None) -> str | None:
@@ -106,6 +127,17 @@ def put_profile(
     stamp = _iso(datetime.now(UTC))
     current = settings(store, value.name, owner_id)
     selected = value_settings or current or default_settings(value)
+    if value_settings is None:
+        selected = update_settings(
+            selected,
+            {
+                "weights": {axis: {"value": weight} for axis, weight in value.weights.items()},
+                "remove_axes": list(set(selected.weights) - set(value.weights)),
+            },
+        )
+    value = value.model_copy(
+        update={"weights": {axis: weight.value for axis, weight in selected.weights.items()}}
+    )
     with store.tx() as db:
         db.execute(
             "INSERT INTO profiles(name,modality,json,settings,owner_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) "

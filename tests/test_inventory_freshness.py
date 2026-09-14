@@ -189,7 +189,16 @@ def test_a_null_weight_drops_the_axis(client: TestClient) -> None:
         axis = next(iter(before))
 
         after = client.put(
-            f"/v1/profiles/{name}/settings", json={"weights": {axis: None}}, headers=HEADERS
+            f"/v1/profiles/{name}/settings",
+            json={"weights": {axis: None}},
+            headers=HEADERS,
+        )
+        assert after.status_code == 400  # Removal alone would leave an invalid sum.
+        remaining = {a: {"value": 1 / (len(before) - 1)} for a in before if a != axis}
+        after = client.put(
+            f"/v1/profiles/{name}/settings",
+            json={"weights": {axis: None, **remaining}},
+            headers=HEADERS,
         )
         assert after.status_code == 200, after.text
         assert axis not in after.json()["weights"]
@@ -204,7 +213,18 @@ def test_remove_axes_drops_them_and_leaves_the_rest(client: TestClient) -> None:
         assert len(doomed) == 2, "this profile needs two axes for the test to mean much"
 
         after = client.put(
-            f"/v1/profiles/{name}/settings", json={"remove_axes": doomed}, headers=HEADERS
+            f"/v1/profiles/{name}/settings",
+            json={"remove_axes": doomed},
+            headers=HEADERS,
+        )
+        assert after.status_code == 400
+        remaining = {
+            a: {"value": 1 / (len(before) - len(doomed))} for a in before if a not in doomed
+        }
+        after = client.put(
+            f"/v1/profiles/{name}/settings",
+            json={"remove_axes": doomed, "weights": remaining},
+            headers=HEADERS,
         )
         assert after.status_code == 200, after.text
         weights = after.json()["weights"]
@@ -219,13 +239,16 @@ def test_dropping_an_axis_and_setting_another_happen_in_one_call(client: TestCli
         gone, kept = axes[0], axes[1]
         after = client.put(
             f"/v1/profiles/{name}/settings",
-            json={"weights": {gone: None, kept: {"value": 0.25}}},
+            json={
+                "weights": {gone: None, kept: {"value": 1.0}},
+                "remove_axes": axes[2:],
+            },
             headers=HEADERS,
         )
         assert after.status_code == 200, after.text
         weights = after.json()["weights"]
         assert gone not in weights
-        assert weights[kept]["value"] == pytest.approx(0.25)
+        assert weights[kept]["value"] == pytest.approx(1.0)
 
 
 # --------------------------------------------------------------------------- #
