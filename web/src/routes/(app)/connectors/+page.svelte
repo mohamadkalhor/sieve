@@ -404,7 +404,12 @@
 
       <label>
         <span>Poll every (minutes)</span>
-        <input type="number" min="1" step="1" bind:value={form.poll_minutes} />
+        <!--
+          No native min: the browser's own bubble on 0 said nothing this page
+          would have said, and swallowed the submit before the form could tell
+          him what is wrong. Validation lives in submit(), with the rest.
+        -->
+        <input type="number" step="1" bind:value={form.poll_minutes} />
       </label>
 
       <div class="switches">
@@ -517,6 +522,32 @@
           </label>
           {#if busy[row.id] === 'read' || busy[row.id] === 'write'}
             <span class="saving">saving…</span>
+          {/if}
+          <!--
+            Whether the key is there, never what it is. The name of the
+            variable is in the title, so a blank one can be found on the box.
+          -->
+          <span
+            class="key"
+            class:held={row.token_present}
+            title={row.token_env
+              ? row.token_present
+                ? `${row.token_env} is set on the server`
+                : `${row.token_env} is empty or unset on the server`
+              : 'no environment variable named for this connector'}
+          >
+            key {row.token_env ? (row.token_present ? 'set' : 'missing') : 'none'}
+          </span>
+          {#if row.admin_token_present !== undefined}
+            <span
+              class="key"
+              class:held={row.admin_token_present}
+              title={row.admin_token_present
+                ? 'the admin variable is set on the server'
+                : 'the admin variable is empty or unset on the server'}
+            >
+              admin key {row.admin_token_present ? 'set' : 'missing'}
+            </span>
           {/if}
           <span class="when">
             pulled {when(row.last_pull_at)} · pushed {when(row.last_push_at)} · every {row.poll_minutes}
@@ -807,6 +838,19 @@
   .saving {
     font-size: 0.72rem;
     color: var(--accent);
+  }
+  /* the same visual language as the switches beside it: small, quiet, a state */
+  .key {
+    font-size: 0.72rem;
+    color: var(--muted);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+    cursor: help;
+  }
+  .key.held {
+    color: var(--good);
+    border-color: color-mix(in oklab, var(--good) 45%, transparent);
   }
   .when {
     color: var(--muted);

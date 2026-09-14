@@ -289,6 +289,13 @@ export interface ConnectorRow {
   last_push_at: string | null;
   /** whatever the last read or write failed with, verbatim */
   last_error: string | null;
+  /**
+   * Whether the environment variable named by `token_env` actually holds
+   * something on the server. Never the value -- only whether there is one.
+   */
+  token_present?: boolean;
+  /** the same question for the admin variable, when the connector names one */
+  admin_token_present?: boolean;
 }
 
 /** What POST and PUT take. PUT accepts any subset of it. */

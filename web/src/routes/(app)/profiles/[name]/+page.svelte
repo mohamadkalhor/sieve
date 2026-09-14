@@ -58,6 +58,7 @@
   import { ago } from '$lib/freshness';
   import { duration, reducedMotion } from '$lib/motion/reduced';
   import { rankWithFloor, renormalise, weigh, type AxesByModel } from '$lib/rank/weigh';
+  import { shortList, shortListLine } from '$lib/rank/shortlist';
   import { flip } from 'svelte/animate';
   import type { PageData } from './$types';
 
@@ -153,6 +154,8 @@
     engaged = false;
     preview = null;
     ranking = null;
+    rankState = 'idle';
+    rankError = '';
     askedRanking = false;
     askedHistory = false;
     askedExperience = false;
@@ -194,6 +197,13 @@
         .sort(([aAxis, a], [bAxis, b]) => b.value - a.value || aAxis.localeCompare(bAxis))
         .map(([axis]) => axis);
       loading = false;
+
+      // The list on the right is the point of this page, so the ranking it is
+      // drawn from is fetched with the page rather than when a tab is opened:
+      // its three honest states (asking, slow, failed) can only be shown by
+      // something that is actually asking.
+      askedRanking = true;
+      void loadRanking();
 
       const found = await api.axes(p.value.modality as Modality);
       if (wanted !== name) return;
@@ -321,6 +331,16 @@
 
   const sum = $derived(Object.values(weightValues).reduce((total, value) => total + value, 0));
   const balanced = $derived(Math.abs(sum - 1) <= 0.001);
+
+  /**
+   * Step 3, decided: a new axis takes a share and nothing is silently rescaled
+   * behind him. Adding an axis at 0.1 makes the sum 1.1, so the sum line turns
+   * into a blocking message and Apply (and auto-apply) stay off until the
+   * weights add up -- one click of normalise, or move a slider. The other
+   * choice, renormalising on add, changes every axis he set by hand without
+   * being asked; that is how the box went quiet on him in the first place.
+   */
+  const UNBALANCED = 'The weights have to add up to 1.000 before this can ship. Press normalise, or move one.';
 
   const described = $derived.by(() => {
     const out: Record<string, Axis> = {};
@@ -524,6 +544,10 @@
   }
 
   async function apply() {
+    if (!balanced) {
+      said = { ok: false, text: UNBALANCED };
+      return;
+    }
     busy = 'apply';
     said = null;
 
@@ -573,6 +597,10 @@
 
   async function toggleAuto(on: boolean) {
     if (!draft) return;
+    if (!balanced) {
+      said = { ok: false, text: UNBALANCED };
+      return;
+    }
     draft.auto_apply = on;
     busy = 'auto';
     const failed = await save();
@@ -687,11 +715,53 @@
   let experienceNote = $state('');
   let rankingNote = $state('');
 
+  /**
+   * What the list on the right is actually doing, so it can stop claiming
+   * "nothing ranks for this profile" when the truth is that the answer has not
+   * arrived, or never will. `slow` is the same request as `asking`, eight
+   * seconds older: ranking a full catalogue is genuinely slow on a cold cache,
+   * and silence for that long reads as a broken page.
+   */
+  type RankState = 'idle' | 'asking' | 'slow' | 'error' | 'ready';
+  let rankState = $state<RankState>('idle');
+  let rankError = $state('');
+  let slowTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const SLOW_AFTER = 8000;
+
   async function loadRanking() {
+    const wanted = name;
     rankingNote = '';
-    const result = await api.ranking(name);
-    if (result.ok && result.value) ranking = result.value;
-    else rankingNote = result.ok ? 'nothing ranked yet' : explainError(result.error);
+    rankError = '';
+    rankState = 'asking';
+    if (slowTimer) clearTimeout(slowTimer);
+    slowTimer = setTimeout(() => {
+      if (rankState === 'asking') rankState = 'slow';
+    }, SLOW_AFTER);
+
+    const result = await api.ranking(wanted);
+
+    if (slowTimer) clearTimeout(slowTimer);
+    slowTimer = null;
+    if (wanted !== name) return;
+
+    if (result.ok && result.value) {
+      ranking = result.value;
+      rankState = 'ready';
+      rankingNote = (result.value.ranks ?? []).length ? '' : 'nothing ranked yet';
+      return;
+    }
+    if (result.ok) {
+      // A 200 whose body is not a ranking is this server saying the route is
+      // not built; that is an answer, not an empty list.
+      rankState = 'error';
+      rankError = 'no answer from the server';
+      rankingNote = rankError;
+      return;
+    }
+    rankState = 'error';
+    rankError = explainError(result.error) || 'no answer from the server';
+    rankingNote = rankError;
   }
 
   async function loadHistory() {
@@ -760,6 +830,20 @@
   const allAside = $derived((ranking?.ranks ?? []).filter((rank) => rank.position === 0));
   const ranked = $derived(allRanked.slice(0, TABLE));
   const setAside = $derived(allAside.slice(0, ASIDE));
+
+  /* ---- why the list is short -------------------------------------------- */
+
+  const shortCounts = $derived(
+    shortList(ranking?.ranks ?? [], {
+      shown: shipping.length,
+      cap: cut,
+      statusOf: (id) => statuses[id] ?? 'active'
+    })
+  );
+  const shortLine = $derived(shortListLine(shortCounts, draft?.floor_score ?? 0));
+  /** every row that did not make it, for the "show" panel */
+  const shortRows = $derived(shortCounts.rows);
+  let shortOpen = $state(false);
 
   /* ---- the per-profile cost overrides ----------------------------------- */
 
@@ -937,6 +1021,9 @@
           {/if}
         </p>
       </div>
+      {#if !balanced}
+        <p class="error" role="status">{UNBALANCED}</p>
+      {/if}
       <p class="hint">
         One row per axis this seat counts. The value is what it cares about; min and max are the
         room it is allowed to move in, a locked axis holds while the others absorb a change, and ×
@@ -1052,7 +1139,8 @@
           type="button"
           class="primary"
           onclick={() => void apply()}
-          disabled={busy === 'apply' || loading}
+          disabled={busy === 'apply' || loading || !balanced}
+          title={balanced ? '' : UNBALANCED}
         >
           {busy === 'apply' ? 'Applying…' : 'Apply'}
         </button>
@@ -1103,9 +1191,50 @@
             </span>
           </li>
         {:else}
-          <li class="hint">{loading ? 'Loading…' : 'Nothing ranks for this profile yet.'}</li>
+          <li class="hint">
+            {#if loading || rankState === 'asking' || rankState === 'slow'}
+              <span class="spinner" aria-hidden="true"></span> ranking…
+            {:else if rankState === 'error'}
+              {rankError}
+            {:else}
+              Nothing ranks for this profile yet.
+            {/if}
+          </li>
         {/each}
       </ol>
+
+      {#if rankState === 'slow'}
+        <p class="hint busy" role="status">
+          the server is busy ranking, this can take a while
+          <button type="button" class="link" onclick={() => void loadRanking()}>retry</button>
+        </p>
+      {:else if rankState === 'error'}
+        <p class="error" role="status">
+          {rankError}
+          <button type="button" class="link" onclick={() => void loadRanking()}>retry</button>
+        </p>
+      {/if}
+
+      {#if rankState === 'ready' && (ranking?.ranks ?? []).length}
+        <p class="why">
+          <span class="mono">{shortLine}</span>
+          {#if shortRows.length}
+            <button type="button" class="link" onclick={() => (shortOpen = !shortOpen)}>
+              {shortOpen ? 'hide' : 'show'}
+            </button>
+          {/if}
+        </p>
+        {#if shortOpen}
+          <ul class="whylist" aria-label="models that did not make the list">
+            {#each shortRows as row (row.model_id)}
+              <li>
+                <span class="id mono">{row.model_id}</span>
+                <span class="reason">{row.reason}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/if}
 
       {#if dropping.length}
         <ol class="shipped" aria-label="on the gateway now, not in this draft">
@@ -1906,6 +2035,56 @@
     font-size: 0.74rem;
     margin: 0.35rem 0 0;
     overflow-wrap: anywhere;
+  }
+
+  /* the list saying what it is doing, and why it is as long as it is */
+  .spinner {
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.7rem;
+    border: 2px solid var(--rule);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    vertical-align: -0.1rem;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
+  }
+  .hint.busy {
+    margin: 0.35rem 0 0;
+  }
+  .why {
+    color: var(--muted);
+    font-size: 0.72rem;
+    margin: 0.4rem 0 0;
+    overflow-wrap: anywhere;
+  }
+  .whylist {
+    list-style: none;
+    margin: 0.3rem 0 0;
+    padding: 0.35rem 0 0;
+    border-top: 1px solid var(--rule);
+    max-height: 16rem;
+    overflow-y: auto;
+  }
+  .whylist li {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    padding: 0.12rem 0;
+  }
+  .whylist .reason {
+    color: var(--muted);
+    text-align: right;
   }
 
   @media (max-width: 900px) {

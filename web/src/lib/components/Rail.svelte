@@ -15,6 +15,7 @@
    */
   import { page } from '$app/stores';
   import { session } from '$lib/session.svelte';
+  import { person } from '$lib/who';
 
   interface Props {
     /** the status request failed, as opposed to not having answered yet */
@@ -48,11 +49,7 @@
   const signOutHref = 'https://gate.mkalhor.xyz/logout';
 
   /** `gate:me@example.com` is a record, not a name: show the person. */
-  const who = $derived.by(() => {
-    const name = session.user?.name ?? '';
-    const bare = name.startsWith('gate:') ? name.slice(5) : name;
-    return bare.includes('@') ? bare.split('@')[0] : bare;
-  });
+  const who = $derived(person(session.user?.name));
   const role = $derived(session.user?.role ?? (session.user ? 'signed in' : ''));
 
   let open = $state(false);

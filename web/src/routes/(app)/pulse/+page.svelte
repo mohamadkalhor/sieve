@@ -216,7 +216,7 @@
     gap: 0.25rem;
   }
   .windows button {
-    border: 1px solid var(--line);
+    border: 1px solid var(--rule);
     background: transparent;
     color: inherit;
     padding: 0.3rem 0.7rem;
@@ -245,7 +245,7 @@
   td {
     text-align: left;
     padding: 0.5rem 0.6rem;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rule);
     white-space: nowrap;
   }
   thead th {
@@ -274,7 +274,7 @@
     border-radius: 4px;
   }
   .health.good {
-    background: color-mix(in oklab, var(--ok, #2f855a) 16%, transparent);
+    background: color-mix(in oklab, var(--good) 16%, transparent);
   }
   .health.fair {
     background: color-mix(in oklab, #b7791f 20%, transparent);

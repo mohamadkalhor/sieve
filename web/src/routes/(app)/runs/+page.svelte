@@ -14,6 +14,7 @@
   import Empty from '$lib/components/Empty.svelte';
   import StatusBox from '$lib/components/StatusBox.svelte';
   import { session } from '$lib/session.svelte';
+  import { person } from '$lib/who';
 
   let rows = $state<RunRow[]>([]);
   let error = $state<ApiError | null>(null);
@@ -113,7 +114,7 @@
           <span class="step">{STEP_LABEL[run.step] ?? run.step}</span>
           <span class="when">{ago(new Date(run.started), now)}</span>
           <span class="took num">{took(run)}</span>
-          <span class="who">{run.requested_by}</span>
+          <span class="who" title={run.requested_by}>{person(run.requested_by)}</span>
           <span class="summary">{run.error ?? run.summary ?? (run.running ? 'running…' : '')}</span>
         </button>
         {#if open === run.id}

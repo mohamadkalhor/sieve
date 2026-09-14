@@ -106,6 +106,17 @@
   );
 
   /**
+   * Copying only works within a modality: the weights name axes that exist for
+   * one modality and nothing else, so a list offering every profile is a list
+   * of mostly wrong answers. Changing the modality drops a choice that no
+   * longer belongs to it.
+   */
+  const copyable = $derived(profiles.filter((p) => p.modality === newModality));
+  $effect(() => {
+    if (copyFrom && !copyable.some((p) => p.name === copyFrom)) copyFrom = '';
+  });
+
+  /**
    * Create.
    *
    * Cloning rather than starting empty is what anybody actually does: a
@@ -201,8 +212,8 @@
         <span>Copy from <small>optional</small></span>
         <select bind:value={copyFrom}>
           <option value="">nothing — start empty</option>
-          {#each profiles as profile (profile.name)}
-            <option value={profile.name}>{profile.name} ({profile.modality})</option>
+          {#each copyable as profile (profile.name)}
+            <option value={profile.name}>{profile.name}</option>
           {/each}
         </select>
       </label>
