@@ -941,7 +941,7 @@ def apply_profile(
     if chain is None:
         return error(409, "empty_list", "no reachable models remain")
     store.put_ranking(ranking, owner_id)
-    store.put_chain(chain)
+    store.put_chain(chain, owner_id)
     results = []
     for connector in store.connectors(owner_id):
         if connector.write:
@@ -1030,7 +1030,7 @@ def get_ranking(request: Request, profile: str, _: Read = None) -> Any:
 
 @router.get("/chains/{profile}")
 def get_chain(request: Request, profile: str, _: Read = None) -> Any:
-    chain = store_of(request).chain(profile)
+    chain = store_of(request).chain(profile, owner_of(request))
     return chain or error(404, "not_found", f"no chain for {profile!r}; run sieve plan --store")
 
 

@@ -298,3 +298,28 @@ def test_a_revoked_tokens_name_is_free_again(box: Config) -> None:
         reborn = client.post("/v1/tokens", json={"name": "nightly"}, headers=auth(ada_secret))
         assert reborn.status_code == 201
         assert reborn.json()["secret"] != first.json()["secret"]
+
+
+def test_a_chain_is_served_to_the_person_who_owns_it(box: Config) -> None:
+    """`GET /v1/chains/{profile}` looks up the caller's own row.
+
+    Before this, the route asked for the unowned row, so a signed-in owner got
+    404 for every chain the run had written under his name -- the profile page
+    lost its selected models the moment ownership arrived.
+    """
+    store, _boss, ada, bo = seats(box)
+    ada_secret, bo_secret = secret_for(store, ada), secret_for(store, bo)
+    chain = Chain(
+        profile="judge",
+        computed_at=NOW,
+        primary="openai/gpt-5-6-sol",
+        local={"openai/gpt-5-6-sol": ["openai/gpt-5-6-sol"]},
+    )
+    store.put_chain(chain, owner_id=ada.id)
+    store.close()
+
+    with TestClient(create_app(box)) as client:
+        mine = client.get("/v1/chains/judge", headers=auth(ada_secret))
+        assert mine.status_code == 200
+        assert mine.json()["primary"] == "openai/gpt-5-6-sol"
+        assert client.get("/v1/chains/judge", headers=auth(bo_secret)).status_code == 404
