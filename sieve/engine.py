@@ -8,7 +8,11 @@ as tracebacks, so every other part stays runnable.
 
 from __future__ import annotations
 
+import os
+import threading
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
@@ -33,6 +37,43 @@ from sieve.contracts import (
 )
 from sieve.scoring.efforts import choose_efforts
 from sieve.store import Store
+
+#: How many rankings may be computed at once, and how long a caller waits for
+#: a slot before being told to come back. The box has two cores; ten previews
+#: arriving together used to run ten rankings, which is how both cores and the
+#: memory cap went at once. Two run, the rest queue, and a caller that has
+#: waited a minute is answered rather than left holding a request thread.
+RANKING_SLOTS = max(1, int(os.environ.get("SIEVE_RANK_SLOTS") or 2))
+RANKING_WAIT = float(os.environ.get("SIEVE_RANK_WAIT") or 60.0)
+
+_slots = threading.BoundedSemaphore(RANKING_SLOTS)
+
+
+class RankingBusyError(RuntimeError):
+    """Every ranking slot is taken and waiting for one timed out.
+
+    The API answers this with 503 and a Retry-After: a queue this long is a
+    box under load, and saying so is better than holding the connection until
+    something times out and leaves the work running with nobody to hand it to.
+    """
+
+    def __init__(self, waited: float) -> None:
+        super().__init__(
+            f"every ranking slot was busy for {waited:.0f}s; the box is ranking as fast as it can"
+        )
+        self.waited = waited
+
+
+@contextmanager
+def ranking_slot(wait: float | None = None) -> Iterator[None]:
+    """Hold one of the ranking slots, or raise `RankingBusyError`."""
+    waited = RANKING_WAIT if wait is None else wait
+    if not _slots.acquire(timeout=waited):
+        raise RankingBusyError(waited)
+    try:
+        yield
+    finally:
+        _slots.release()
 
 
 class OwnerMissingError(NotImplementedError):
@@ -284,9 +325,34 @@ def rank_profile(
     at: datetime | None = None,
     owner_id: str | None = None,
 ) -> Ranking:
-    """One profile, scored end to end. Empty (with warnings) until A has landed."""
+    """One profile, scored end to end, holding one of the ranking slots.
+
+    Empty (with warnings) until A has landed. Raises `RankingBusyError` if
+    every slot stays taken for `RANKING_WAIT`.
+    """
+    with ranking_slot():
+        return _rank_profile(
+            cfg, store, profile, deps=deps, snapshot=snapshot, at=at, owner_id=owner_id
+        )
+
+
+def _rank_profile(
+    cfg: Config,
+    store: Store,
+    profile: Profile,
+    *,
+    deps: Deps,
+    snapshot: str,
+    at: datetime | None = None,
+    owner_id: str | None = None,
+) -> Ranking:
     at = at or datetime.now(UTC)
-    obs = store.obs_table(profile.modality)
+    # The observation table, the catalogue and the published capabilities are
+    # the same for this snapshot whoever asks, so they are built once and held
+    # (`store/cache.py`). `working()` is this call's copy: the cost observations
+    # below are written into it, and the shared one must not see them.
+    view = store.cache.view(profile.modality, snapshot)
+    obs = view.working()
     # PLAN 2.1: the rate per token is identical across a model's effort modes,
     # so only the tokens actually burned can tell them apart, and the gateway's
     # own traffic is the only place that number exists.
@@ -323,8 +389,8 @@ def rank_profile(
 
     # what a source publishes about the model, with the gateway's own view of
     # this deployment laid over the top
-    caps = dict(store.capabilities(profile.modality))
-    caps = inherit_family_capabilities(caps, store.models(profile.modality))
+    caps = dict(view.capabilities)
+    caps = inherit_family_capabilities(caps, view.models)
     for reachable in store.reachable(unmatched=False):
         if reachable.model_id:
             caps[reachable.model_id] = _overlay(caps.get(reachable.model_id), reachable.capability)
@@ -380,7 +446,7 @@ def rank_profile(
     # never resurrect one the profile just rejected.
     effort_aside: dict[str, str] = {}
     if profile.prefer_effort:
-        catalogue = {m.id: (m.family, m.effort) for m in store.models(profile.modality)}
+        catalogue = {m.id: (m.family, m.effort) for m in view.models}
         effort_aside = choose_efforts(
             {m: catalogue[m] for m in pool if m not in excluded and m in catalogue},
             profile.prefer_effort,
