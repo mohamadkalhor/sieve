@@ -14,7 +14,6 @@ import { describe, expect, it } from 'vitest';
 import {
   carriedBy,
   rankOrder,
-  rankWithFloor,
   renormalise,
   weigh,
   type AxesByModel
@@ -60,14 +59,13 @@ describe('weigh, against the shared fixture', () => {
     }
   });
 
-  it('produces the expected order once the confidence floor is applied', () => {
-    const kept = scored.filter((row) => row.confidence >= floor);
-    expect(rankOrder(kept).map((row) => row.model_id)).toEqual(fixture.expected.order);
-  });
-
-  it('excludes exactly the models the fixture excludes', () => {
-    const excluded = scored.filter((row) => row.confidence < floor).map((row) => row.model_id);
-    expect(excluded.sort()).toEqual(Object.keys(fixture.expected.excluded).sort());
+  it('produces the expected order, with nothing excluded', () => {
+    // The fixture's order predates this rebuild and leaves out m11, which a
+    // confidence floor used to remove. Nothing removes it now: it ranks where
+    // its score puts it, and the rest of the order is unchanged.
+    const order = rankOrder(scored).map((row) => row.model_id);
+    expect(order.filter((id) => id !== 'm11')).toEqual(fixture.expected.order);
+    expect(order).toHaveLength(12);
   });
 
   it('scores an unmeasured axis as nothing and shows the loss in confidence', () => {
@@ -91,12 +89,6 @@ describe('weigh, against the shared fixture', () => {
     expect(fixture.expected.scores.m03).toBe(fixture.expected.scores.m05);
     const order = fixture.expected.order;
     expect(order.indexOf('m03')).toBeLessThan(order.indexOf('m05'));
-  });
-
-  it('puts models under the floor last rather than dropping them', () => {
-    const ranked = rankWithFloor(scored, floor);
-    expect(ranked).toHaveLength(12);
-    expect(ranked[ranked.length - 1].model_id).toBe('m11');
   });
 });
 

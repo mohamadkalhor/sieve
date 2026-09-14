@@ -1,170 +1,142 @@
 <script lang="ts">
   /**
-   * One profile, whole.
+   * One profile, tuned.
    *
-   * The list gives a seat a row: its card, the handful of controls somebody
-   * moves every day, and the list those controls would ship. Everything else
-   * used to unfold *inside* that row, which made the list as long as the
-   * deepest thing open on it and buried the history and the experience at the
-   * bottom of a page about twenty-two other seats.
+   * A profile is its weights. Each axis is a share of the score, the shares add
+   * to one, and moving one moves the others -- so the page renormalises on
+   * every input and never shows a sum for somebody to manage. Under the weights
+   * is the only other number: how many models to ship. Beside them is the list
+   * those two produce, which is the whole answer.
    *
-   * Here the seat has its own page. Three columns, because the three questions
-   * are asked together: what is this seat (left), what does it care about
-   * (centre), and what would it ship (right). Under them, tabs rather than
-   * more scroll -- the ranking detail alone is most of a megabyte on this box,
-   * so it is fetched when its tab is opened and not before.
+   * Everything else that used to be on this page -- requirements, a task shape,
+   * a policy, pins, holds, a floor, a confidence, why-it-is-here bars, sources,
+   * chips -- is gone. Each of them changed the answer without moving a slider,
+   * and between them they made the sliders unreadable.
    *
-   * WHAT IT WRITES, AND WITH WHICH ROUTE
+   * WHAT IT WRITES
    *
-   *   description  PUT /v1/profiles/{name}  -- the whole profile back with
-   *                `purpose` changed, because that is the only route that
-   *                writes it. The profile is re-read first, so the round trip
-   *                cannot carry a stale copy of everything else.
-   *   weights,     PUT /v1/profiles/{name}/settings, and where that route is
-   *   list,        absent the two phase-1 routes (weights, policy) between
-   *   floor …      them hold everything this page can change.
-   *   pin/remove   PUT …/models/{id}/status, written through on click.
+   *   a weight, an axis, the ship count   PUT /v1/profiles/{name}/settings,
+   *                                       400 ms after the last input
+   *   Ship now                            POST /v1/profiles/{name}/apply
+   *   copy · rename · delete              POST /v1/profiles · PATCH · DELETE
    *
-   * REMOVING AN AXIS
-   *
-   * The settings route merges the weights it is given into the ones it holds,
-   * so no request can drop a key. Removing an axis therefore sends it as zero
-   * and hides it, which is the same arithmetic -- a zero-weighted axis
-   * contributes nothing to the score and nothing to the confidence -- and it
-   * survives a reload, because an axis at zero is drawn as not chosen.
+   * The list comes from POST /v1/profiles/{name}/preview, which reweighs the
+   * ranking the server already holds. It has three honest states and one
+   * fact: ranking, the box is busy, it failed -- and "nothing ships", which
+   * may only be said when an answer actually came back empty.
    */
   import { goto } from '$app/navigation';
   import {
     api,
     explainError,
     type ApiError,
-    type ExperienceRow,
+    type AxisRow,
     type HistoryRow,
-    type ModelStatus,
-    type PreviewResult,
-    type ProfileSettings,
-    type Result,
-    type WeightControl
+    type Listed,
+    type ProfileSettings
   } from '$lib/api/client';
-  import type { Axis, Chain, Modality, Profile, Ranking } from '$lib/types';
-  import AxisBars from '$lib/components/AxisBars.svelte';
-  import ConfDots from '$lib/components/ConfDots.svelte';
-  import Empty from '$lib/components/Empty.svelte';
+  import type { Chain, Profile } from '$lib/types';
+  import { ago } from '$lib/freshness';
   import { runPulse } from '$lib/refresh.svelte';
   import { session } from '$lib/session.svelte';
-  // aliased: `ProfileSettings` is already the name of the settings *shape*
-  import SettingsBlocks from '$lib/components/ProfileSettings.svelte';
-  import WeightSlider from '$lib/components/WeightSlider.svelte';
-  import { ago } from '$lib/freshness';
-  import { duration, reducedMotion } from '$lib/motion/reduced';
-  import { rankWithFloor, renormalise, weigh, type AxesByModel } from '$lib/rank/weigh';
-  import { shortList, shortListLine } from '$lib/rank/shortlist';
-  import { flip } from 'svelte/animate';
+  import {
+    DEBOUNCE_MS,
+    SHIP_MAX,
+    SHIP_MIN,
+    SLOW_MS,
+    addAxis,
+    barWidth,
+    clampShip,
+    listState,
+    moveAxis,
+    removeAxis,
+    shipState
+  } from '$lib/profile/tune';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
   const name = $derived(data.name);
 
   let profile = $state<Profile | null>(null);
-  let settings = $state<ProfileSettings | null>(null);
-  let draft = $state<ProfileSettings | null>(null);
   let chain = $state<Chain | null>(null);
-  let ranking = $state<Ranking | null>(null);
-  let preview = $state<PreviewResult | null>(null);
-  let everyAxis = $state<Axis[]>([]);
-  let defaults = $state<Record<string, number> | null>(null);
+  let everyAxis = $state<AxisRow[]>([]);
+
+  /** the tuning, as the page holds it: shares that add to one, and a length */
+  let weights = $state<Record<string, number>>({});
+  let ship = $state(4);
 
   let loading = $state(true);
   let gone = $state<ApiError | null>(null);
-  /** one token for the whole app, and none at all when gate signed you in */
-  const token = $derived(session.token);
   let said = $state<{ ok: boolean; text: string } | null>(null);
-  let busy = $state('');
 
-  /** the settings route is not on this server yet */
-  let settingsAbsent = $state(false);
-  /** the preview route is not on this server yet: the local rank stands */
-  let previewAbsent = $state(false);
-  /** the status route is not on this server yet: pin and remove are off */
-  let statusAbsent = $state(false);
+  /* -- the list ---------------------------------------------------------- */
 
-  /** this page has asked the server for its list at least once */
-  let engaged = $state(false);
-  let previewing = $state(false);
-  let statuses = $state<Record<string, ModelStatus>>({});
+  let models = $state<Listed[] | null>(null);
+  let next = $state<Listed[]>([]);
+  let pending = $state(false);
+  let waitedMs = $state(0);
+  let failed = $state<string | null>(null);
+  let showMore = $state(false);
+  let shipping = $state(false);
 
-  /** the axes this seat counts, in the order they are drawn */
-  let chosen = $state<string[]>([]);
+  /* -- the menu ---------------------------------------------------------- */
 
-  /** ticks, so "shipped 51 min ago" keeps counting */
+  let menuOpen = $state(false);
+  let asking = $state<'' | 'copy' | 'rename' | 'delete'>('');
+  let askName = $state('');
+  let history = $state<HistoryRow[] | null>(null);
+  let adding = $state(false);
+
+  /** ticks, so "shipped 12 min ago" keeps counting */
   let now = $state(new Date());
   $effect(() => {
     const tick = setInterval(() => (now = new Date()), 30_000);
     return () => clearInterval(tick);
   });
 
-  const options = $derived({ token: token || undefined });
+  const options = $derived({ token: session.token || undefined });
 
-  /**
-   * A route that is not mounted does not always answer 404. FastAPI serves the
-   * built web app at `/`, so a path it does not recognise comes back as the SPA
-   * shell -- 200, text/html, which the client hands over as a null body.
-   */
-  function absent<T>(result: Result<T>): boolean {
-    if (!result.ok) return result.error.status === 404 || result.error.code === 'not_built';
-    return result.value === null || result.value === undefined;
-  }
+  const chosen = $derived(
+    Object.keys(weights).sort(
+      (a, b) => weights[b] - weights[a] || a.localeCompare(b)
+    )
+  );
+  const meanings = $derived(
+    Object.fromEntries(everyAxis.map((axis) => [axis.name, axis.meaning || axis.describes || '']))
+  );
+  const labels = $derived(
+    Object.fromEntries(everyAxis.map((axis: AxisRow) => [axis.name, axis.label || axis.name]))
+  );
+  const spare = $derived(everyAxis.filter((axis: AxisRow) => !(axis.name in weights)));
 
-  const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-
-  /** The controls a profile implies, for a server without the settings route. */
-  function fromProfile(p: Profile): ProfileSettings {
-    const weights: Record<string, WeightControl> = {};
-    for (const [axis, value] of Object.entries(p.weights)) {
-      weights[axis] = { value, min: 0, max: 1, locked: false };
-    }
-    return {
-      list_length: p.policy?.chain ?? 5,
-      floor_score: p.policy?.min_confidence ?? 0,
-      price_sensitivity: 1,
-      experience_weight: 0,
-      auto_apply: p.policy?.auto_apply ?? false,
-      weights,
-      cost_multipliers: {}
-    };
-  }
+  const shipped = $derived(chain ? [chain.primary, ...(chain.fallbacks ?? [])] : []);
+  const listing = $derived(listState({ pending, waitedMs, error: failed, models }));
+  const button = $derived(
+    shipState({
+      shipped,
+      next: (models ?? []).map((row: Listed) => row.id),
+      shipping,
+      ready: listing === 'ready'
+    })
+  );
 
   /* ---------------------------------------------------------------------- */
-  /* loading: the light half                                                 */
+  /* loading                                                                 */
   /* ---------------------------------------------------------------------- */
-
-  let description = $state('');
-
-  // Plain variables, not state: they guard the tab fetches below and must not
-  // re-run the effect that sets them.
-  let askedRanking = false;
-  let askedHistory = false;
-  let askedExperience = false;
 
   $effect(() => {
-    // a finished run re-ranks this seat; the preview and the list must follow
+    // a finished run re-ranks this seat; the list must follow
     runPulse.seen();
     const wanted = name;
     loading = true;
-    engaged = false;
-    preview = null;
-    ranking = null;
-    rankState = 'idle';
-    rankError = '';
-    askedRanking = false;
-    askedHistory = false;
-    askedExperience = false;
+    models = null;
+    failed = null;
+    history = null;
     void (async () => {
-      const [p, s, c, m] = await Promise.all([
+      const [p, s, c] = await Promise.all([
         api.profile(wanted),
         api.profileSettings(wanted),
-        api.chain(wanted),
-        api.costMultipliers()
+        api.chain(wanted)
       ]);
       if (wanted !== name) return;
 
@@ -177,1925 +149,1003 @@
       }
       gone = null;
       profile = p.value;
-      description = p.value.purpose ?? '';
       chain = c.ok ? c.value : null;
-      defaults = m.ok && m.value && typeof m.value === 'object' ? m.value : null;
 
-      if (absent(s) || !s.ok || !s.value.weights) {
-        settings = fromProfile(p.value);
-        settingsAbsent = true;
-      } else {
-        settings = s.value;
-        settingsAbsent = false;
-      }
-      draft = clone(settings);
-      // An axis at zero counts for nothing, so it is drawn as not chosen --
-      // which is what makes "remove" survive a reload on a server whose
-      // settings route cannot drop a key.
-      chosen = Object.entries(settings.weights)
-        .filter(([, control]) => control.value > 0)
-        .sort(([aAxis, a], [bAxis, b]) => b.value - a.value || aAxis.localeCompare(bAxis))
-        .map(([axis]) => axis);
+      const held: ProfileSettings | null = s.ok && s.value?.weights ? s.value : null;
+      weights = held ? { ...held.weights } : { ...p.value.weights };
+      ship = clampShip(held ? held.ship : (p.value.ship ?? 4));
       loading = false;
 
-      // The list on the right is the point of this page, so the ranking it is
-      // drawn from is fetched with the page rather than when a tab is opened:
-      // its three honest states (asking, slow, failed) can only be shown by
-      // something that is actually asking.
-      askedRanking = true;
-      void loadRanking();
+      const axes = await api.axes(p.value.modality);
+      if (wanted === name && axes.ok && Array.isArray(axes.value)) everyAxis = axes.value;
 
-      const found = await api.axes(p.value.modality as Modality);
-      if (wanted !== name) return;
-      everyAxis = found.ok && Array.isArray(found.value) ? found.value : [];
+      await refresh();
     })();
   });
 
   /* ---------------------------------------------------------------------- */
-  /* the list on the right                                                   */
-  /* ---------------------------------------------------------------------- */
-
-  interface Row {
-    rank: number;
-    id: string;
-    local_ids: string[];
-    score: number;
-    status: ModelStatus;
-  }
-
-  const axesByModel = $derived.by(() => {
-    const out: AxesByModel = {};
-    for (const rank of ranking?.ranks ?? []) {
-      if (rank.excluded_by === 'min_confidence' || rank.dominated_by) continue;
-      out[rank.model_id] = Object.fromEntries(
-        (rank.axes ?? []).map((axis) => [axis.axis, { value: axis.value, coverage: axis.coverage }])
-      );
-    }
-    return out;
-  });
-
-  const localIds = $derived.by(() => {
-    const out: Record<string, string[]> = {};
-    for (const rank of ranking?.ranks ?? []) out[rank.model_id] = rank.local_ids ?? [];
-    return out;
-  });
-
-  const weightValues = $derived.by(() => {
-    const out: Record<string, number> = {};
-    for (const [axis, control] of Object.entries(draft?.weights ?? {})) out[axis] = control.value;
-    return out;
-  });
-
-  function arrange(rows: Row[]): Row[] {
-    const kept = rows.filter((row) => row.status !== 'removed');
-    const pinned = kept.filter((row) => row.status === 'pinned');
-    const rest = kept.filter((row) => row.status !== 'pinned');
-    return [...pinned, ...rest].map((row, index) => ({ ...row, rank: index + 1 }));
-  }
-
-  const localRows = $derived.by(() =>
-    rankWithFloor(weigh(axesByModel, weightValues), draft?.floor_score ?? 0).map((row, index) => ({
-      rank: index + 1,
-      id: row.model_id,
-      local_ids: localIds[row.model_id] ?? [],
-      score: row.score,
-      status: statuses[row.model_id] ?? ('active' as ModelStatus)
-    }))
-  );
-
-  const previewRows = $derived.by(() => {
-    if (!preview) return null;
-    const scored = new Map((preview.ranking?.ranks ?? []).map((rank) => [rank.model_id, rank]));
-    return preview.models.map((id, index) => ({
-      rank: index + 1,
-      id,
-      local_ids: scored.get(id)?.local_ids ?? localIds[id] ?? [],
-      score: scored.get(id)?.final ?? 0,
-      status: statuses[id] ?? ('active' as ModelStatus)
-    }));
-  });
-
-  const shippedIds = $derived.by(() => {
-    if (!chain) return [] as string[];
-    return [chain.primary, ...(chain.fallbacks ?? [])].filter((id): id is string => !!id);
-  });
-  const shippedAt = $derived.by(() => {
-    const at = new Map<string, number>();
-    shippedIds.forEach((id, index) => at.set(id, index + 1));
-    return at;
-  });
-
-  const cut = $derived(Math.max(1, draft?.list_length ?? 5));
-
-  const shippedRows = $derived(
-    shippedIds.map((id, index) => ({
-      rank: index + 1,
-      id,
-      local_ids: chain?.local?.[id] ?? [],
-      score: 0,
-      status: 'active' as ModelStatus
-    }))
-  );
-
-  const shipping = $derived(
-    previewRows ?? (engaged ? arrange(localRows).slice(0, cut) : shippedRows)
-  );
-
-  const dropping = $derived(
-    shippedIds
-      .filter((id) => !shipping.some((row) => row.id === id))
-      .map((id, index) => ({ id, was: shippedAt.get(id) ?? index + 1 }))
-  );
-
-  const dirty = $derived(
-    draft !== null && settings !== null && JSON.stringify(draft) !== JSON.stringify(settings)
-  );
-
-  const chip = $derived.by(() => {
-    if (loading) return { text: 'loading…', tone: 'muted' };
-    if (dirty) return { text: 'changed, not applied', tone: 'accent' };
-    if (!chain) return { text: 'no chain yet', tone: 'muted' };
-    const when = chain.computed_at ? ago(new Date(chain.computed_at), now) : 'at some point';
-    return { text: `shipped ${when}${draft?.auto_apply ? ' · auto' : ''}`, tone: 'good' };
-  });
-
-  /* ---------------------------------------------------------------------- */
-  /* the weights in the middle                                               */
-  /* ---------------------------------------------------------------------- */
-
-  const rows = $derived(
-    chosen
-      .map((axis) => [axis, draft?.weights[axis]] as const)
-      .filter((pair): pair is readonly [string, WeightControl] => pair[1] !== undefined)
-  );
-
-  const sum = $derived(Object.values(weightValues).reduce((total, value) => total + value, 0));
-  const balanced = $derived(Math.abs(sum - 1) <= 0.001);
-
-  /**
-   * Step 3, decided: a new axis takes a share and nothing is silently rescaled
-   * behind him. Adding an axis at 0.1 makes the sum 1.1, so the sum line turns
-   * into a blocking message and Apply (and auto-apply) stay off until the
-   * weights add up -- one click of normalise, or move a slider. The other
-   * choice, renormalising on add, changes every axis he set by hand without
-   * being asked; that is how the box went quiet on him in the first place.
-   */
-  const UNBALANCED = 'The weights have to add up to 1.000 before this can ship. Press normalise, or move one.';
-
-  const described = $derived.by(() => {
-    const out: Record<string, Axis> = {};
-    for (const axis of everyAxis) out[axis.name] = axis;
-    return out;
-  });
-
-  /** every axis of this modality this seat is not counting yet */
-  const available = $derived(everyAxis.filter((axis) => !chosen.includes(axis.name)));
-
-  let picking = $state(false);
-
-  /**
-   * Move one weight, and let the others absorb it.
-   *
-   * Locked axes hold. So do the ones that are not on this seat: an axis at
-   * zero is removed, and a renormalise that quietly gave it a share of the
-   * remainder would put it back without anybody asking for it.
-   */
-  function move(axis: string, value: number) {
-    if (!draft) return;
-    const held = new Set(
-      Object.entries(draft.weights)
-        .filter(([axisName, control]) => control.locked || !chosen.includes(axisName))
-        .map(([axisName]) => axisName)
-    );
-    const next = renormalise(weightValues, axis, value, held);
-    for (const [axisName, weight] of Object.entries(next)) {
-      const control = draft.weights[axisName];
-      if (control) control.value = weight;
-    }
-    touched();
-  }
-
-  function bound(axis: string, which: 'min' | 'max', value: number) {
-    const control = draft?.weights[axis];
-    if (!control || !Number.isFinite(value)) return;
-    control[which] = Math.min(1, Math.max(0, value));
-    if (control.min > control.max) control[which === 'min' ? 'max' : 'min'] = control[which];
-    control.value = Math.min(control.max, Math.max(control.min, control.value));
-    touched();
-  }
-
-  function addAxis(axis: string) {
-    if (!draft) return;
-    const existing = draft.weights[axis];
-    if (existing) existing.value = Math.min(existing.max, Math.max(existing.min, 0.1));
-    else draft.weights[axis] = { value: 0.1, min: 0, max: 1, locked: false };
-    chosen = [...chosen, axis];
-    picking = false;
-    touched();
-  }
-
-  /**
-   * Remove: zero and hidden.
-   *
-   * The settings route merges, so nothing can drop the key. Zero is the same
-   * answer -- the axis carries no score and no confidence -- and it is the one
-   * the server will still be holding after a reload.
-   */
-  function removeAxis(axis: string) {
-    const control = draft?.weights[axis];
-    if (control) control.value = 0;
-    chosen = chosen.filter((held) => held !== axis);
-    touched();
-  }
-
-  /** Scale the unlocked weights so the whole thing sums to 1. */
-  function normalise() {
-    if (!draft) return;
-    const held = draft;
-    const free = chosen.filter((axis) => !held.weights[axis]?.locked);
-    const lockedTotal = chosen
-      .filter((axis) => held.weights[axis]?.locked)
-      .reduce((total, axis) => total + (held.weights[axis]?.value ?? 0), 0);
-    const room = 1 - lockedTotal;
-    if (free.length === 0 || room < 0) {
-      said = {
-        ok: false,
-        text: 'Every axis here is locked, or the locked ones already add up to more than 1.'
-      };
-      return;
-    }
-    const freeTotal = free.reduce((total, axis) => total + (held.weights[axis]?.value ?? 0), 0);
-    for (const axis of free) {
-      const control = held.weights[axis];
-      if (!control) continue;
-      const share = freeTotal > 0 ? (control.value / freeTotal) * room : room / free.length;
-      control.value = Math.min(control.max, Math.max(control.min, share));
-    }
-    touched();
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /* preview                                                                 */
+  /* the list                                                                */
   /* ---------------------------------------------------------------------- */
 
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let latest = 0;
+  let ticker: ReturnType<typeof setInterval> | null = null;
+  let inflight = 0;
 
-  async function engage() {
-    if (engaged || !draft) return;
-    engaged = true;
-    await runPreview();
-    if (previewAbsent && !ranking) await loadRanking();
+  /** Ask for the list these weights would ship. Debounced by the callers. */
+  async function refresh(): Promise<void> {
+    const wanted = name;
+    const mine = ++inflight;
+    pending = true;
+    failed = null;
+    waitedMs = 0;
+    const started = Date.now();
+    ticker ??= setInterval(() => (waitedMs = Date.now() - started), 500);
+
+    const result = await api.preview(wanted, { weights, ship }, options);
+    if (wanted !== name || mine !== inflight) return;
+
+    if (ticker) {
+      clearInterval(ticker);
+      ticker = null;
+    }
+    pending = false;
+    waitedMs = 0;
+    if (!result.ok) {
+      failed = explainError(result.error);
+      return;
+    }
+    models = result.value?.models ?? [];
+    next = result.value?.next ?? [];
   }
 
-  function touched() {
+  /** A control moved: keep the page honest, then save and re-rank. */
+  function touched(): void {
     said = null;
-    if (!engaged) void engage();
-    else schedulePreview();
-  }
-
-  function schedulePreview() {
-    if (previewAbsent || !draft) return;
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => void runPreview(), 250);
+    timer = setTimeout(() => {
+      void save();
+      void refresh();
+    }, DEBOUNCE_MS);
   }
 
-  async function runPreview() {
-    if (!draft || previewAbsent) return;
-    const mine = ++latest;
-    previewing = true;
-    const result = await api.preview(name, clone(draft), options);
-    if (mine !== latest) return;
-    previewing = false;
-
-    if (absent(result)) {
-      previewAbsent = true;
-      preview = null;
-      return;
-    }
-    if (!result.ok) {
-      said = { ok: false, text: explainError(result.error) };
-      return;
-    }
-    preview = result.value;
-    if (result.value.ranking) ranking = result.value.ranking;
-  }
-
-  $effect(() => () => {
-    if (timer) clearTimeout(timer);
-  });
-
-  /* ---------------------------------------------------------------------- */
-  /* writing                                                                 */
-  /* ---------------------------------------------------------------------- */
-
-  async function setStatus(id: string, status: ModelStatus) {
-    const before = statuses[id] ?? 'active';
-    statuses = { ...statuses, [id]: status };
-    busy = `status:${id}`;
-    const result = await api.setModelStatus(name, id, status, options);
-    busy = '';
-
-    if (absent(result)) {
-      statuses = { ...statuses, [id]: before };
-      statusAbsent = true;
-      said = {
-        ok: false,
-        text: 'Pinning and removing need the per-model status route, which this server does not have yet.'
-      };
-      return;
-    }
-    if (!result.ok) {
-      statuses = { ...statuses, [id]: before };
-      said = { ok: false, text: explainError(result.error) };
-      return;
-    }
-    preview = null;
-    schedulePreview();
-  }
-
-  async function save(): Promise<ApiError | null> {
-    if (!draft) return null;
-    if (!settingsAbsent) {
-      const result = await api.saveProfileSettings(name, clone(draft), options);
-      if (!absent(result)) {
-        if (!result.ok) return result.error;
-        settings = result.value;
-        draft = clone(result.value);
-        return null;
-      }
-      settingsAbsent = true;
-    }
-
-    const weights = await api.setWeights(name, clone(weightValues), options);
-    if (!weights.ok) return weights.error;
-    const policy = await api.setPolicy(
-      name,
-      {
-        chain: draft.list_length,
-        min_confidence: draft.floor_score,
-        auto_apply: draft.auto_apply
-      },
+  async function save(): Promise<void> {
+    const wanted = name;
+    const result = await api.saveProfileSettings(
+      wanted,
+      { weights, ship, remove_axes: everyAxis.map((a: AxisRow) => a.name).filter((a: string) => !(a in weights)) },
       options
     );
-    if (!policy.ok) return policy.error;
-    settings = clone(draft);
-    return null;
-  }
-
-  async function apply() {
-    if (!balanced) {
-      said = { ok: false, text: UNBALANCED };
-      return;
-    }
-    busy = 'apply';
-    said = null;
-
-    const failed = await save();
-    if (failed) {
-      busy = '';
-      said = { ok: false, text: explainError(failed) };
-      return;
-    }
-
-    let where: string[] = [];
-    const result = await api.applyProfile(name, options);
-    if (absent(result)) {
-      const legacy = await api.apply([name], options);
-      busy = '';
-      if (!legacy.ok) {
-        said = { ok: false, text: explainError(legacy.error) };
-        return;
-      }
-      where = (legacy.value ?? []).map((target) => target.target);
-    } else {
-      busy = '';
-      if (!result.ok) {
-        said = { ok: false, text: explainError(result.error) };
-        return;
-      }
-      where = (result.value.results ?? []).map((target) => target.target);
-      if (result.value.chain) chain = result.value.chain;
-    }
-
-    said = { ok: true, text: where.length ? `Shipped to ${where.join(', ')}.` : 'Shipped.' };
-    const again = await api.chain(name);
-    if (again.ok) chain = again.value;
-  }
-
-  function discard() {
-    if (!settings) return;
-    draft = clone(settings);
-    chosen = Object.entries(settings.weights)
-      .filter(([, control]) => control.value > 0)
-      .sort(([aAxis, a], [bAxis, b]) => b.value - a.value || aAxis.localeCompare(bAxis))
-      .map(([axis]) => axis);
-    preview = null;
-    said = null;
-    schedulePreview();
-  }
-
-  async function toggleAuto(on: boolean) {
-    if (!draft) return;
-    if (!balanced) {
-      said = { ok: false, text: UNBALANCED };
-      return;
-    }
-    draft.auto_apply = on;
-    busy = 'auto';
-    const failed = await save();
-    busy = '';
-    if (failed) said = { ok: false, text: explainError(failed) };
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /* the description, which only one route writes                            */
-  /* ---------------------------------------------------------------------- */
-
-  const describedDirty = $derived(profile !== null && description.trim() !== profile.purpose);
-
-  async function saveDescription() {
-    if (!profile) return;
-    busy = 'describe';
-    said = null;
-    // Re-read first: `PUT /v1/profiles/{name}` takes the whole profile, and the
-    // copy this page loaded may be minutes old.
-    const fresh = await api.profile(name);
-    const base = fresh.ok && fresh.value ? fresh.value : profile;
-    const result = await api.saveProfile(
-      name,
-      { ...base, purpose: description.trim() },
-      options
-    );
-    busy = '';
-    if (!result.ok) {
-      said = { ok: false, text: explainError(result.error) };
-      return;
-    }
-    profile = result.value && result.value.name ? result.value : { ...base, purpose: description.trim() };
-    said = { ok: true, text: 'Description saved.' };
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /* rename, copy, delete                                                    */
-  /* ---------------------------------------------------------------------- */
-
-  let renaming = $state('');
-  $effect(() => {
-    renaming = name;
-  });
-  let confirming = $state(false);
-  let forcing = $state(false);
-  let copying = $state('');
-
-  async function rename() {
-    const next = renaming.trim();
-    if (!next || next === name) return;
-    busy = 'rename';
-    const result = await api.renameProfile(name, next, options);
-    busy = '';
-    if (!result.ok) {
-      said = { ok: false, text: explainError(result.error) };
-      return;
-    }
-    await goto(`/profiles/${encodeURIComponent(next)}`);
-  }
-
-  async function copy() {
-    const next = copying.trim();
-    if (!next || !profile) return;
-    busy = 'copy';
-    const result = await api.newProfile(
-      { name: next, modality: profile.modality, from: name, copy_from: name },
-      options
-    );
-    busy = '';
-    if (!result.ok) {
-      said = { ok: false, text: explainError(result.error) };
-      return;
-    }
-    await goto(`/profiles/${encodeURIComponent(next)}`);
-  }
-
-  async function remove(force = false) {
-    busy = 'delete';
-    const result = await api.removeProfile(name, force, options);
-    busy = '';
-    confirming = false;
-    if (!result.ok) {
-      if (result.error.code === 'in_use') {
-        forcing = true;
-        said = { ok: false, text: `${result.error.message} — delete anyway?` };
-        return;
-      }
-      said = { ok: false, text: explainError(result.error) };
-      return;
-    }
-    forcing = false;
-    await goto('/profiles');
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /* the tabs, each loaded when it is opened                                 */
-  /* ---------------------------------------------------------------------- */
-
-  type Tab = 'ranking' | 'history' | 'experience' | 'costs';
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'ranking', label: 'Ranking detail' },
-    { id: 'history', label: 'History' },
-    { id: 'experience', label: 'Experience' },
-    { id: 'costs', label: 'Cost multipliers' }
-  ];
-
-  let tab = $state<Tab | null>(null);
-
-  let history = $state<HistoryRow[]>([]);
-  let historyNote = $state('');
-  let experience = $state<ExperienceRow[]>([]);
-  let experienceNote = $state('');
-  let rankingNote = $state('');
-
-  /**
-   * What the list on the right is actually doing, so it can stop claiming
-   * "nothing ranks for this profile" when the truth is that the answer has not
-   * arrived, or never will. `slow` is the same request as `asking`, eight
-   * seconds older: ranking a full catalogue is genuinely slow on a cold cache,
-   * and silence for that long reads as a broken page.
-   */
-  type RankState = 'idle' | 'asking' | 'slow' | 'error' | 'ready';
-  let rankState = $state<RankState>('idle');
-  let rankError = $state('');
-  let slowTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const SLOW_AFTER = 8000;
-
-  async function loadRanking() {
-    const wanted = name;
-    rankingNote = '';
-    rankError = '';
-    rankState = 'asking';
-    if (slowTimer) clearTimeout(slowTimer);
-    slowTimer = setTimeout(() => {
-      if (rankState === 'asking') rankState = 'slow';
-    }, SLOW_AFTER);
-
-    const result = await api.ranking(wanted);
-
-    if (slowTimer) clearTimeout(slowTimer);
-    slowTimer = null;
     if (wanted !== name) return;
-
-    if (result.ok && result.value) {
-      ranking = result.value;
-      rankState = 'ready';
-      rankingNote = (result.value.ranks ?? []).length ? '' : 'nothing ranked yet';
-      return;
-    }
-    if (result.ok) {
-      // A 200 whose body is not a ranking is this server saying the route is
-      // not built; that is an answer, not an empty list.
-      rankState = 'error';
-      rankError = 'no answer from the server';
-      rankingNote = rankError;
-      return;
-    }
-    rankState = 'error';
-    rankError = explainError(result.error) || 'no answer from the server';
-    rankingNote = rankError;
+    if (!result.ok) said = { ok: false, text: explainError(result.error) };
   }
 
-  async function loadHistory() {
-    const wanted = name;
-    const result = await api.history(wanted);
-    if (wanted !== name) return;
-    if (result.ok && Array.isArray(result.value)) {
-      history = result.value;
-      historyNote = result.value.length ? '' : 'nothing recorded yet';
-      return;
-    }
-    // `/v1/decisions?profile=` has recorded every weight change, hold and apply
-    // since phase 1, in all but the field names.
-    const decisions = await api.decisions(wanted);
-    if (wanted !== name) return;
-    if (decisions.ok && Array.isArray(decisions.value)) {
-      history = decisions.value.map((decision) => ({
-        who: decision.actor,
-        when: decision.at,
-        what: `${decision.kind}: ${decision.reason}`,
-        before: decision.before,
-        after: decision.after
-      }));
-      historyNote = 'read from the decision log, until this profile has a history route';
-    } else {
-      history = [];
-      historyNote = 'nothing recorded yet';
-    }
-  }
+  /* ---------------------------------------------------------------------- */
+  /* the controls                                                            */
+  /* ---------------------------------------------------------------------- */
 
-  async function loadExperience() {
-    const wanted = name;
-    const result = await api.experience(wanted);
-    if (wanted !== name) return;
-    if (result.ok && Array.isArray(result.value)) {
-      experience = result.value;
-      experienceNote = result.value.length ? '' : 'nothing called on this seat yet';
-      return;
-    }
-    experience = [];
-    experienceNote = 'this server has no experience route yet';
-  }
-
-  $effect(() => {
-    if (loading) return;
-    if (tab === 'ranking' && !askedRanking) {
-      askedRanking = true;
-      if (!ranking) void loadRanking();
-    }
-    if (tab === 'history' && !askedHistory) {
-      askedHistory = true;
-      void loadHistory();
-    }
-    if (tab === 'experience' && !askedExperience) {
-      askedExperience = true;
-      void loadExperience();
-    }
-  });
-
-  /* ---- the ranking table ------------------------------------------------ */
-
-  const TABLE = 50;
-  const ASIDE = 25;
-
-  const allRanked = $derived((ranking?.ranks ?? []).filter((rank) => rank.position > 0));
-  const allAside = $derived((ranking?.ranks ?? []).filter((rank) => rank.position === 0));
-  const ranked = $derived(allRanked.slice(0, TABLE));
-  const setAside = $derived(allAside.slice(0, ASIDE));
-
-  /* ---- why the list is short -------------------------------------------- */
-
-  const shortCounts = $derived(
-    shortList(ranking?.ranks ?? [], {
-      shown: shipping.length,
-      cap: cut,
-      statusOf: (id) => statuses[id] ?? 'active'
-    })
-  );
-  const shortLine = $derived(shortListLine(shortCounts, draft?.floor_score ?? 0));
-  /** every row that did not make it, for the "show" panel */
-  const shortRows = $derived(shortCounts.rows);
-  let shortOpen = $state(false);
-
-  /* ---- the per-profile cost overrides ----------------------------------- */
-
-  const prefixes = $derived(
-    [...new Set([...Object.keys(defaults ?? {}), ...Object.keys(draft?.cost_multipliers ?? {})])].sort()
-  );
-
-  function override(prefix: string, raw: string) {
-    if (!draft) return;
-    const next = { ...draft.cost_multipliers };
-    if (raw.trim() === '') delete next[prefix];
-    else {
-      const value = Number(raw);
-      if (!Number.isFinite(value)) return;
-      next[prefix] = value;
-    }
-    draft.cost_multipliers = next;
+  function move(axis: string, value: number): void {
+    weights = moveAxis(weights, axis, value);
     touched();
   }
 
-  const when = (value: string) =>
-    value
-      ? new Date(value).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
-      : '';
-
-  /** `before`/`after` are whatever the server recorded; show them, don't parse them. */
-  function show(value: unknown): string {
-    if (value === null || value === undefined) return '—';
-    if (typeof value === 'string') return value;
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
+  function drop(axis: string): void {
+    if (Object.keys(weights).length <= 1) {
+      said = { ok: false, text: 'A profile is its weights; it needs at least one axis.' };
+      return;
     }
+    weights = removeAxis(weights, axis);
+    touched();
+  }
+
+  function add(axis: string): void {
+    weights = addAxis(weights, axis);
+    adding = false;
+    touched();
+  }
+
+  function setShip(value: number): void {
+    const wanted = clampShip(value);
+    if (wanted === ship) return;
+    ship = wanted;
+    touched();
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* shipping                                                                */
+  /* ---------------------------------------------------------------------- */
+
+  async function shipNow(): Promise<void> {
+    if (button.disabled) return;
+    shipping = true;
+    said = null;
+    // the weights on screen have to be the weights on the box before it ships
+    if (timer) clearTimeout(timer);
+    await save();
+    const result = await api.applyProfile(name, options);
+    shipping = false;
+    if (!result.ok) {
+      said = { ok: false, text: explainError(result.error) };
+      return;
+    }
+    chain = result.value?.chain ?? chain;
+    now = new Date();
+    const combo = (result.value?.combos ?? []).join(', ');
+    said = { ok: true, text: combo ? `Shipped as ${combo}.` : 'Shipped.' };
+    void refresh();
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* the menu                                                                */
+  /* ---------------------------------------------------------------------- */
+
+  function openMenu(what: '' | 'copy' | 'rename' | 'delete'): void {
+    menuOpen = false;
+    asking = what;
+    askName = what === 'copy' ? `${name}_copy` : name;
+  }
+
+  async function openHistory(): Promise<void> {
+    menuOpen = false;
+    if (history) {
+      history = null;
+      return;
+    }
+    const result = await api.history(name, options);
+    history = result.ok && Array.isArray(result.value) ? result.value : [];
+  }
+
+  async function doCopy(): Promise<void> {
+    const wanted = askName.trim();
+    if (!wanted || !profile) return;
+    const result = await api.newProfile(
+      { name: wanted, modality: profile.modality, from: name, copy_from: name },
+      options
+    );
+    if (!result.ok) {
+      said = { ok: false, text: explainError(result.error) };
+      return;
+    }
+    asking = '';
+    await goto(`/profiles/${encodeURIComponent(wanted)}`);
+  }
+
+  async function doRename(): Promise<void> {
+    const wanted = askName.trim();
+    if (!wanted || wanted === name) {
+      asking = '';
+      return;
+    }
+    const result = await api.renameProfile(name, wanted, options);
+    if (!result.ok) {
+      said = { ok: false, text: explainError(result.error) };
+      return;
+    }
+    asking = '';
+    await goto(`/profiles/${encodeURIComponent(wanted)}`);
+  }
+
+  async function doDelete(): Promise<void> {
+    let result = await api.removeProfile(name, false, options);
+    if (!result.ok && result.error.code === 'in_use') {
+      result = await api.removeProfile(name, true, options);
+    }
+    if (!result.ok) {
+      said = { ok: false, text: explainError(result.error) };
+      return;
+    }
+    await goto('/profiles');
   }
 </script>
 
-<svelte:head><title>{name} · Profiles · Sieve</title></svelte:head>
+<svelte:head><title>{name} · Sieve</title></svelte:head>
 
-<p class="back"><a href="/profiles">← All profiles</a></p>
+<svelte:window
+  onclick={(event) => {
+    const target = event.target as HTMLElement | null;
+    if (menuOpen && !target?.closest('.menu')) menuOpen = false;
+  }}
+/>
 
-{#if gone}
-  <Empty error={gone} title={name} hint="Nothing here answers to that name." />
-{:else}
-  {#if !session.signedIn}
-    <label class="token">
-      <span>Token (needed to change anything)</span>
-      <input
-        type="password"
-        bind:value={session.token}
-        placeholder="a token with profiles:write and apply"
-        autocomplete="off"
-      />
-    </label>
-  {/if}
-
-  <div class="three">
-    <!-- LEFT: what this seat is ------------------------------------------ -->
-    <aside class="side">
-      <h1>{name}</h1>
-      <p class="modality">{profile?.modality ?? ''}</p>
-      <span class="chip" data-tone={chip.tone}>{chip.text}</span>
-
-      <section class="block">
-        <h2>Description</h2>
-        <textarea
-          rows="3"
-          bind:value={description}
-          placeholder="what this seat is for, in a sentence"
-        ></textarea>
-        <div class="acts">
-          <button
-            type="button"
-            onclick={() => void saveDescription()}
-            disabled={busy === 'describe' || !describedDirty || !description.trim()}
-          >
-            {busy === 'describe' ? 'Saving…' : 'Save description'}
-          </button>
-          {#if describedDirty}
-            <button type="button" class="link" onclick={() => (description = profile?.purpose ?? '')}>
-              Revert
-            </button>
-          {/if}
-        </div>
-      </section>
-
-      <section class="block">
-        <h2>Settings</h2>
-        {#if draft}
-          <label class="field">
-            <span>List length</span>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={draft.list_length}
-              onchange={(e) => {
-                if (draft) draft.list_length = Math.max(1, Number(e.currentTarget.value) || 1);
-                touched();
-              }}
-            />
-          </label>
-          <label class="field">
-            <span>Floor score <small>below this a model is set aside</small></span>
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.05"
-              value={draft.floor_score}
-              onchange={(e) => {
-                if (draft) draft.floor_score = Number(e.currentTarget.value);
-                touched();
-              }}
-            />
-          </label>
-          <label class="field" class:off={settingsAbsent}>
-            <span>Price sensitivity</span>
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.05"
-              disabled={settingsAbsent}
-              value={draft.price_sensitivity}
-              onchange={(e) => {
-                if (draft) draft.price_sensitivity = Number(e.currentTarget.value);
-                touched();
-              }}
-            />
-          </label>
-          <label class="field" class:off={settingsAbsent}>
-            <span>Experience weight</span>
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.05"
-              disabled={settingsAbsent}
-              value={draft.experience_weight}
-              onchange={(e) => {
-                if (draft) draft.experience_weight = Number(e.currentTarget.value);
-                touched();
-              }}
-            />
-          </label>
-          <label class="switch">
-            <input
-              type="checkbox"
-              checked={draft.auto_apply}
-              disabled={busy === 'auto'}
-              onchange={(e) => void toggleAuto(e.currentTarget.checked)}
-            />
-            <span>auto-apply <small>ship on its own when it changes its mind</small></span>
-          </label>
-          {#if settingsAbsent}
-            <p class="hint">
-              Price sensitivity and experience weight need the profile settings route, which this
-              server does not have yet. Everything else here writes through the routes it does have.
-            </p>
-          {/if}
-        {/if}
-      </section>
-
-    </aside>
-
-    <!-- CENTRE: the weights ---------------------------------------------- -->
-    <section class="middle">
-      <div class="head">
-        <h2>Weights</h2>
-        <p class="sum mono" class:off={!balanced}>
-          sum {sum.toFixed(3)}
-          {#if !balanced}
-            <button type="button" class="link" onclick={normalise}>normalise</button>
-          {/if}
-        </p>
-      </div>
-      {#if !balanced}
-        <p class="error" role="status">{UNBALANCED}</p>
-      {/if}
-      <p class="hint">
-        One row per axis this seat counts. The value is what it cares about; min and max are the
-        room it is allowed to move in, a locked axis holds while the others absorb a change, and ×
-        takes the axis off the seat.
-      </p>
-
-      {#if loading}
-        <p class="hint">Loading…</p>
-      {:else}
-        {#each rows as [axis, control] (axis)}
-          <div class="axis">
-            <WeightSlider
-              {axis}
-              label={described[axis]?.label || axis.replace(/_/g, ' ')}
-              value={control.value}
-              min={control.min}
-              max={control.max}
-              locked={control.locked}
-              idPrefix="p"
-              onchange={(value) => move(axis, value)}
-              onlock={(next) => {
-                control.locked = next;
-                touched();
-              }}
-            />
-            <label class="bound">
-              <span>min</span>
-              <input
-                type="number"
-                min="0"
-                max="1"
-                step="0.05"
-                disabled={settingsAbsent}
-                value={control.min}
-                onchange={(e) => bound(axis, 'min', Number(e.currentTarget.value))}
-              />
-            </label>
-            <label class="bound">
-              <span>max</span>
-              <input
-                type="number"
-                min="0"
-                max="1"
-                step="0.05"
-                disabled={settingsAbsent}
-                value={control.max}
-                onchange={(e) => bound(axis, 'max', Number(e.currentTarget.value))}
-              />
-            </label>
-            <button
-              type="button"
-              class="drop"
-              title={`take ${axis} off this seat`}
-              aria-label={`remove ${axis}`}
-              onclick={() => removeAxis(axis)}
-            >
-              ×
-            </button>
-            {#if described[axis]?.describes}
-              <p class="describes">{described[axis]?.describes}</p>
-            {/if}
-          </div>
-        {:else}
-          <p class="hint">
-            This seat counts nothing yet. Add an axis and it will start ranking.
-          </p>
-        {/each}
-
-        <div class="acts">
-          <button
-            type="button"
-            class="add"
-            aria-expanded={picking}
-            onclick={() => (picking = !picking)}
-            disabled={available.length === 0}
-          >
-            {picking ? 'Close' : 'Add axis'}
-          </button>
-          {#if available.length === 0 && everyAxis.length > 0}
-            <span class="hint inline">every axis for this modality is already on the seat</span>
-          {/if}
-        </div>
-
-        {#if picking}
-          <ul class="picker">
-            {#each available as axis (axis.name)}
-              <li>
-                <button type="button" onclick={() => addAxis(axis.name)}>
-                  <span class="pick-name">{axis.label || axis.name}</span>
-                  <span class="pick-says">{axis.describes}</span>
-                </button>
-              </li>
-            {:else}
-              <li class="hint">
-                {everyAxis.length
-                  ? 'Nothing left to add.'
-                  : 'This server did not answer with any axes for this modality.'}
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      {/if}
-    </section>
-
-    <!-- RIGHT: the list those weights produce ----------------------------- -->
-    <section class="list">
-      <div class="listhead">
-        <span class="label">
-          {!engaged ? 'Shipping now' : previewRows ? 'Preview' : 'Would ship'}
-          {#if previewing}<span class="spinner" role="status" aria-label="previewing"></span>{/if}
-        </span>
-        <button
-          type="button"
-          class="primary"
-          onclick={() => void apply()}
-          disabled={busy === 'apply' || loading || !balanced}
-          title={balanced ? '' : UNBALANCED}
-        >
-          {busy === 'apply' ? 'Applying…' : 'Apply'}
-        </button>
-        {#if dirty}
-          <button type="button" class="link" onclick={discard}>Discard</button>
-        {/if}
-      </div>
-
-      {#if !engaged && !loading}
-        <p class="hint">What this seat is serving. Move a control to see what would change.</p>
-      {/if}
-
-      <ol class="live" class:idle={!engaged}>
-        {#each shipping as row (row.id)}
-          <li
-            class:lead={row.rank === 1}
-            class:pinned={row.status === 'pinned'}
-            animate:flip={{ duration: duration(200, $reducedMotion) }}
-          >
-            <span class="pos num">{row.rank}</span>
-            <span class="id mono">
-              {row.id}
-              {#if row.local_ids.length}<span class="local mono">{row.local_ids[0]}</span>{/if}
-            </span>
-            <span class="score num">{engaged ? row.score.toFixed(3) : '—'}</span>
-            {#if shippedAt.has(row.id)}
-              <span class="was" title="where it sits on the gateway now">#{shippedAt.get(row.id)}</span>
-            {:else}
-              <span class="was new">new</span>
-            {/if}
-            <span class="rowacts">
-              <button
-                type="button"
-                disabled={statusAbsent || busy === `status:${row.id}`}
-                title={statusAbsent ? 'this server has no per-model status route yet' : 'hold this model at the top'}
-                onclick={() => void setStatus(row.id, row.status === 'pinned' ? 'active' : 'pinned')}
-              >
-                {row.status === 'pinned' ? 'unpin' : 'pin'}
-              </button>
-              <button
-                type="button"
-                disabled={statusAbsent || busy === `status:${row.id}`}
-                title={statusAbsent ? 'this server has no per-model status route yet' : 'keep this model off this seat'}
-                onclick={() => void setStatus(row.id, 'removed')}
-              >
-                remove
-              </button>
-            </span>
-          </li>
-        {:else}
-          <li class="hint">
-            {#if loading || rankState === 'asking' || rankState === 'slow'}
-              <span class="spinner" aria-hidden="true"></span> ranking…
-            {:else if rankState === 'error'}
-              {rankError}
-            {:else}
-              Nothing ranks for this profile yet.
-            {/if}
-          </li>
-        {/each}
-      </ol>
-
-      {#if rankState === 'slow'}
-        <p class="hint busy" role="status">
-          the server is busy ranking, this can take a while
-          <button type="button" class="link" onclick={() => void loadRanking()}>retry</button>
-        </p>
-      {:else if rankState === 'error'}
-        <p class="error" role="status">
-          {rankError}
-          <button type="button" class="link" onclick={() => void loadRanking()}>retry</button>
-        </p>
-      {/if}
-
-      {#if rankState === 'ready' && (ranking?.ranks ?? []).length}
-        <p class="why">
-          <span class="mono">{shortLine}</span>
-          {#if shortRows.length}
-            <button type="button" class="link" onclick={() => (shortOpen = !shortOpen)}>
-              {shortOpen ? 'hide' : 'show'}
-            </button>
-          {/if}
-        </p>
-        {#if shortOpen}
-          <ul class="whylist" aria-label="models that did not make the list">
-            {#each shortRows as row (row.model_id)}
-              <li>
-                <span class="id mono">{row.model_id}</span>
-                <span class="reason">{row.reason}</span>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      {/if}
-
-      {#if dropping.length}
-        <ol class="shipped" aria-label="on the gateway now, not in this draft">
-          {#each dropping as goneRow (goneRow.id)}
-            <li>
-              <span class="pos num">#{goneRow.was}</span>
-              <span class="id mono">{goneRow.id}</span>
-              <span class="was">was shipping</span>
-            </li>
-          {/each}
-        </ol>
-      {/if}
-
-      {#if said}
-        <p class={said.ok ? 'notice' : 'error'}>{said.text}</p>
-      {/if}
-    </section>
-  </div>
-
-  <!-- what this seat is called, and what it refuses ------------------- -->
-  <div class="more">
-      <section class="block">
-        <h2>Name and life</h2>
-        <label class="field">
-          <span>Name</span>
-          <input bind:value={renaming} pattern="[A-Za-z0-9_\-]+" autocomplete="off" />
-        </label>
-        <div class="acts">
-          <button
-            type="button"
-            onclick={() => void rename()}
-            disabled={busy === 'rename' || renaming.trim() === name || !renaming.trim()}
-          >
-            {busy === 'rename' ? 'Renaming…' : 'Rename'}
-          </button>
-        </div>
-        <label class="field">
-          <span>Copy to <small>a new seat with these weights</small></span>
-          <input bind:value={copying} pattern="[A-Za-z0-9_\-]+" placeholder="{name}_cheap" autocomplete="off" />
-        </label>
-        <div class="acts">
-          <button type="button" onclick={() => void copy()} disabled={busy === 'copy' || !copying.trim()}>
-            {busy === 'copy' ? 'Copying…' : 'Copy'}
-          </button>
-          {#if confirming}
-            <span class="confirm">
-              Delete {name}?
-              <button type="button" class="danger" onclick={() => void remove()} disabled={busy === 'delete'}>
-                {busy === 'delete' ? 'Deleting…' : 'Yes, delete'}
-              </button>
-              <button type="button" onclick={() => (confirming = false)}>Keep</button>
-            </span>
-          {:else if forcing}
-            <span class="confirm">
-              <button type="button" class="danger" onclick={() => void remove(true)} disabled={busy === 'delete'}>
-                {busy === 'delete' ? 'Deleting…' : 'Delete anyway'}
-              </button>
-              <button type="button" onclick={() => (forcing = false)}>Keep it</button>
-            </span>
-          {:else}
-            <button type="button" onclick={() => (confirming = true)}>Delete</button>
-          {/if}
-        </div>
-        <p class="hint">
-          Deleting a profile takes its seat off every gateway the next time Sieve writes. It cannot
-          be undone from here.
-        </p>
-      </section>
-
-      {#if profile}
-        <section class="block">
-          <h2>What it refuses, what a task costs, when it changes its mind</h2>
-          <p class="hint">
-            These three save on their own, at once, because they are three decisions and one Apply
-            would make them look like one.
-          </p>
-          <SettingsBlocks
-            {profile}
-            {token}
-            onsaved={(_updated, what) => (said = { ok: true, text: `Saved ${what}.` })}
-            onerror={(failure) => (said = { ok: false, text: explainError(failure) })}
-          />
-        </section>
-      {/if}
-  </div>
-
-  <!-- ---- the tabs ------------------------------------------------------ -->
-  <div class="tabs" role="tablist" aria-label="More about this profile">
-    {#each TABS as one (one.id)}
+{#if loading}
+  <p class="muted">Loading…</p>
+{:else if gone}
+  <h1 class="display name">{name}</h1>
+  <p class="muted">{explainError(gone)}</p>
+  <p><a href="/profiles">Back to the profiles</a></p>
+{:else if profile}
+  <header class="head">
+    <div class="who">
+      <h1 class="display name">{profile.name}</h1>
+      <p class="purpose">{profile.purpose}</p>
+    </div>
+    <div class="acts">
       <button
         type="button"
-        role="tab"
-        id={`tab-${one.id}`}
-        aria-selected={tab === one.id}
-        aria-controls={`panel-${one.id}`}
-        class:on={tab === one.id}
-        onclick={() => (tab = tab === one.id ? null : one.id)}
+        class="primary wide"
+        disabled={button.disabled}
+        title={button.title}
+        onclick={shipNow}>{button.label}</button
       >
-        {one.label}
-      </button>
-    {/each}
-  </div>
-
-  <div class="panel" id={`panel-${tab ?? 'none'}`} role="tabpanel" aria-labelledby={tab ? `tab-${tab}` : undefined}>
-    {#if tab === null}
-      <p class="hint">
-        Nothing open. Each of these is fetched when you open it — the ranking detail is most of a
-        megabyte on a language seat, and a page that asks for it before anybody wants it is a page
-        that loads slowly for everybody.
-      </p>
-    {:else if tab === 'ranking'}
-      <h2>What carried each score</h2>
-      {#if ranked.length === 0}
-        <p class="hint">{rankingNote || (ranking ? 'Nothing ranks for this profile yet.' : 'Asking the server for the ranking…')}</p>
-      {:else}
-        <div class="scroll-x">
-          <table>
-            <thead>
-              <tr>
-                <th class="pos">#</th>
-                <th>model</th>
-                <th>axes</th>
-                <th class="right">score</th>
-                <th>conf</th>
-                <th class="right">cost</th>
-                <th>reach</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each ranked as rank (rank.model_id)}
-                <tr class:lead={rank.position === 1}>
-                  <td class="pos num">{rank.position}</td>
-                  <td>
-                    <div class="id mono">{rank.model_id}</div>
-                    {#if rank.local_ids?.length}
-                      <div class="local mono">{rank.local_ids.join(' · ')}</div>
-                    {/if}
-                    {#if rank.position === 1 && rank.flip}
-                      <div class="flipline">{rank.flip}</div>
-                    {/if}
-                  </td>
-                  <td><AxisBars axes={rank.axes ?? []} weights={weightValues} /></td>
-                  <td class="right num">{rank.final.toFixed(3)}</td>
-                  <td><ConfDots confidence={rank.confidence} /></td>
-                  <td class="right num">
-                    {rank.cost_per_task == null ? '—' : `$${rank.cost_per_task.toPrecision(3)}`}
-                  </td>
-                  <td><span class="dot" class:on={rank.reachable}></span></td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-        {#if allRanked.length > ranked.length}
-          <p class="hint">
-            The top {ranked.length} of {allRanked.length} ranked. The rest score below these and are
-            not drawn.
-          </p>
+      <div class="menu">
+        <button
+          type="button"
+          class="dots"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          aria-label="More"
+          onclick={() => (menuOpen = !menuOpen)}>···</button
+        >
+        {#if menuOpen}
+          <div class="sheet" role="menu">
+            <button type="button" role="menuitem" onclick={() => openMenu('copy')}>Copy</button>
+            <button type="button" role="menuitem" onclick={() => openMenu('rename')}>Rename</button>
+            <button type="button" role="menuitem" onclick={() => openMenu('delete')}>Delete</button>
+            <button type="button" role="menuitem" onclick={openHistory}>History</button>
+          </div>
         {/if}
-        {#if setAside.length}
-          <ul class="aside">
-            {#each setAside as rank (rank.model_id)}
-              <li>
-                <span class="mono">{rank.model_id}</span>
-                <span class="reason">
-                  {rank.dominated_by
-                    ? `dominated by ${rank.dominated_by}`
-                    : `excluded: ${rank.excluded_by}`}
-                </span>
-              </li>
-            {/each}
-          </ul>
-          {#if allAside.length > setAside.length}
-            <p class="hint">and {allAside.length - setAside.length} more set aside.</p>
+      </div>
+    </div>
+  </header>
+
+  {#if asking === 'copy' || asking === 'rename'}
+    <div class="ask">
+      <label>
+        <span>{asking === 'copy' ? 'Copy to' : 'Rename to'}</span>
+        <input bind:value={askName} spellcheck="false" autocomplete="off" />
+      </label>
+      <button
+        type="button"
+        class="primary"
+        onclick={() => (asking === 'copy' ? doCopy() : doRename())}
+        >{asking === 'copy' ? 'Copy' : 'Rename'}</button
+      >
+      <button type="button" class="quiet" onclick={() => (asking = '')}>Cancel</button>
+    </div>
+  {:else if asking === 'delete'}
+    <div class="ask">
+      <span>Delete {name}? The combo it ships stops being updated.</span>
+      <button type="button" class="danger" onclick={doDelete}>Delete</button>
+      <button type="button" class="quiet" onclick={() => (asking = '')}>Cancel</button>
+    </div>
+  {/if}
+
+  {#if said}
+    <p class:bad={!said.ok} class="said">{said.text}</p>
+  {/if}
+
+  <div class="columns">
+    <div class="controls">
+      <section class="panel weights">
+        <h2>Weights</h2>
+        <p class="sub">move one, the others follow</p>
+
+        {#each chosen as axis (axis)}
+          <div class="axis">
+            <div class="axis-top">
+              <div class="axis-who">
+                <div class="axis-name">{labels[axis] ?? axis}</div>
+                <div class="axis-meaning">{meanings[axis] ?? ''}</div>
+              </div>
+              <div class="axis-right">
+                <span class="mono value">{weights[axis].toFixed(2)}</span>
+                <button
+                  type="button"
+                  class="drop"
+                  aria-label={`Remove ${labels[axis] ?? axis}`}
+                  onclick={() => drop(axis)}>✕</button
+                >
+              </div>
+            </div>
+            <input
+              class="slider"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              aria-label={labels[axis] ?? axis}
+              value={weights[axis]}
+              oninput={(event) => move(axis, Number(event.currentTarget.value))}
+            />
+          </div>
+        {/each}
+
+        <div class="add">
+          {#if adding}
+            <select
+              aria-label="Add an axis"
+              onchange={(event) => {
+                const picked = event.currentTarget.value;
+                if (picked) add(picked);
+              }}
+            >
+              <option value="">choose an axis…</option>
+              {#each spare as axis (axis.name)}
+                <option value={axis.name}>{axis.label || axis.name}</option>
+              {/each}
+            </select>
+            <button type="button" class="quiet" onclick={() => (adding = false)}>Cancel</button>
+          {:else}
+            <button
+              type="button"
+              class="ghost"
+              disabled={spare.length === 0}
+              title={spare.length === 0 ? 'every axis for this modality is already weighted' : ''}
+              onclick={() => (adding = true)}>+ Add an axis</button
+            >
+          {/if}
+        </div>
+      </section>
+
+      <section class="panel howmany">
+        <div>
+          <h2>How many to ship</h2>
+          <p class="sub">the first is used, the rest are fallbacks</p>
+        </div>
+        <div class="stepper">
+          <button
+            type="button"
+            aria-label="One fewer"
+            disabled={ship <= SHIP_MIN}
+            onclick={() => setShip(ship - 1)}>−</button
+          >
+          <span class="display count">{ship}</span>
+          <button
+            type="button"
+            aria-label="One more"
+            disabled={ship >= SHIP_MAX}
+            onclick={() => setShip(ship + 1)}>+</button
+          >
+        </div>
+      </section>
+
+      <button
+        type="button"
+        class="primary phone-ship"
+        disabled={button.disabled}
+        title={button.title}
+        onclick={shipNow}>{button.label}</button
+      >
+    </div>
+
+    <section class="panel list">
+      <div class="list-head">
+        <h2>What ships</h2>
+        <span class="when">
+          {#if chain}shipped {ago(new Date(chain.computed_at), now)}{:else}never shipped{/if}
+        </span>
+      </div>
+
+      {#if listing === 'ranking'}
+        <p class="state">Ranking…</p>
+      {:else if listing === 'busy'}
+        <p class="state">
+          The box is ranking as fast as it can — every slot has been busy for
+          {Math.round(SLOW_MS / 1000)} seconds.
+          <button type="button" class="link" onclick={() => refresh()}>Try again</button>
+        </p>
+      {:else if listing === 'error'}
+        <p class="state bad">
+          {failed}
+          <button type="button" class="link" onclick={() => refresh()}>Try again</button>
+        </p>
+      {:else if listing === 'empty'}
+        <p class="state">Nothing ships: no model this box can reach scores on these weights.</p>
+      {:else}
+        {#each models ?? [] as row, index (row.id)}
+          <div class="row">
+            <span class="mono rank">{index + 1}</span>
+            <div class="model">
+              <div class="model-name">{row.name}</div>
+              <div class="mono model-id">{row.local_ids[0] ?? row.id}</div>
+            </div>
+            <div class="score">
+              <div class="bar"><div class="fill" style:width={barWidth(row.score)}></div></div>
+              <span class="mono number">{row.score.toFixed(2)}</span>
+            </div>
+          </div>
+        {/each}
+
+        {#if next.length}
+          {#each showMore ? next : next.slice(0, 2) as row, index (row.id)}
+            <div class="row after" class:first={index === 0}>
+              <span class="mono rank">{(models?.length ?? 0) + index + 1}</span>
+              <div class="model">
+                <div class="model-name">{row.name}</div>
+                <div class="mono model-id">{row.local_ids[0] ?? row.id}</div>
+              </div>
+              <div class="score">
+                <div class="bar"><div class="fill" style:width={barWidth(row.score)}></div></div>
+                <span class="mono number">{row.score.toFixed(2)}</span>
+              </div>
+            </div>
+          {/each}
+          {#if next.length > 2}
+            <button type="button" class="more" onclick={() => (showMore = !showMore)}
+              >{showMore ? 'show fewer' : 'show more'}</button
+            >
           {/if}
         {/if}
       {/if}
-    {:else if tab === 'history'}
-      <h2>History</h2>
-      {#if historyNote}<p class="hint">{historyNote}</p>{/if}
-      <ul class="log">
-        {#each history.slice(0, 50) as entry, index (`${entry.when}-${index}`)}
-          <li>
-            <span class="who">{entry.who}</span>
-            <span class="what">{entry.what}</span>
-            <span class="at">{when(entry.when)}</span>
-            {#if entry.before !== undefined || entry.after !== undefined}
-              <span class="mono change" title={`${show(entry.before)} → ${show(entry.after)}`}>
-                {show(entry.before)} → {show(entry.after)}
-              </span>
-            {/if}
-          </li>
-        {:else}
-          <li class="hint">Nothing recorded.</li>
-        {/each}
-      </ul>
-    {:else if tab === 'experience'}
-      <h2>Experience</h2>
-      <p class="hint">
-        How the models on this seat have actually behaved when your agents called them, over thirty
-        days. The rate is smoothed — (successes + 1) / (calls + 2) — so one lucky call does not read
-        as a perfect record.
-      </p>
-      {#if experienceNote}<p class="hint">{experienceNote}</p>{/if}
-      <ul class="log">
-        {#each experience as row (row.model_id)}
-          <li>
-            <span class="mono">{row.model_id}</span>
-            <span class="num rate">{(row.experience * 100).toFixed(0)}%</span>
-            <span class="at">{row.successes}/{row.outcomes} ok</span>
-          </li>
-        {/each}
-      </ul>
-    {:else if tab === 'costs'}
-      <h2>Cost multipliers</h2>
-      <p class="hint">
-        What a local id really costs this seat, against its published price. Blank uses the default,
-        which is set once on the Connectors screen and shown here in grey.
-      </p>
-      {#if prefixes.length === 0}
-        <p class="hint">
-          {defaults === null
-            ? 'This server has no cost-multiplier route yet.'
-            : 'No prefixes yet: they are read from the local ids the connectors serve.'}
-        </p>
-      {:else}
-        {#each prefixes as prefix (prefix)}
-          <label class="multiplier">
-            <span class="mono">{prefix}</span>
-            <input
-              type="number"
-              min="0"
-              step="0.05"
-              disabled={settingsAbsent}
-              placeholder={String(defaults?.[prefix] ?? 1)}
-              value={draft?.cost_multipliers[prefix] ?? ''}
-              onchange={(e) => override(prefix, e.currentTarget.value)}
-            />
-            <small class="default">default {defaults?.[prefix] ?? 1}</small>
-          </label>
-        {/each}
-        <p class="hint">These ride along with Apply, like every other control on this page.</p>
-      {/if}
-    {/if}
+    </section>
   </div>
+
+  {#if history}
+    <section class="panel history">
+      <div class="list-head">
+        <h2>History</h2>
+        <button type="button" class="link" onclick={() => (history = null)}>close</button>
+      </div>
+      {#if history.length === 0}
+        <p class="state">Nothing has changed this profile yet.</p>
+      {:else}
+        <ul>
+          {#each history.slice(0, 40) as row (row.when + row.what)}
+            <li>
+              <span class="mono when">{ago(new Date(row.when), now)}</span>
+              <span class="what">{row.what}</span>
+              <span class="who">{row.who}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/if}
 {/if}
 
 <style>
-  .back {
-    margin: 0 0 0.4rem;
-    font-size: 0.76rem;
-  }
-  .back a {
+  .muted {
     color: var(--muted);
-    text-decoration: none;
   }
-  .back a:hover {
-    color: var(--accent);
+  .display {
+    font-family: var(--display);
+    font-weight: 500;
   }
-  .token {
+  .mono {
+    font-family: var(--mono);
+  }
+
+  /* -- header ------------------------------------------------------------ */
+
+  .head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 22px;
+  }
+  .who {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
-    font-size: 0.76rem;
-    color: var(--muted);
-    max-width: 22rem;
-    margin-bottom: 0.8rem;
+    gap: 6px;
+    min-width: 0;
   }
-  .token input {
+  .name {
+    font-size: 30px;
+    line-height: 1.1;
+    margin: 0;
+  }
+  .purpose {
+    font-size: 14px;
+    color: var(--muted);
+    max-width: 62ch;
+    margin: 0;
+  }
+  .acts {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .primary {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 7px;
+    padding: 9px 18px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .menu {
+    position: relative;
+  }
+  .dots {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--panel2);
+    color: var(--muted);
+    font: inherit;
+    font-size: 16px;
+    letter-spacing: 1px;
+    cursor: pointer;
+  }
+  .sheet {
+    position: absolute;
+    right: 0;
+    top: 42px;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    min-width: 9rem;
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--panel);
+    padding: 4px;
+  }
+  .sheet button {
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .sheet button:hover {
+    background: var(--panel2);
+  }
+
+  .ask {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--panel);
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    font-size: 13px;
+  }
+  .ask label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+  }
+  .ask input {
     background: var(--panel2);
     border: 1px solid var(--rule);
     border-radius: 7px;
     color: var(--ink);
-    padding: 0.3rem 0.5rem;
     font: inherit;
+    font-size: 13px;
+    padding: 6px 9px;
   }
-
-  /*
-    One column, in reading order: what the seat is, what shapes its list, the
-    weights, then the list itself. It used to be three columns of unequal
-    height, which meant the list you came to read started two screens down on
-    a laptop and overlapped its own controls on a phone.
-  */
-  .three,
-  .more {
-    display: flex;
-    flex-direction: column;
-    gap: 0.8rem;
-    max-width: 64rem;
-  }
-  .more {
-    margin-top: 0.8rem;
-  }
-  .side {
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-    min-width: 0;
-  }
-  h1 {
-    font-family: var(--display);
-    font-size: 1.5rem;
-    margin: 0;
-    overflow-wrap: anywhere;
-  }
-  .modality {
-    margin: 0;
-    color: var(--muted);
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-  }
-  .chip {
-    align-self: flex-start;
+  .quiet,
+  .danger {
     border: 1px solid var(--rule);
-    border-radius: 999px;
+    border-radius: 7px;
     background: var(--panel2);
-    color: var(--muted);
-    font-size: 0.7rem;
-    padding: 0.1rem 0.5rem;
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    padding: 6px 12px;
+    cursor: pointer;
   }
-  .chip[data-tone='accent'] {
-    color: var(--accent);
-    border-color: var(--accent);
+  .danger {
+    border-color: var(--bad);
+    color: var(--bad);
   }
-  .chip[data-tone='good'] {
+  .said {
+    font-size: 13px;
     color: var(--good);
+    margin: 0 0 14px;
+  }
+  .said.bad {
+    color: var(--bad);
   }
 
-  .block,
-  .middle,
-  .list,
+  /* -- the two columns --------------------------------------------------- */
+
+  .columns {
+    display: grid;
+    grid-template-columns: 380px minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+  }
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
   .panel {
     border: 1px solid var(--rule);
     border-radius: var(--radius);
     background: var(--panel);
-    padding: 0.7rem 0.8rem 0.8rem;
-    min-width: 0;
+    padding: 16px 18px;
   }
-  h2 {
-    margin: 0 0 0.35rem;
-    font-family: var(--ui);
-    font-size: 0.86rem;
-  }
-  textarea {
-    width: 100%;
-    box-sizing: border-box;
-    background: var(--panel2);
-    border: 1px solid var(--rule);
-    border-radius: 7px;
-    color: var(--ink);
-    font: inherit;
-    font-size: 0.8rem;
-    line-height: 1.45;
-    padding: 0.35rem 0.45rem;
-    resize: vertical;
-  }
-  .field,
-  .switch,
-  .bound,
-  .multiplier {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.74rem;
-    color: var(--muted);
-    margin-top: 0.35rem;
-    min-width: 0;
-  }
-  .field > span,
-  .multiplier > span {
-    flex: 1;
-    min-width: 0;
-  }
-  .field small,
-  .switch small {
-    display: block;
-    opacity: 0.75;
-  }
-  .field.off {
-    opacity: 0.55;
-  }
-  .field input,
-  .bound input,
-  .multiplier input {
-    background: var(--panel2);
-    border: 1px solid var(--rule);
-    border-radius: 6px;
-    color: var(--ink);
-    font: inherit;
-    font-size: 0.78rem;
-    padding: 0.2rem 0.35rem;
-    width: 5.5rem;
-    min-width: 0;
-  }
-  .acts {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.35rem;
-    margin-top: 0.5rem;
-  }
-  .confirm {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.74rem;
-    color: var(--muted);
-  }
-
-  /* ---- centre ---- */
-  .middle .head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-  .sum {
-    color: var(--muted);
-    font-size: 0.74rem;
+  .panel h2 {
+    font-size: 15px;
+    font-weight: 600;
     margin: 0;
   }
-  .sum.off {
-    color: var(--bad);
+  .sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 0 0 4px;
   }
-  /*
-    label · slider · value · lock come from WeightSlider's own grid; min, max
-    and remove are this one's. Fixed columns, so nothing slides under anything
-    at any width, and the whole row wraps below 900px rather than squeezing.
-  */
+
+  /* -- weights ----------------------------------------------------------- */
+
+  .weights {
+    display: flex;
+    flex-direction: column;
+  }
   .axis {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem 2rem;
-    gap: 0.4rem 0.5rem;
-    align-items: center;
-    padding: 0.3rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 0;
     border-bottom: 1px solid var(--rule);
   }
-  .axis .bound {
-    justify-content: flex-end;
-    margin-top: 0;
+  .axis-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
   }
-  .axis .bound input {
-    width: 3.4rem;
+  .axis-who {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
-  .describes {
-    grid-column: 1 / -1;
-    margin: 0 0 0.15rem;
+  .axis-name {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .axis-meaning {
+    font-size: 12px;
     color: var(--muted);
-    font-size: 0.7rem;
-    line-height: 1.4;
+  }
+  .axis-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .value {
+    font-size: 14px;
   }
   .drop {
     background: none;
-    border: 1px solid transparent;
-    border-radius: 5px;
+    border: none;
     color: var(--muted);
     font: inherit;
-    font-size: 0.9rem;
-    line-height: 1;
-    padding: 0.1rem 0.35rem;
+    font-size: 14px;
+    padding: 0;
     cursor: pointer;
   }
   .drop:hover {
-    color: var(--bad);
-    border-color: var(--rule);
+    color: var(--ink);
   }
-  .picker {
-    list-style: none;
-    margin: 0.5rem 0 0;
-    padding: 0;
+
+  .slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 24px;
+    background: transparent;
+    cursor: pointer;
+    margin: 0;
+  }
+  .slider::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--panel2);
+  }
+  .slider::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--panel2);
+  }
+  .slider::-moz-range-progress {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    margin-top: -7px;
+    border-radius: 50%;
+    background: var(--ink);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--ink);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .slider:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+
+  .add {
+    padding-top: 14px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .ghost,
+  .add select {
     border: 1px solid var(--rule);
-    border-radius: 8px;
-    max-height: 18rem;
-    overflow: auto;
+    border-radius: 7px;
+    background: var(--panel2);
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 12px;
+    cursor: pointer;
   }
-  .picker li + li {
+  .ghost:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* -- how many ---------------------------------------------------------- */
+
+  .howmany {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .howmany .sub {
+    margin: 2px 0 0;
+  }
+  .stepper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .stepper button {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--panel2);
+    color: var(--ink);
+    font: inherit;
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .stepper button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .count {
+    font-size: 28px;
+    width: 30px;
+    text-align: center;
+  }
+
+  .phone-ship {
+    display: none;
+  }
+
+  /* -- the list ---------------------------------------------------------- */
+
+  .list {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 14px;
+  }
+  .list-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .when {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .state {
+    font-size: 13px;
+    color: var(--muted);
+    padding: 14px 0 2px;
+    border-top: 1px solid var(--rule);
+    margin: 0;
+  }
+  .state.bad {
+    color: var(--bad);
+  }
+  .link {
+    background: none;
+    border: none;
+    color: var(--reach);
+    font: inherit;
+    font-size: 13px;
+    padding: 0 0 0 6px;
+    cursor: pointer;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 28px 1fr 220px;
+    gap: 0 16px;
+    align-items: center;
+    padding: 14px 0;
     border-top: 1px solid var(--rule);
   }
-  .picker button {
-    display: block;
-    width: 100%;
+  .rank {
+    font-size: 13px;
+    color: var(--accent);
+  }
+  .model {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .model-name {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .model-id {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .score {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .bar {
+    flex: 1;
+    height: 8px;
+    background: var(--panel2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .fill {
+    height: 8px;
+    background: var(--accent);
+  }
+  .number {
+    font-size: 12px;
+    width: 34px;
+    text-align: right;
+  }
+
+  .after {
+    color: var(--muted);
+    padding: 12px 0;
+  }
+  .after.first {
+    border-top: 1px dashed var(--rule);
+  }
+  .after .rank {
+    color: var(--muted);
+  }
+  .after .model-name {
+    font-size: 15px;
+    font-weight: 400;
+  }
+  .after .fill {
+    background: var(--rule);
+  }
+
+  .more {
     text-align: left;
     background: none;
     border: none;
-    color: inherit;
+    border-top: 1px solid var(--rule);
+    color: var(--reach);
     font: inherit;
-    padding: 0.35rem 0.5rem;
+    font-size: 13px;
+    padding: 12px 0 2px;
     cursor: pointer;
   }
-  .picker button:hover {
-    background: var(--panel2);
-  }
-  .pick-name {
-    display: block;
-    font-size: 0.8rem;
-    text-transform: capitalize;
-  }
-  .pick-says {
-    display: block;
-    color: var(--muted);
-    font-size: 0.72rem;
-    line-height: 1.4;
-  }
 
-  /* ---- right ---- */
-  .listhead {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    margin-bottom: 0.35rem;
+  /* -- history ----------------------------------------------------------- */
+
+  .history {
+    margin-top: 18px;
   }
-  .listhead .label {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--muted);
-    margin-right: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-  .spinner {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    border: 1.5px solid var(--rule);
-    border-top-color: var(--accent);
-    animation: spin 700ms linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  ol.live,
-  ol.shipped,
-  ul.log,
-  ul.aside {
+  .history ul {
     list-style: none;
     margin: 0;
     padding: 0;
   }
-  ol.live li {
+  .history li {
     display: grid;
-    grid-template-columns: 1.5rem minmax(0, 1fr) 3.2rem 2.6rem auto;
-    gap: 0.45rem;
-    align-items: center;
-    padding: 0.22rem 0.3rem;
-    border-bottom: 1px solid var(--rule);
-  }
-  ol.live li.lead {
-    background: color-mix(in oklab, var(--accent) 8%, transparent);
-    border-radius: 6px;
-  }
-  ol.live li.hint {
-    display: block;
-    border-bottom: none;
-  }
-  ol.live li.pinned .pos {
-    color: var(--accent);
-  }
-  ol.live.idle li {
-    opacity: 0.62;
-  }
-  ol.live.idle li.lead {
-    background: none;
-  }
-  ol.shipped {
-    opacity: 0.45;
-    margin-top: 0.3rem;
-  }
-  ol.shipped li {
-    display: grid;
-    grid-template-columns: 2rem minmax(0, 1fr) auto;
-    gap: 0.45rem;
-    align-items: center;
-    padding: 0.18rem 0.3rem;
-    font-size: 0.74rem;
-  }
-  .pos {
-    color: var(--muted);
-    font-size: 0.72rem;
-  }
-  .id {
-    font-size: 0.78rem;
-    overflow-wrap: anywhere;
-  }
-  .local {
-    display: block;
-    color: var(--reach);
-    font-size: 0.66rem;
-    overflow-wrap: anywhere;
-  }
-  .score {
-    text-align: right;
-    font-size: 0.76rem;
-  }
-  .was {
-    color: var(--muted);
-    font-size: 0.68rem;
-    text-align: right;
-  }
-  .was.new {
-    color: var(--accent);
-  }
-  .rowacts {
-    display: inline-flex;
-    gap: 0.2rem;
-    opacity: 0;
-    transition: opacity 120ms ease;
-  }
-  ol.live li:hover .rowacts,
-  ol.live li:focus-within .rowacts {
-    opacity: 1;
-  }
-  .rowacts button {
-    background: var(--panel2);
-    border: 1px solid var(--rule);
-    border-radius: 5px;
-    color: var(--muted);
-    font: inherit;
-    font-size: 0.66rem;
-    padding: 0.02rem 0.3rem;
-    cursor: pointer;
-  }
-  .rowacts button:hover:not(:disabled) {
-    color: var(--ink);
-    border-color: var(--accent);
-  }
-
-  /* ---- tabs ---- */
-  .tabs {
-    display: flex;
-    gap: 0.3rem;
-    flex-wrap: wrap;
-    margin: 1rem 0 0;
-  }
-  .tabs button {
-    background: var(--panel);
-    border: 1px solid var(--rule);
-    border-bottom: none;
-    border-radius: 8px 8px 0 0;
-    color: var(--muted);
-    font: inherit;
-    font-size: 0.76rem;
-    padding: 0.25rem 0.7rem;
-    cursor: pointer;
-  }
-  .tabs button.on {
-    color: var(--ink);
-    border-color: var(--accent);
-  }
-  .panel {
-    border-radius: 0 8px 8px 8px;
-  }
-
-  /* ---- tables and logs ---- */
-  .scroll-x {
-    overflow-x: auto;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.76rem;
-  }
-  th {
-    text-align: left;
-    color: var(--muted);
-    font-weight: 400;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    padding: 0.25rem 0.4rem;
-    border-bottom: 1px solid var(--rule);
-  }
-  td {
-    padding: 0.28rem 0.4rem;
-    border-bottom: 1px solid var(--rule);
-    vertical-align: top;
-  }
-  tr.lead td {
-    background: color-mix(in oklab, var(--accent) 7%, transparent);
-  }
-  th.right,
-  td.right {
-    text-align: right;
-  }
-  .flipline {
-    color: var(--accent);
-    font-size: 0.7rem;
-  }
-  .dot {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--rule);
-  }
-  .dot.on {
-    background: var(--reach);
-  }
-  ul.log li {
-    display: grid;
-    grid-template-columns: 7rem minmax(0, 1fr) auto;
-    gap: 0.4rem;
-    align-items: baseline;
-    padding: 0.2rem 0.1rem;
-    border-bottom: 1px solid var(--rule);
-    font-size: 0.75rem;
-  }
-  .who {
-    color: var(--muted);
-    overflow-wrap: anywhere;
-  }
-  .at {
-    color: var(--muted);
-    font-size: 0.7rem;
-    text-align: right;
-  }
-  .change {
-    grid-column: 1 / -1;
-    color: var(--muted);
-    font-size: 0.68rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .rate {
-    text-align: right;
-  }
-  ul.aside {
-    margin-top: 0.5rem;
-    opacity: 0.75;
-  }
-  ul.aside li {
-    display: flex;
-    gap: 0.5rem;
-    justify-content: space-between;
-    font-size: 0.72rem;
-    padding: 0.12rem 0.1rem;
-  }
-  .reason {
-    color: var(--muted);
-  }
-  .default {
-    color: var(--muted);
-    opacity: 0.75;
-    font-size: 0.68rem;
-  }
-
-  /* ---- shared ---- */
-  button {
-    background: var(--panel2);
-    border: 1px solid var(--rule);
-    border-radius: 7px;
-    color: var(--ink);
-    font: inherit;
-    font-size: 0.74rem;
-    padding: 0.15rem 0.6rem;
-    cursor: pointer;
-  }
-  button.primary {
-    border-color: var(--accent);
-  }
-  button.link {
-    background: none;
-    border-color: transparent;
-    color: var(--muted);
-    text-decoration: underline;
-    padding: 0 0.2rem;
-  }
-  button.danger {
-    border-color: var(--bad);
-    color: var(--bad);
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .hint {
-    color: var(--muted);
-    font-size: 0.74rem;
-    line-height: 1.45;
-    margin: 0 0 0.4rem;
-  }
-  .hint.inline {
-    margin: 0;
-  }
-  .notice {
-    color: var(--good);
-    font-size: 0.74rem;
-    margin: 0.35rem 0 0;
-  }
-  .error {
-    color: var(--bad);
-    font-size: 0.74rem;
-    margin: 0.35rem 0 0;
-    overflow-wrap: anywhere;
-  }
-
-  /* the list saying what it is doing, and why it is as long as it is */
-  .spinner {
-    display: inline-block;
-    width: 0.7rem;
-    height: 0.7rem;
-    border: 2px solid var(--rule);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    vertical-align: -0.1rem;
-    animation: spin 0.9s linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner {
-      animation: none;
-    }
-  }
-  .hint.busy {
-    margin: 0.35rem 0 0;
-  }
-  .why {
-    color: var(--muted);
-    font-size: 0.72rem;
-    margin: 0.4rem 0 0;
-    overflow-wrap: anywhere;
-  }
-  .whylist {
-    list-style: none;
-    margin: 0.3rem 0 0;
-    padding: 0.35rem 0 0;
+    grid-template-columns: 7rem minmax(0, 1fr) 8rem;
+    gap: 12px;
+    padding: 10px 0;
     border-top: 1px solid var(--rule);
-    max-height: 16rem;
-    overflow-y: auto;
+    font-size: 13px;
   }
-  .whylist li {
-    display: flex;
-    gap: 0.5rem;
-    justify-content: space-between;
-    font-size: 0.72rem;
-    padding: 0.12rem 0;
-  }
-  .whylist .reason {
+  .history .when,
+  .history .who {
     color: var(--muted);
-    text-align: right;
+    font-size: 12px;
   }
+
+  /* -- the phone --------------------------------------------------------- */
 
   @media (max-width: 900px) {
-    .axis {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 2rem;
+    .columns {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
     }
-    .axis :global(.slider) {
-      grid-column: 1 / -1;
+    .name {
+      font-size: 26px;
     }
-    .rowacts {
-      opacity: 1;
+    .purpose {
+      font-size: 13px;
+    }
+    .wide {
+      display: none;
+    }
+    .phone-ship {
+      display: block;
+      width: 100%;
+      min-height: 44px;
+      padding: 12px;
+      font-size: 15px;
+    }
+    .panel {
+      padding: 14px;
+    }
+    .slider {
+      height: 44px;
+    }
+    .slider::-webkit-slider-thumb {
+      width: 24px;
+      height: 24px;
+      margin-top: -10px;
+    }
+    .slider::-moz-range-thumb {
+      width: 24px;
+      height: 24px;
+    }
+    .stepper button {
+      width: 44px;
+      height: 44px;
+      font-size: 20px;
+    }
+    .count {
+      font-size: 30px;
+    }
+    .ghost {
+      width: 100%;
+      min-height: 44px;
+      text-align: center;
+      font-size: 14px;
+    }
+    .row {
+      grid-template-columns: 14px minmax(0, 1fr);
+      gap: 12px;
+      padding: 12px 0;
+    }
+    .score {
+      grid-column: 2;
+    }
+    .model-name {
+      font-size: 15px;
+    }
+    .history li {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2px;
     }
   }
 </style>

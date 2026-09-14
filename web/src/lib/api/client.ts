@@ -224,6 +224,8 @@ export interface StatusRow {
 }
 
 export interface AxisRow extends Axis {
+  /** one line saying what this axis means, for the person moving its slider */
+  meaning: string;
   fields_count: number;
   profiles: string[];
   builtin: boolean;
@@ -321,60 +323,59 @@ export interface ConnectorProbe {
 /* -------------------------------------------------------------------------- */
 
 /**
- * One weight, with the room it is allowed to move in.
+ * Everything behind one profile: `GET/PUT /v1/profiles/{name}/settings`.
  *
- * `min`/`max` are not decoration: a seat may be allowed to care about cost
- * between 0.1 and 0.4 and nowhere else, and a slider that can be dragged
- * outside that range is offering something the server will refuse.
- */
-export interface WeightControl {
-  value: number;
-  min: number;
-  max: number;
-  locked: boolean;
-}
-
-/**
- * Every control behind one profile row: `GET/PUT /v1/profiles/{name}/settings`.
- *
- * Until that route lands the screen builds this same shape out of `Profile` --
- * the weights with an open 0..1 range and nothing locked, the list length and
- * the floor from `policy` -- so the sliders still move and the list still
- * re-ranks. Only the two fields that have no older equivalent, price
- * sensitivity and experience weight, are disabled while that is true.
+ * A profile is its weights -- each a share of the score, the shares adding to
+ * one -- and `ship`, how many models go out. There is nothing else to hold: a
+ * floor, a price sensitivity, an experience weight, per-weight bounds and an
+ * auto-apply switch all used to live here and all of them changed the answer
+ * without moving a slider.
  */
 export interface ProfileSettings {
-  list_length: number;
-  floor_score: number;
-  price_sensitivity: number;
-  experience_weight: number;
-  auto_apply: boolean;
-  weights: Record<string, WeightControl>;
-  /** per-profile overrides; a prefix absent here uses the default */
-  cost_multipliers: Record<string, number>;
+  ship: number;
+  weights: Record<string, number>;
+  /** keys the server accepted and ignored, one sentence each */
+  warnings?: string[];
 }
 
-/** What a model is doing on a profile's list. */
-export type ModelStatus = 'active' | 'pinned' | 'removed';
+/** What a page sends: any subset, plus the axes it wants taken off. */
+export interface SettingsPatch {
+  ship?: number;
+  weights?: Record<string, number | null>;
+  remove_axes?: string[];
+}
+
+/** One model on a list, as a page draws it. */
+export interface Listed {
+  id: string;
+  name: string;
+  local_ids: string[];
+  score: number;
+}
 
 /**
- * What a draft would ship, and the ranking behind it.
+ * What these weights would ship, without shipping it.
  *
- * `models` is already the answer: pinned first, then everything active and
- * reachable above the floor, cut to `list_length`. The `ranking` alongside it
- * is what those ids scored, so a screen can show a number next to each without
- * a second request.
+ * `models` is the list itself -- the top `ship` reachable models in score
+ * order -- and `next` the ten behind it, so "show more" needs no second call.
  */
 export interface PreviewResult {
   profile: string;
-  models: string[];
+  ship: number;
+  models: Listed[];
+  next: Listed[];
   settings: ProfileSettings;
-  ranking: Ranking;
+  computed_at: string;
+  warnings: string[];
 }
 
-/** What `apply` shipped, and to which connectors. */
+/** What `apply` shipped, what it is called, and where it went. */
 export interface ApplyOutcome {
   chain: Chain;
+  /** the combo names written, e.g. `sieve-coder` */
+  combos: string[];
+  models: { id: string; name: string }[];
+  shipped_at: string;
   results: TargetResult[];
 }
 
@@ -582,7 +583,7 @@ export const api = {
   profileSettings: (name: string, o?: RequestOptions) =>
     request<ProfileSettings>(`/v1/profiles/${encodeURIComponent(name)}/settings`, o),
 
-  saveProfileSettings: (name: string, body: Partial<ProfileSettings>, o?: RequestOptions) =>
+  saveProfileSettings: (name: string, body: SettingsPatch, o?: RequestOptions) =>
     request<ProfileSettings>(`/v1/profiles/${encodeURIComponent(name)}/settings`, {
       ...o,
       method: 'PUT',
@@ -590,21 +591,10 @@ export const api = {
     }),
 
   /**
-   * Pin or remove one model on one profile. Written through the moment it is
-   * clicked, because a pin that looks set and is only in a draft is a lie
-   * about what the seat will ship.
+   * The list these weights would ship, without shipping it. Meant to be fast
+   * and called often: the page debounces 400 ms and sends what it holds.
    */
-  setModelStatus: (name: string, modelId: string, status: ModelStatus, o?: RequestOptions) =>
-    request<{ status: ModelStatus }>(
-      `/v1/profiles/${encodeURIComponent(name)}/models/${encodeURIComponent(modelId)}/status`,
-      { ...o, method: 'PUT', body: { status } }
-    ),
-
-  /**
-   * The list a draft would ship, without shipping it. Meant to be fast and
-   * called often: a row debounces 250 ms and sends whatever its controls hold.
-   */
-  preview: (name: string, settings: Partial<ProfileSettings>, o?: RequestOptions) =>
+  preview: (name: string, settings: SettingsPatch, o?: RequestOptions) =>
     request<PreviewResult>(`/v1/profiles/${encodeURIComponent(name)}/preview`, {
       ...o,
       method: 'POST',
@@ -698,33 +688,6 @@ export const api = {
       ...o,
       method: 'PATCH',
       body: weights
-    }),
-
-  /** Merged into the existing policy: send only what changed. */
-  setPolicy: (name: string, policy: Record<string, unknown>, o?: RequestOptions) =>
-    request<Profile>(`/v1/profiles/${encodeURIComponent(name)}/policy`, {
-      ...o,
-      method: 'PATCH',
-      body: policy
-    }),
-
-  /**
-   * Replaces the whole `require` block, because the interesting edit is
-   * *removing* a constraint and a merge cannot say that.
-   */
-  setConstraints: (name: string, require: Record<string, unknown>, o?: RequestOptions) =>
-    request<Profile>(`/v1/profiles/${encodeURIComponent(name)}/constraints`, {
-      ...o,
-      method: 'PATCH',
-      body: require
-    }),
-
-  /** Merged. Changing the shape re-prices every model on the seat. */
-  setShape: (name: string, shape: Record<string, unknown>, o?: RequestOptions) =>
-    request<Profile>(`/v1/profiles/${encodeURIComponent(name)}/shape`, {
-      ...o,
-      method: 'PATCH',
-      body: shape
     }),
 
   /** A new profile, cloned from one that already works. */

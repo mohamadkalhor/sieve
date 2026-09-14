@@ -6,7 +6,7 @@
  * that: exactly the work `move()` and the `live` $derived do in
  * `routes/(app)/profiles/[name]/+page.svelte` for a single input event, which
  * is `renormalise` (the weight vector absorbs the drag) then `weigh` then
- * `rankWithFloor` (the list is rescored and reordered).
+ * `rankOrder` (the list is rescored and reordered).
  *
  * WHAT THIS DOES AND DOES NOT CLAIM
  *
@@ -14,7 +14,7 @@
  * axes costs what the reported median and p95 say it costs, and it sits orders
  * of magnitude below a 16 ms frame -- so the frame budget is spent on layout,
  * paint and FLIP, not on scoring. That headroom is a property of the
- * algorithm: `weigh` is O(models x weighted axes) and `rankWithFloor` is one
+ * algorithm: `weigh` is O(models x weighted axes) and `rankOrder` is one
  * O(n log n) sort over 60 rows. No machine that can run a browser at all will
  * turn ~60 x 6 multiply-adds into 16 ms.
  *
@@ -29,7 +29,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { rankWithFloor, renormalise, weigh, type AxesByModel } from '../src/lib/rank/weigh';
+import { rankOrder, renormalise, weigh, type AxesByModel } from '../src/lib/rank/weigh';
 
 /** the fixture's six axis names, so this case is shaped like the shared one */
 const AXES = ['a', 'b', 'c', 'd', 'e', 'f'] as const;
@@ -39,7 +39,7 @@ const ROWS = 60;
  * A deterministic spread over 0..1 -- no Math.random, because a benchmark that
  * ranks a different list every run cannot be compared with itself. An integer
  * hash gives values that are scattered rather than sorted, so the sort in
- * `rankWithFloor` does real work instead of walking an already-ordered array.
+ * `rankOrder` does real work instead of walking an already-ordered array.
  */
 function spread(seed: number): number {
   const x = Math.sin(seed * 12.9898) * 43758.5453;
@@ -50,7 +50,7 @@ function spread(seed: number): number {
  * 60 models, six axes each, values across 0..1. Two models carry a null axis
  * so the unmeasured-value path is exercised: it must contribute 0 to the score
  * and cost that axis's share of confidence, which is what pushes those rows
- * through the `rankWithFloor` floor branch rather than the fast one.
+ * through a real reordering rather than an already-sorted array.
  */
 function synthetic(rows: number): AxesByModel {
   const out: AxesByModel = {};
@@ -79,7 +79,6 @@ const WEIGHTS: Record<string, number> = {
   e: 0.1,
   f: 0.05
 };
-const MIN_CONFIDENCE = 0.75;
 
 function quantile(sorted: number[], q: number): number {
   const at = Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1));
@@ -95,7 +94,7 @@ describe('one slider input, as pure computation', () => {
     let sink = 0;
     const rerank = (value: number) => {
       const weights = renormalise(WEIGHTS, 'a', value, new Set());
-      const ranked = rankWithFloor(weigh(axesByModel, weights), MIN_CONFIDENCE);
+      const ranked = rankOrder(weigh(axesByModel, weights));
       // consume the result so nothing above can be optimised away
       sink += ranked.length + ranked[0].score;
       return ranked;

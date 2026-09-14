@@ -64,13 +64,6 @@ export function rankOrder(scored: Scored[]): Scored[] {
   );
 }
 
-/** Best first, with anything under the confidence floor pushed to the end. */
-export function rankWithFloor(scored: Scored[], minConfidence: number): Scored[] {
-  const kept = scored.filter((row) => row.confidence >= minConfidence);
-  const dropped = scored.filter((row) => row.confidence < minConfidence);
-  return [...rankOrder(kept), ...rankOrder(dropped)];
-}
-
 /**
  * Keep a weight vector summing to 1 while one slider moves.
  *
