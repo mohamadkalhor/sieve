@@ -349,6 +349,14 @@ def get_models(
     cursor: str | None = None,
     _: Read = None,
 ) -> dict[str, Any]:
+    """One page of the catalogue.
+
+    The filters and the page are applied first and only the page is priced.
+    Pricing the whole modality to hand back five rows is what made
+    `?modality=llm&limit=5` take over thirty seconds against 982 models and
+    150,718 price rows, while the same call for music (23 models) answered in
+    0.4 s and hid it.
+    """
     store = store_of(request)
     local = store.local_ids(owner_of(request))
     models = store.models(modality)
@@ -357,37 +365,38 @@ def get_models(
         models = [m for m in models if needle in m.id.lower() or needle in m.name.lower()]
     if reachable is not None:
         models = [m for m in models if (m.id in local) is reachable]
+    window = page(models, limit, cursor)
+    shown: list[ModelRef] = window["items"]
     prices: dict[str, dict[str, Any]] = {}
-    for wanted in {m.modality for m in models}:
-        for model_id, price in store.latest_prices(wanted).items():
+    for wanted in {m.modality for m in shown}:
+        ids = [m.id for m in shown if m.modality == wanted]
+        for model_id, price in store.latest_prices(wanted, only=ids).items():
             prices[model_id] = price.model_dump(mode="json")
-    rows = [
+    window["items"] = [
         {
             **m.model_dump(mode="json"),
             "reachable": m.id in local,
             "local_ids": local.get(m.id, []),
             "price": prices.get(m.id),
         }
-        for m in models
+        for m in shown
     ]
-    return page(rows, limit, cursor)
+    return window
 
 
 @router.get("/models/{model_id:path}")
 def get_model(request: Request, model_id: str, _: Read = None) -> Any:
     store = store_of(request)
-    for model in store.models():
-        if model.id == model_id:
-            local = store.local_ids(owner_of(request))
-            return {
-                **model.model_dump(mode="json"),
-                "reachable": model.id in local,
-                "local_ids": local.get(model.id, []),
-                "observations": [
-                    o.model_dump(mode="json") for o in store.observations_for(model_id)
-                ],
-            }
-    return error(404, "not_found", f"no model {model_id!r}")
+    model = store.model(model_id)
+    if model is None:
+        return error(404, "not_found", f"no model {model_id!r}")
+    local = store.local_ids(owner_of(request))
+    return {
+        **model.model_dump(mode="json"),
+        "reachable": model.id in local,
+        "local_ids": local.get(model.id, []),
+        "observations": [o.model_dump(mode="json") for o in store.observations_for(model_id)],
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -1296,13 +1305,9 @@ def get_leaderboard(
     which of these is best.
     """
     store = store_of(request)
-    computed = leaderboard.board(
-        modality,
-        store.obs_table(modality),
-        store.models(modality),
-        set(store.latest_prices(modality)),
-        metric,
-    )
+    # `board` only reads, so it is handed the shared view rather than a copy.
+    view = store.cache.view(modality)
+    computed = leaderboard.board(modality, view.obs, view.models, set(view.obs.prices), metric)
     return Leaderboard(
         modality=computed.modality,
         metric=computed.metric,
