@@ -75,10 +75,13 @@ def _row(r: Any) -> ScriptToken:
 
 
 def tokens(store: Store, owner_id: str) -> list[ScriptToken]:
+    """The live tokens this person holds. A revoked one is gone, not greyed
+    out: its row stays only so the hash can never be honoured again."""
     return [
         _row(r)
         for r in store.db.execute(
-            "SELECT * FROM tokens WHERE owner_id=? ORDER BY created_at DESC", (owner_id,)
+            "SELECT * FROM tokens WHERE owner_id=? AND revoked=0 ORDER BY created_at DESC",
+            (owner_id,),
         )
     ]
 

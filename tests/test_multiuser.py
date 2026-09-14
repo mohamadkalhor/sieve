@@ -236,3 +236,44 @@ def test_the_run_visits_every_person(box: Config, monkeypatch: pytest.MonkeyPatc
     empty = Store(str(Path(box.root) / "empty.db"))
     assert runs._people(empty) == [("everyone", None)]
     empty.close()
+
+
+def test_a_token_round_trip_is_mint_use_revoke(box: Config) -> None:
+    """What a person does on the Tokens page, from the outside."""
+    store, _boss, ada, _bo = seats(box)
+    ada_secret = secret_for(store, ada)
+    store.close()
+
+    with TestClient(create_app(box)) as client:
+        made = client.post(
+            "/v1/tokens",
+            json={"name": "ada cron", "scopes": ["read"]},
+            headers=auth(ada_secret),
+        )
+        assert made.status_code == 201
+        body = made.json()
+        secret = body["secret"]
+
+        # It is hers, it works, and it holds only what it was given.
+        mine = client.get("/v1/me", headers=auth(secret)).json()
+        assert mine["email"] == ADA
+        refused = client.post(
+            "/v1/tokens", json={"name": "more", "scopes": ["read"]}, headers=auth(secret)
+        )
+        assert refused.status_code == 403
+
+        listed = client.get("/v1/tokens", headers=auth(ada_secret)).json()
+        assert [row["name"] for row in listed] == ["ada cron", "cron"]
+        assert not any("secret" in row for row in listed)
+
+        gone = client.delete(f"/v1/tokens/{body['id']}", headers=auth(ada_secret))
+        assert gone.status_code == 200
+        # A revoked token is gone from the list, and unknown at the door.
+        left = client.get("/v1/tokens", headers=auth(ada_secret)).json()
+        assert [row["name"] for row in left] == ["cron"]
+        assert (
+            client.post(
+                "/v1/tokens", json={"name": "more", "scopes": ["read"]}, headers=auth(secret)
+            ).status_code
+            == 401
+        )
