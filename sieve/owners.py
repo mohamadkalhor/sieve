@@ -113,6 +113,29 @@ def owner(store: Store) -> User | None:
     return _user(row) if row else None
 
 
+def ensure_owner(store: Store) -> User | None:
+    """The configured owner, with a row and everything that predates sign-ins.
+
+    Called at every start. Without `SIEVE_OWNER_EMAIL` it only reports what the
+    store already knows, so a box that never heard of gate stays exactly as it
+    was: no users, every row unowned, every read matching.
+
+    With it, the owner exists before anybody visits -- which matters because
+    the seeds that run next would otherwise insert a second, unowned copy of
+    the twenty-two profiles he has just adopted.
+    """
+    email = owner_email()
+    if not email:
+        return owner(store)
+    found = by_email(store, email)
+    if found is None:
+        found = create(store, email, "owner")
+    elif found.role != "owner":
+        found = touch(store, found, role="owner")
+    adopt_orphans(store, found.id)
+    return found
+
+
 def create(store: Store, email: str, role: str, gate_id: str | None = None) -> User:
     email = email.strip().lower()
     if role not in ROLES:

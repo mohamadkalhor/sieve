@@ -25,6 +25,7 @@ from sieve.api.routes.connectors import router as connectors_router
 from sieve.api.routes.identity import router as identity_router
 from sieve.api.routes.runs import router as runs_router
 from sieve.api.routes.v1 import router as v1_router
+from sieve import owners
 from sieve.axes import control as axis_control
 from sieve.config import Config, default_config, load_config
 from sieve.connectors import seed_from_toml
@@ -45,12 +46,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cfg: Config = getattr(app.state, "config", None) or build_config()
     app.state.config = cfg
     app.state.store = Store(cfg.db_path)
-    profile_control.seed(app.state.store, cfg.profiles_dir)
+    # Whose box this is, before anything is seeded into it.
+    boss = owners.ensure_owner(app.state.store)
+    owner_id = boss.id if boss else None
+    profile_control.seed(app.state.store, cfg.profiles_dir, owner_id)
     axis_control.seed(app.state.store, cfg.axes_dir)
     # A box configured in TOML migrates itself: the `[inventories.*]` and
     # `[targets.*]` gateway blocks become connectors on the first start after
     # this landed, rather than waiting for somebody to POST their own gateway.
-    seed_from_toml(cfg, app.state.store)
+    seed_from_toml(cfg, app.state.store, owner_id)
     # The loop runs here now, not in a systemd timer nobody can edit from a
     # phone: one runner (a run is a background thread in this process), one
     # scheduler thread that fires the due steps through the same path `Run now`
