@@ -756,6 +756,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
         host=args.host or cfg.server.host,
         port=args.port or cfg.server.port,
         reload=args.reload,
+        # No `server: uvicorn` on every response; the unit and the image start
+        # the same way, with --no-server-header.
+        server_header=False,
     )
     return EXIT_OK
 

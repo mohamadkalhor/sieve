@@ -965,9 +965,16 @@ def delete_profile(
     owner_id = owner_of(request)
     if control.profile(store, name, owner_id) is None:
         return error(404, "not_found", f"no profile {name!r}")
-    if not force and any(c.write for c in store.connectors(owner_id)):
+    # A profile is "in use" when it was actually applied, not merely when a
+    # write connector exists. The chain is the record of an apply: without one
+    # no combo was ever seated under this name, so a profile made and thought
+    # better of deletes cleanly. Asking every router what it holds is a network
+    # call per connector on a delete, so the chain is the test.
+    if not force and store.chain(name, owner_id) is not None:
         return error(
-            409, "in_use", "a write connector may still hold this profile combo; use ?force=1"
+            409,
+            "in_use",
+            f"{name!r} has a live chain a write connector may still hold as a combo; use ?force=1",
         )
     control.delete(store, name, owner_id)
     return {"deleted": name, "actor": token.name}

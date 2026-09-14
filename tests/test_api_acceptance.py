@@ -271,6 +271,36 @@ def test_controlled_profile_settings_status_experience_preview_and_crud(workspac
         assert client.get("/v1/profiles/judge/history").json()
 
 
+def test_a_profile_that_was_never_applied_deletes_without_force(workspace: Config) -> None:
+    """The delete guard used to read "does any write connector exist", which is
+    true of every box that ships anything -- so a profile made and thought
+    better of could not be deleted without `force=1`, and the flag stopped
+    meaning anything. The combo a connector might hold is named after a chain,
+    so the chain is the guard."""
+    app = create_app(workspace)
+    headers = {"Authorization": "Bearer s3cret"}
+    with TestClient(app) as client:
+        created = client.post(
+            "/v1/profiles", json={"name": "scratch", "from": "judge"}, headers=headers
+        )
+        assert created.status_code == 200
+        assert app.state.store.chain("scratch") is None, "a copy is not an apply"
+
+        deleted = client.delete("/v1/profiles/scratch", headers=headers)
+        assert deleted.status_code == 200, deleted.json()
+        assert client.get("/v1/profiles/scratch").status_code == 404
+
+        # An apply is what puts a name on a router, and it is what writes the
+        # chain, so the guard fires from there on.
+        applied = client.post("/v1/profiles/coder/apply", headers=headers)
+        assert applied.status_code == 200, applied.json()
+        assert app.state.store.chain("coder") is not None
+        guarded = client.delete("/v1/profiles/coder", headers=headers)
+        assert guarded.status_code == 409
+        assert guarded.json()["error"]["code"] == "in_use"
+        assert client.delete("/v1/profiles/coder?force=1", headers=headers).status_code == 200
+
+
 def test_prefix_multipliers_appear_and_can_be_changed(workspace: Config) -> None:
     app = create_app(workspace)
     headers = {"Authorization": "Bearer s3cret"}

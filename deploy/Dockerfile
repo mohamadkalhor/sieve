@@ -53,4 +53,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8110/healthz').status==200 else 1)"
 
 # Secrets come from the environment at run time and are never baked in.
-CMD ["uvicorn", "sieve.api.app:app", "--host", "0.0.0.0", "--port", "8110"]
+# `--no-server-header`: no "server: uvicorn" on every response.
+CMD ["uvicorn", "sieve.api.app:app", "--host", "0.0.0.0", "--port", "8110", "--no-server-header"]

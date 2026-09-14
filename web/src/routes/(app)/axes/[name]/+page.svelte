@@ -18,6 +18,10 @@
   let saving = $state(false);
   let message = $state('');
   let force = $state(false);
+  // Delete used to fire straight off the button. An axis is the shape of a
+  // ranking, so the profile page's two-step confirm is copied here.
+  let confirming = $state(false);
+  let removing = $state(false);
 
   $effect(() => {
     void Promise.all([adding ? Promise.resolve(null) : api.axis(requested, requestedModality), api.sources()]).then(([axis, found]) => {
@@ -55,7 +59,10 @@
     }
   }
   async function remove() {
+    removing = true;
     const result = await api.removeAxis(requested, form.modality, force, { token: token || undefined });
+    removing = false;
+    confirming = false;
     if (!result.ok) { message = result.error.status === 409 ? `${result.error.message} — remove it there first, or force.` : explainError(result.error); return; }
     await goto('/axes');
   }
@@ -68,7 +75,7 @@
   <label class="token"><span>Token (profiles:write)</span><input type="password" bind:value={token} autocomplete="off" /></label>
   <div class="grid">
     <label><span>Name</span><input bind:value={form.name} disabled={!adding} pattern="[A-Za-z0-9_-]+" /></label>
-    <label><span>Modality</span><select bind:value={form.modality} disabled={!adding}>{#each ['llm','text-to-image','image-editing','text-to-video','image-to-video','text-to-speech','speech-to-text','speech-to-speech','music'] as modality}<option value={modality}>{modality}</option>{/each}</select></label>
+    <label><span>Modality</span><select bind:value={form.modality} disabled={!adding}>{#each ['llm','text-to-image','image-editing','text-to-video','image-to-video','video-editing','text-to-speech','speech-to-text','speech-to-speech','music'] as modality}<option value={modality}>{modality}</option>{/each}</select></label>
     <label><span>Label</span><input bind:value={form.label} /></label>
     <label class="wide"><span>Describes</span><textarea bind:value={form.describes}></textarea></label>
     <label><span>Missing</span><select bind:value={form.missing}><option value="renormalise">renormalise</option><option value="penalise">penalise</option></select></label>
@@ -88,9 +95,9 @@
     {/each}
   </div>
   {#if message}<p class="message">{message}</p>{/if}
-  <div class="actions"><button class="primary" type="button" disabled={saving} onclick={save}>{saving ? 'Saving…' : 'Save'}</button>{#if !adding}<label class="force"><input type="checkbox" bind:checked={force} /> Force (set profile weights to 0)</label><button class="danger" type="button" onclick={remove}>Delete</button>{/if}</div>
+  <div class="actions"><button class="primary" type="button" disabled={saving} onclick={save}>{saving ? 'Saving…' : 'Save'}</button>{#if !adding}<label class="force"><input type="checkbox" bind:checked={force} /> Force (set profile weights to 0)</label>{#if confirming}<span class="confirm">Delete {form.name || requested}?<button class="danger" type="button" disabled={removing} onclick={remove}>{removing ? 'Deleting…' : 'Yes, delete'}</button><button type="button" onclick={() => (confirming = false)}>Keep</button></span>{:else}<button class="danger" type="button" onclick={() => (confirming = true)}>Delete</button>{/if}{/if}</div>
 {/if}
 
 <style>
-  .back{color:var(--muted);font-size:.8rem}h1{font-size:1.6rem;margin:.4rem 0 1rem}.token,.grid label,.field label{display:flex;flex-direction:column;gap:.2rem;font-size:.75rem;color:var(--muted)}.token{max-width:22rem;margin-bottom:1rem}.grid{display:grid;grid-template-columns:repeat(3,minmax(10rem,1fr));gap:.7rem}.wide{grid-column:span 2}.check{justify-content:end;flex-direction:row!important;align-items:center}input,select,textarea,button{font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--rule);border-radius:7px;padding:.4rem .5rem}textarea{min-height:4.5rem}.fields-head{display:flex;gap:1rem;align-items:center;margin-top:1.4rem}.fields-head h2{margin:0}.fields-head span{color:var(--muted);margin-right:auto}.field{display:grid;grid-template-columns:1fr 2fr 7rem 6rem auto;gap:.6rem;align-items:end;padding:.65rem 0;border-bottom:1px solid var(--rule)}.remove,.danger{border-color:var(--bad);color:var(--bad)}.actions{display:flex;gap:.8rem;align-items:center;margin-top:1rem}.primary{border-color:var(--accent)}.force{color:var(--muted);font-size:.75rem;margin-left:auto}.message{color:var(--accent)}@media(max-width:800px){.grid,.field{grid-template-columns:1fr}.wide{grid-column:auto}}
+  .back{color:var(--muted);font-size:.8rem}h1{font-size:1.6rem;margin:.4rem 0 1rem}.token,.grid label,.field label{display:flex;flex-direction:column;gap:.2rem;font-size:.75rem;color:var(--muted)}.token{max-width:22rem;margin-bottom:1rem}.grid{display:grid;grid-template-columns:repeat(3,minmax(10rem,1fr));gap:.7rem}.wide{grid-column:span 2}.check{justify-content:end;flex-direction:row!important;align-items:center}input,select,textarea,button{font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--rule);border-radius:7px;padding:.4rem .5rem}textarea{min-height:4.5rem}.fields-head{display:flex;gap:1rem;align-items:center;margin-top:1.4rem}.fields-head h2{margin:0}.fields-head span{color:var(--muted);margin-right:auto}.field{display:grid;grid-template-columns:1fr 2fr 7rem 6rem auto;gap:.6rem;align-items:end;padding:.65rem 0;border-bottom:1px solid var(--rule)}.remove,.danger{border-color:var(--bad);color:var(--bad)}.actions{display:flex;gap:.8rem;align-items:center;margin-top:1rem}.confirm{display:inline-flex;align-items:center;gap:.35rem;font-size:.74rem;color:var(--muted)}.primary{border-color:var(--accent)}.force{color:var(--muted);font-size:.75rem;margin-left:auto}.message{color:var(--accent)}@media(max-width:800px){.grid,.field{grid-template-columns:1fr}.wide{grid-column:auto}}
 </style>

@@ -7,11 +7,15 @@ this file does not follow code. Change it by pull request, and say why.
 
 ```python
 Modality = Literal["llm","text-to-image","image-editing","text-to-video",
-                   "image-to-video","text-to-speech","speech-to-text",
-                   "speech-to-speech","music"]
+                   "image-to-video","video-editing","text-to-speech",
+                   "speech-to-text","speech-to-speech","music"]
                    # `speech-to-speech` added in phase 2 part 2: AA publishes a
                    # free-tier voice-to-voice leaderboard and nothing could store
                    # it, because the literal had no name for it.
+                   # `video-editing` added in part 10: editing an existing video
+                   # is its own arena, and the v2 data API does not expose it at
+                   # all -- the leaderboard page does.
+                   # `MODALITIES` is `get_args(Modality)`, never a second tuple.
 
 class ModelRef(BaseModel):
     id: str                 # canonical: "<creator>/<slug>", lowercase, e.g. "anthropic/claude-opus-5"
@@ -134,6 +138,12 @@ class Axis(BaseModel):
 class Shape(BaseModel):     # per profile; only the keys the modality uses
     in_tokens: int | None = None; out_tokens: int | None = None; cached: float | None = None
     images: int | None = None; seconds: float | None = None; chars: int | None = None
+    megapixels: float | None = None # output area, where a model is priced per megapixel;
+                            # a 1024x1024 image is 1.05
+    requests: int | None = None     # calls one task makes, where a model is priced per
+                            # request. One, unless a task is a batch.
+                            # The YAML spells the token fields `in` and `out`; both
+                            # spellings load, and the JSON names stay in_tokens/out_tokens.
 
 class Policy(BaseModel):
     margin: float = 3.0
@@ -306,8 +316,10 @@ Bearer <secret>` and the scope in the table; reads are open unless
 
 | method & path | scope | returns |
 |---|---|---|
+| GET /healthz | – | `{"ok": true}` and nothing else — the liveness probe the unit and the image use, outside `/v1` and outside auth |
 | GET /v1/modalities | – | list of modality + counts |
-| GET /v1/axes?modality= | – | Axis[] |
+| GET /v1/axes?modality= · GET /v1/axes/{name}?modality= | – | Axis[] · one Axis (404 `not_found`) |
+| POST /v1/axes · PUT /v1/axes/{name} · DELETE /v1/axes/{name}?modality=&force= | profiles:write | create · replace · delete an axis. A name a shared axis already holds is refused; a delete an enabled profile still weighs is 409 `axis_in_use` naming the profiles, and `force=1` deletes it and sets those weights to 0 |
 | GET /v1/models?modality=&reachable=&q= | – | ModelRef + latest observations + prices + reachable |
 | GET /v1/models/{id} | – | one, with full observation history |
 | GET /v1/profiles?modality= · GET /v1/profiles/{name} | – | Profile (SQLite truth; YAML seeds an empty store). Document reads resolve weights through settings, including legacy edits; list, copy and ranking fallback use these effective weights. Document writes replace settings weight values and retain surviving axes' min/max/locked metadata |
@@ -316,10 +328,11 @@ Bearer <secret>` and the scope in the table; reads are open unless
 | GET · PUT /v1/cost-multipliers | – · profiles:write | default multiplier per reachable local-id prefix |
 | POST /v1/outcomes · GET /v1/profiles/{name}/experience | telemetry · – | append-only outcome · 30-day Laplace success score |
 | POST /v1/profiles/{name}/preview | – | unsaved controlled list using partial settings |
-| POST /v1/profiles · PATCH · DELETE /v1/profiles/{name} | profiles:write | create/copy (`from` or `copy_from`, optional replacement `weights`) · rename and/or re-describe · guarded delete. POST uses the same axis/[0,1]/sum validator as settings; invalid weights return 400 `bad_weights`. Copy carries effective settings weights. **PATCH takes `name`, `purpose`, or both**: `{"purpose": "..."}` alone rewrites the description and touches nothing else (400 with neither, 404 for an unknown profile), so fixing a sentence no longer means PUTting every weight and constraint back |
+| POST /v1/profiles · PATCH · DELETE /v1/profiles/{name} | profiles:write | create/copy (`from` or `copy_from`, optional replacement `weights`) · rename and/or re-describe · guarded delete. POST uses the same axis/[0,1]/sum validator as settings; invalid weights return 400 `bad_weights`. Copy carries effective settings weights. **PATCH takes `name`, `purpose`, or both**: `{"purpose": "..."}` alone rewrites the description and touches nothing else (400 with neither, 404 for an unknown profile), so fixing a sentence no longer means PUTting every weight and constraint back. **DELETE is 409 `in_use` only when the profile has a chain** — it was applied, so a write connector may still hold a combo under that name; a profile that was never applied deletes cleanly, and `?force=1` deletes either way |
 | POST /v1/profiles/{name}/apply · GET /v1/profiles/{name}/history | apply · – | ship controlled chain · decision history |
 | PUT /v1/profiles/{name} | profiles:write | Replace existing Profile (stored; decision logged); unknown name → 404 `not_found`, "create it with POST /v1/profiles". Same axis/[0,1]/sum validator as settings; 400 `bad_weights` names the axis or sum |
 | PATCH /v1/profiles/{name}/weights · /policy | profiles:write | Profile; /weights replaces weight values using the same axis/[0,1]/sum validator as settings; 400 `bad_weights` names the axis or sum |
+| PATCH /v1/profiles/{name}/constraints · /shape | profiles:write | Profile; the body *replaces* `require` (so a constraint can be removed at all) · replaces `Shape`, which re-prices every model and is logged as a decision |
 | POST /v1/profiles/{name}/evaluate | – | {ranking, chain, decision} — dry run, nothing stored |
 | GET /v1/rankings/{profile} | – | Ranking (latest) |
 | GET /v1/chains/{profile} | – | Chain |
@@ -344,6 +357,15 @@ Bearer <secret>` and the scope in the table; reads are open unless
 | POST /v1/runs/{step} | profiles:write | 202 {id}; 409 `run_in_flight` with `running` when one is already going |
 | GET /v1/runs?limit=&step= · GET /v1/runs/{id} | – | Run[] · one run |
 | GET /v1/runs/{id}/log | – | text/plain, the run's own log |
+| GET /v1/status | – | one box's state: counts, last snapshot, `runs: {running, last, last_by_step}`, `schedules` |
+| GET /v1/health?window=24h\|7d&reachable= | – | HealthRow[] — what this box's own telemetry says per model, and the number the ranking multiplies by |
+| GET /v1/diff | – | TargetDiff[] — what every configured target holds now against what Sieve would write |
+| GET /v1/leaderboard?modality=&metric= | – | Leaderboard — one modality, best first, deduplicated, with a price where one is published |
+| GET /v1/sources/{name}/fields | – | the fields this source has actually written, with row counts — what an axis can be built from |
+| GET · PUT /v1/config?dry_run=&prune= | – · profiles:write | the whole box as one document (profiles, axes, multipliers, connector shells — never a token) · applies it, or with `dry_run=1` returns only the diff it would apply; 400 `bad_config` |
+| GET /v1/guide | – | text/markdown, `OPERATING.md` — how to drive this box, for an agent that arrived with no other context |
+| GET /v1/me | – | the seat this call is answered from: user_id, email, role, slug, counts. A box with no sign-ins answers `user_id: null`, role `owner` |
+| GET · POST /v1/tokens · DELETE /v1/tokens/{id} | profiles:write | script tokens for the signed-in seat: list · mint (**the secret is in that reply and nowhere else**; 403 `scope_refused` when the role cannot grant it, 409 `exists` on a repeated name) · revoke. 409 `no_identity` where nobody has signed in |
 
 ### Runs (AMS-31)
 
