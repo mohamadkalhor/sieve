@@ -18,6 +18,9 @@ from sieve.contracts import Profile
 from sieve.profiles.load import profile_path
 
 KEY_ORDER = ("name", "modality", "purpose", "weights", "ship")
+#: written only when they say something, so an ordinary auto profile's file
+#: stays the five keys a person reads
+OPTIONAL_KEYS = ("mode", "manual", "pinned", "removed", "needs")
 
 
 def _yaml() -> YAML:
@@ -29,9 +32,14 @@ def _yaml() -> YAML:
 
 
 def as_mapping(profile: Profile) -> dict[str, Any]:
-    """The profile as YAML sees it: five keys, in the order a person reads."""
+    """The profile as YAML sees it: five keys, in the order a person reads,
+    then any hand control that is actually set."""
     body = profile.model_dump(mode="json", exclude_defaults=False)
-    return {k: body[k] for k in KEY_ORDER if k in body}
+    out = {k: body[k] for k in KEY_ORDER if k in body}
+    for key in OPTIONAL_KEYS:
+        if body.get(key) and body[key] != "auto":
+            out[key] = body[key]
+    return out
 
 
 def _merge(existing: Any, wanted: dict[str, Any]) -> Any:

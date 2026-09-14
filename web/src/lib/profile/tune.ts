@@ -10,9 +10,8 @@ import { renormalise } from '$lib/rank/weigh';
 
 export { renormalise };
 
-/** How many models a profile may ship. The server agrees, and says so. */
+/** How many models a profile may ship: at least one, and no upper bound. */
 export const SHIP_MIN = 1;
-export const SHIP_MAX = 10;
 
 /** The preview is asked for this long after the last movement of a slider. */
 export const DEBOUNCE_MS = 400;
@@ -67,7 +66,47 @@ export function moveAxis(
 
 export function clampShip(value: number): number {
   if (!Number.isFinite(value)) return SHIP_MIN;
-  return Math.max(SHIP_MIN, Math.min(SHIP_MAX, Math.round(value)));
+  return Math.max(SHIP_MIN, Math.round(value));
+}
+
+/** The one-press starting points for the weights. */
+export type Preset = 'even' | 'quality' | 'value';
+
+export const PRESETS: { id: Preset; label: string; says: string }[] = [
+  { id: 'even', label: 'Even', says: 'every axis the same share' },
+  { id: 'quality', label: 'Quality first', says: 'cost at 10%, the rest keep their proportions' },
+  { id: 'value', label: 'Value', says: 'cost at half, the rest keep their proportions' }
+];
+
+/** The cost axis, by its name; a preset that leans on it needs it weighted. */
+export const COST_AXIS = 'cost';
+
+export function applyPreset(weights: Record<string, number>, kind: Preset): Record<string, number> {
+  const axes = Object.keys(weights);
+  if (!axes.length) return { ...weights };
+  if (kind === 'even') {
+    return renormalise(
+      Object.fromEntries(axes.map((axis) => [axis, 1 / axes.length])),
+      axes[0],
+      1 / axes.length
+    );
+  }
+  if (!(COST_AXIS in weights) || axes.length < 2) return { ...weights };
+  return renormalise(weights, COST_AXIS, kind === 'quality' ? 0.1 : 0.5);
+}
+
+/** A list with one id moved by `by` places, clamped at both ends. */
+export function shift<T>(list: readonly T[], index: number, by: number): T[] {
+  const to = Math.max(0, Math.min(list.length - 1, index + by));
+  const out = [...list];
+  const [item] = out.splice(index, 1);
+  out.splice(to, 0, item);
+  return out;
+}
+
+/** `list` with `id` added at the end, or taken out if it was there. */
+export function toggle(list: readonly string[], id: string): string[] {
+  return list.includes(id) ? list.filter((held) => held !== id) : [...list, id];
 }
 
 /**

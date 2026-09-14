@@ -7,7 +7,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sieve.contracts import Outcome, Profile, ProfileSettings, Ranking
+from sieve.contracts import Capability, Outcome, Profile, ProfileSettings, Ranking
 from sieve.profiles.legacy import clean_profile, clean_settings
 from sieve.profiles.load import load_profiles
 from sieve.store import Store
@@ -17,8 +17,21 @@ def _iso(value: datetime) -> str:
     return value.astimezone(UTC).isoformat()
 
 
+#: the fields a profile and its settings share; the settings are the truth
+TUNED = tuple(ProfileSettings.model_fields)
+
+
+def settings_of(profile: Profile) -> ProfileSettings:
+    return ProfileSettings.model_validate({k: getattr(profile, k) for k in TUNED})
+
+
+def tuned(profile: Profile, value: ProfileSettings) -> Profile:
+    """The profile, carrying these settings."""
+    return profile.model_copy(update={k: getattr(value, k) for k in TUNED})
+
+
 def default_settings(profile: Profile) -> ProfileSettings:
-    return ProfileSettings(ship=profile.ship, weights=dict(profile.weights))
+    return settings_of(profile)
 
 
 def mine(owner_id: str | None, column: str = "owner_id") -> tuple[str, tuple[Any, ...]]:
@@ -100,8 +113,7 @@ def read_settings(raw: str | dict[str, Any]) -> ProfileSettings:
 def _effective_profile(row: Any) -> Profile:
     """The profile as it is tuned: the document, resolved through its settings."""
     value = read_profile(row["json"])
-    selected = read_settings(row["settings"])
-    return value.model_copy(update={"weights": dict(selected.weights), "ship": selected.ship})
+    return tuned(value, read_settings(row["settings"]))
 
 
 def profiles(store: Store, owner_id: str | None = None, shared: bool = True) -> list[Profile]:
@@ -144,8 +156,8 @@ def put_profile(
     owner_id: str | None = None,
 ) -> None:
     stamp = _iso(datetime.now(UTC))
-    selected = value_settings or ProfileSettings(ship=value.ship, weights=dict(value.weights))
-    value = value.model_copy(update={"weights": dict(selected.weights), "ship": selected.ship})
+    selected = value_settings or settings_of(value)
+    value = tuned(value, selected)
     with store.tx() as db:
         db.execute(
             "INSERT INTO profiles(name,modality,json,settings,owner_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) "
@@ -176,9 +188,7 @@ def put_settings(
     document = None
     if row is not None:
         held = read_profile(row["json"])
-        document = held.model_copy(
-            update={"weights": dict(value.weights), "ship": value.ship}
-        ).model_dump_json()
+        document = tuned(held, value).model_dump_json()
     with store.tx() as db:
         if document is None:
             db.execute(
@@ -196,6 +206,9 @@ def update_settings(
     current: ProfileSettings, patch: dict[str, Any]
 ) -> tuple[ProfileSettings, list[str]]:
     """Merge a patch into one profile's settings, and say what it ignored.
+
+    The hand controls -- `manual`, `pinned`, `removed`, `needs` -- are lists
+    and replace what was there; a patch that does not name one leaves it alone.
 
     Weights merge per axis rather than replacing the map, so a page that knows
     about one slider cannot wipe the other nine. Two spellings remove an axis
@@ -458,19 +471,39 @@ def rerank_cached(ranking: Ranking, weights: dict[str, float]) -> Ranking:
     )
 
 
-def shipped_rows(ranked: list[Any], ship: int) -> list[Any]:
-    """The rows that ship: the top `ship` reachable ones, in score order.
+def capability_map(store: Store, modality: Any) -> dict[str, Capability]:
+    """What every source and every router says each model can do, merged.
 
-    Nothing else takes a model out. There used to be pins, holds, a score floor
-    and a confidence floor here, each of them a way of overruling the weights
-    after the fact, and between them they made the sliders unreadable.
+    The capabilities table is what catalogues publish; a router's own model
+    list sometimes says more (an image input, a tool flag), so it fills the
+    gaps. What a source states wins over what a router implies.
     """
-    ordered = sorted((row for row in ranked if row.position > 0), key=lambda row: row.position)
-    return ordered[: max(1, ship)]
+    from sieve.store.db import _merge_capability
+
+    merged = dict(store.capabilities(modality))
+    for row in store.reachable():
+        if row.model_id is None:
+            continue
+        held = merged.get(row.model_id)
+        merged[row.model_id] = (
+            row.capability if held is None else _merge_capability(held, row.capability)
+        )
+    return merged
 
 
-def shipped_ids(ranked: list[Any], ship: int) -> list[str]:
-    return [row.model_id for row in shipped_rows(ranked, ship)]
+def shipped_rows(
+    ranked: list[Any], value: Any, capabilities: dict[str, Capability] | None = None
+) -> list[Any]:
+    """The rows that ship, as `sieve.scoring.select` decides them."""
+    from sieve.scoring.select import select
+
+    return select(ranked, value, capabilities).rows
+
+
+def shipped_ids(
+    ranked: list[Any], value: Any, capabilities: dict[str, Capability] | None = None
+) -> list[str]:
+    return [row.model_id for row in shipped_rows(ranked, value, capabilities)]
 
 
 def chain_for(
@@ -483,9 +516,11 @@ def chain_for(
     from sieve.contracts import Chain
 
     cfg = settings(store, name, owner_id)
-    if cfg is None:
+    found = profile(store, name, owner_id)
+    if cfg is None or found is None:
         return None
-    ids = shipped_ids(ranked, cfg.ship)
+    caps = capability_map(store, found.modality) if cfg.needs else None
+    ids = shipped_ids(ranked, cfg, caps)
     local = store.local_ids(owner_id=owner_id)
     ids = [model for model in ids if local.get(model)]
     if not ids:

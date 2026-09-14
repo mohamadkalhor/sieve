@@ -91,12 +91,24 @@ Transform = Literal["identity", "neg_log", "log", "invert"]
 
 Scope = Literal["read", "profiles:write", "apply", "telemetry"]
 
-#: How many models a profile ships, and the room that number has to move in.
-#: One is a routing decision with no fallback; ten is more fallbacks than any
-#: gateway has ever walked.
+#: How many models a profile ships. One is a routing decision with no
+#: fallback; there is no upper bound, because how long a chain a gateway should
+#: walk is the person's call. `SHIP_MAX` survives only as the clamp for an old
+#: `policy.chain`, which is a translation rather than a setting.
 SHIP_MIN = 1
 SHIP_MAX = 10
 SHIP_DEFAULT = 4
+
+#: How the list is made. `auto`: the top models by weighted score, with pins
+#: first and removals left out. `manual`: exactly the models a person listed,
+#: in their order; the weights still score them, and decide nothing.
+ProfileMode = Literal["auto", "manual"]
+
+#: What a shipped model must be *known* to do. A model whose source never said
+#: is not assumed to (PLAN 2.2), so an unknown fails a need the same as a no --
+#: and the page says which of the two it was.
+Need = Literal["vision", "reasoning", "tools", "structured_output"]
+NEEDS: tuple[Need, ...] = get_args(Need)
 
 SCOPES: tuple[Scope, ...] = ("read", "profiles:write", "apply", "telemetry")
 
@@ -278,16 +290,28 @@ class Axis(_Model):
 
 
 class ProfileSettings(_Model):
-    """The tuned half of a profile: its weights, and how many models to ship.
+    """The tuned half of a profile: its weights, how many to ship, and the
+    hand controls over the list.
 
-    There is nothing else, on purpose. A floor, a price sensitivity, an
-    experience weight, per-weight bounds and an auto-apply switch all used to
-    live here, and every one of them changed the answer without moving a
-    slider -- which made the sliders unreadable.
+    A floor, a price sensitivity, an experience weight and per-weight bounds
+    used to live here and are still gone: each changed the answer without
+    moving a slider. What came back is different in kind -- a pin, a removal, a
+    hand-made list and a capability need each change the list *visibly*, on
+    the row they touch, so the page can always say why a model is or is not
+    there.
     """
 
-    ship: int = Field(default=SHIP_DEFAULT, ge=SHIP_MIN, le=SHIP_MAX)
+    ship: int = Field(default=SHIP_DEFAULT, ge=SHIP_MIN)
     weights: dict[str, float] = Field(default_factory=dict)
+    mode: ProfileMode = "auto"
+    #: manual mode: the list, in the order it ships
+    manual: list[str] = Field(default_factory=list)
+    #: auto mode: always ship these, first, in this order
+    pinned: list[str] = Field(default_factory=list)
+    #: auto mode: never ship these, however they score
+    removed: list[str] = Field(default_factory=list)
+    #: both modes: a model ships only if it is known to do each of these
+    needs: list[Need] = Field(default_factory=list)
 
 
 class Outcome(_Model):
@@ -314,7 +338,12 @@ class Profile(_Model):
     modality: Modality
     purpose: str
     weights: dict[str, float]
-    ship: int = Field(default=SHIP_DEFAULT, ge=SHIP_MIN, le=SHIP_MAX)
+    ship: int = Field(default=SHIP_DEFAULT, ge=SHIP_MIN)
+    mode: ProfileMode = "auto"
+    manual: list[str] = Field(default_factory=list)
+    pinned: list[str] = Field(default_factory=list)
+    removed: list[str] = Field(default_factory=list)
+    needs: list[Need] = Field(default_factory=list)
 
 
 class AxisScore(_Model):

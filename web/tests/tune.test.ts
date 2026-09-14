@@ -65,7 +65,7 @@ describe('the shares add to one', () => {
 
   it('ship stays between one and ten', () => {
     expect(clampShip(0)).toBe(1);
-    expect(clampShip(11)).toBe(10);
+    expect(clampShip(40)).toBe(40);
     expect(clampShip(4.4)).toBe(4);
     expect(clampShip(Number.NaN)).toBe(1);
   });

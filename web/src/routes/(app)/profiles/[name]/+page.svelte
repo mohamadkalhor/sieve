@@ -2,37 +2,42 @@
   /**
    * One profile, tuned.
    *
-   * A profile is its weights. Each axis is a share of the score, the shares add
-   * to one, and moving one moves the others -- so the page renormalises on
-   * every input and never shows a sum for somebody to manage. Under the weights
-   * is the only other number: how many models to ship. Beside them is the list
-   * those two produce, which is the whole answer.
+   * Every control is in the left column; the right column is the list those
+   * controls produce, which is the whole answer.
    *
-   * Everything else that used to be on this page -- requirements, a task shape,
-   * a policy, pins, holds, a floor, a confidence, why-it-is-here bars, sources,
-   * chips -- is gone. Each of them changed the answer without moving a slider,
-   * and between them they made the sliders unreadable.
+   *   Mode          auto -- the weights rank, pins go first, removals stay out
+   *                 manual -- exactly the models picked by hand, in that order
+   *   Must support  a model ships only if it is *known* to do each checked thing
+   *   Add models    (manual) search the reachable models and add one
+   *   Weights       (auto) presets, then one row per axis: a slider, an exact
+   *                 percentage, a lock that holds it while the others move
+   *   How many      (auto) at least one, no upper bound; pins count towards it
+   *   Removed       (auto) what was taken off the list, to put back
+   *
+   * Axes keep the order they were added in. A list that re-sorted itself by
+   * weight on every drag moved the row out from under the pointer.
    *
    * WHAT IT WRITES
    *
-   *   a weight, an axis, the ship count   PUT /v1/profiles/{name}/settings,
-   *                                       400 ms after the last input
-   *   Ship now                            POST /v1/profiles/{name}/apply
-   *   copy · rename · delete              POST /v1/profiles · PATCH · DELETE
+   *   any control         PUT /v1/profiles/{name}/settings, 400 ms after the last input
+   *   Ship now            POST /v1/profiles/{name}/apply
+   *   copy · rename · delete   POST /v1/profiles · PATCH · DELETE
    *
-   * The list comes from POST /v1/profiles/{name}/preview, which reweighs the
-   * ranking the server already holds. It has three honest states and one
-   * fact: ranking, the box is busy, it failed -- and "nothing ships", which
-   * may only be said when an answer actually came back empty.
+   * The list comes from POST /v1/profiles/{name}/preview. It has three honest
+   * states and one fact: ranking, the box is busy, it failed -- and "nothing
+   * ships", which may only be said when an answer actually came back empty.
    */
   import { goto } from '$app/navigation';
   import {
+    NEEDS,
     api,
     explainError,
     type ApiError,
     type AxisRow,
     type HistoryRow,
     type Listed,
+    type Need,
+    type ProfileMode,
     type ProfileSettings
   } from '$lib/api/client';
   import type { Chain, Profile } from '$lib/types';
@@ -40,30 +45,58 @@
   import { runPulse } from '$lib/refresh.svelte';
   import { session } from '$lib/session.svelte';
   import {
+    COST_AXIS,
     DEBOUNCE_MS,
-    SHIP_MAX,
+    PRESETS,
     SHIP_MIN,
     SLOW_MS,
     addAxis,
+    applyPreset,
     barWidth,
     clampShip,
     listState,
-    moveAxis,
     removeAxis,
-    shipState
+    renormalise,
+    shift,
+    shipState,
+    toggle,
+    type Preset
   } from '$lib/profile/tune';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
   const name = $derived(data.name);
 
+  const NEED_LABEL: Record<Need, string> = {
+    vision: 'Image input',
+    reasoning: 'Thinking mode',
+    tools: 'Tool calling',
+    structured_output: 'Structured output'
+  };
+  const NEED_TAG: Record<Need, string> = {
+    vision: 'vision',
+    reasoning: 'thinking',
+    tools: 'tools',
+    structured_output: 'JSON'
+  };
+
   let profile = $state<Profile | null>(null);
   let chain = $state<Chain | null>(null);
   let everyAxis = $state<AxisRow[]>([]);
 
-  /** the tuning, as the page holds it: shares that add to one, and a length */
+  /* -- the settings, as the page holds them ------------------------------ */
+
   let weights = $state<Record<string, number>>({});
+  /** axis order: the order they were added in, never re-sorted by weight */
+  let order = $state<string[]>([]);
+  let locked = $state<string[]>([]);
+  let loaded = $state<Record<string, number>>({});
   let ship = $state(4);
+  let mode = $state<ProfileMode>('auto');
+  let manual = $state<string[]>([]);
+  let pinned = $state<string[]>([]);
+  let removed = $state<string[]>([]);
+  let needs = $state<Need[]>([]);
 
   let loading = $state(true);
   let gone = $state<ApiError | null>(null);
@@ -73,21 +106,25 @@
 
   let models = $state<Listed[] | null>(null);
   let next = $state<Listed[]>([]);
+  let blocked = $state<Listed[]>([]);
+  let removedRows = $state<Listed[]>([]);
+  let missing = $state<{ id: string; name: string }[]>([]);
+  let pool = $state<Listed[]>([]);
   let pending = $state(false);
   let waitedMs = $state(0);
   let failed = $state<string | null>(null);
   let showMore = $state(false);
   let shipping = $state(false);
 
-  /* -- the menu ---------------------------------------------------------- */
+  /* -- the menu and the picker ------------------------------------------ */
 
   let menuOpen = $state(false);
   let asking = $state<'' | 'copy' | 'rename' | 'delete'>('');
   let askName = $state('');
   let history = $state<HistoryRow[] | null>(null);
   let adding = $state(false);
+  let search = $state('');
 
-  /** ticks, so "shipped 12 min ago" keeps counting */
   let now = $state(new Date());
   $effect(() => {
     const tick = setInterval(() => (now = new Date()), 30_000);
@@ -96,18 +133,38 @@
 
   const options = $derived({ token: session.token || undefined });
 
-  const chosen = $derived(
-    Object.keys(weights).sort(
-      (a, b) => weights[b] - weights[a] || a.localeCompare(b)
-    )
+  const labels = $derived(
+    Object.fromEntries(everyAxis.map((axis: AxisRow) => [axis.name, axis.label || axis.name]))
   );
   const meanings = $derived(
     Object.fromEntries(everyAxis.map((axis) => [axis.name, axis.meaning || axis.describes || '']))
   );
-  const labels = $derived(
-    Object.fromEntries(everyAxis.map((axis: AxisRow) => [axis.name, axis.label || axis.name]))
-  );
   const spare = $derived(everyAxis.filter((axis: AxisRow) => !(axis.name in weights)));
+  const shown = $derived(order.filter((axis) => axis in weights));
+
+  const byId = $derived(Object.fromEntries(pool.map((row) => [row.id, row])));
+  /** whether any reachable model here carries capability data at all */
+  const describable = $derived(
+    pool.some((row) => Object.values(row.abilities ?? {}).some((v) => v !== null))
+  );
+  const supportCount = $derived(
+    Object.fromEntries(
+      NEEDS.map((need) => [need, pool.filter((row) => row.abilities?.[need] === true).length])
+    ) as Record<Need, number>
+  );
+  const picks = $derived.by(() => {
+    const needle = search.trim().toLowerCase();
+    return pool
+      .filter((row) => !manual.includes(row.id))
+      .filter((row) => needs.every((need) => row.abilities?.[need] === true))
+      .filter(
+        (row) =>
+          !needle ||
+          row.name.toLowerCase().includes(needle) ||
+          row.id.toLowerCase().includes(needle)
+      )
+      .slice(0, 8);
+  });
 
   const shipped = $derived(chain ? [chain.primary, ...(chain.fallbacks ?? [])] : []);
   const listing = $derived(listState({ pending, waitedMs, error: failed, models }));
@@ -124,8 +181,11 @@
   /* loading                                                                 */
   /* ---------------------------------------------------------------------- */
 
+  function lockKey(): string {
+    return `sieve:locks:${name}`;
+  }
+
   $effect(() => {
-    // a finished run re-ranks this seat; the list must follow
     runPulse.seen();
     const wanted = name;
     loading = true;
@@ -153,7 +213,20 @@
 
       const held: ProfileSettings | null = s.ok && s.value?.weights ? s.value : null;
       weights = held ? { ...held.weights } : { ...p.value.weights };
+      loaded = { ...weights };
+      order = Object.keys(weights);
       ship = clampShip(held ? held.ship : (p.value.ship ?? 4));
+      mode = held?.mode ?? 'auto';
+      manual = [...(held?.manual ?? [])];
+      pinned = [...(held?.pinned ?? [])];
+      removed = [...(held?.removed ?? [])];
+      needs = [...(held?.needs ?? [])];
+      try {
+        const stored = JSON.parse(localStorage.getItem(lockKey()) ?? '[]');
+        locked = Array.isArray(stored) ? stored.filter((a) => a in weights) : [];
+      } catch {
+        locked = [];
+      }
       loading = false;
 
       const axes = await api.axes(p.value.modality);
@@ -171,7 +244,19 @@
   let ticker: ReturnType<typeof setInterval> | null = null;
   let inflight = 0;
 
-  /** Ask for the list these weights would ship. Debounced by the callers. */
+  function patch() {
+    return {
+      weights,
+      ship,
+      mode,
+      manual,
+      pinned,
+      removed,
+      needs,
+      remove_axes: everyAxis.map((a: AxisRow) => a.name).filter((a: string) => !(a in weights))
+    };
+  }
+
   async function refresh(): Promise<void> {
     const wanted = name;
     const mine = ++inflight;
@@ -181,7 +266,7 @@
     const started = Date.now();
     ticker ??= setInterval(() => (waitedMs = Date.now() - started), 500);
 
-    const result = await api.preview(wanted, { weights, ship }, options);
+    const result = await api.preview(wanted, patch(), options);
     if (wanted !== name || mine !== inflight) return;
 
     if (ticker) {
@@ -194,11 +279,15 @@
       failed = explainError(result.error);
       return;
     }
-    models = result.value?.models ?? [];
-    next = result.value?.next ?? [];
+    const value = result.value;
+    models = value?.models ?? [];
+    next = value?.next ?? [];
+    blocked = value?.blocked ?? [];
+    removedRows = value?.removed ?? [];
+    missing = value?.missing ?? [];
+    pool = value?.pool ?? pool;
   }
 
-  /** A control moved: keep the page honest, then save and re-rank. */
   function touched(): void {
     said = null;
     if (timer) clearTimeout(timer);
@@ -210,11 +299,7 @@
 
   async function save(): Promise<void> {
     const wanted = name;
-    const result = await api.saveProfileSettings(
-      wanted,
-      { weights, ship, remove_axes: everyAxis.map((a: AxisRow) => a.name).filter((a: string) => !(a in weights)) },
-      options
-    );
+    const result = await api.saveProfileSettings(wanted, patch(), options);
     if (wanted !== name) return;
     if (!result.ok) said = { ok: false, text: explainError(result.error) };
   }
@@ -223,22 +308,62 @@
   /* the controls                                                            */
   /* ---------------------------------------------------------------------- */
 
+  function setMode(value: ProfileMode): void {
+    if (value === mode) return;
+    // a hand-made list starts from what ships now, rather than from nothing
+    if (value === 'manual' && manual.length === 0 && models?.length) {
+      manual = models.map((row) => row.id);
+    }
+    mode = value;
+    touched();
+  }
+
+  function toggleNeed(need: Need): void {
+    needs = needs.includes(need) ? needs.filter((n) => n !== need) : [...needs, need];
+    touched();
+  }
+
   function move(axis: string, value: number): void {
-    weights = moveAxis(weights, axis, value);
+    const hold = new Set(locked.filter((a) => a !== axis));
+    weights = renormalise(weights, axis, value, hold);
+    touched();
+  }
+
+  function exact(axis: string, percent: string): void {
+    const value = Number(percent);
+    if (!Number.isFinite(value)) return;
+    move(axis, value / 100);
+  }
+
+  function lock(axis: string): void {
+    locked = toggle(locked, axis);
+    try {
+      localStorage.setItem(lockKey(), JSON.stringify(locked));
+    } catch {
+      /* a remembered lock is a convenience, not state */
+    }
+  }
+
+  function preset(kind: Preset | 'reset'): void {
+    weights = kind === 'reset' ? { ...loaded } : applyPreset(weights, kind);
+    if (kind === 'reset') order = Object.keys(loaded);
     touched();
   }
 
   function drop(axis: string): void {
     if (Object.keys(weights).length <= 1) {
-      said = { ok: false, text: 'A profile is its weights; it needs at least one axis.' };
+      said = { ok: false, text: 'A profile needs at least one axis to score by.' };
       return;
     }
     weights = removeAxis(weights, axis);
+    order = order.filter((a) => a !== axis);
+    locked = locked.filter((a) => a !== axis);
     touched();
   }
 
   function add(axis: string): void {
     weights = addAxis(weights, axis);
+    order = [...order.filter((a) => a !== axis), axis];
     adding = false;
     touched();
   }
@@ -250,15 +375,68 @@
     touched();
   }
 
+  /* -- rows -------------------------------------------------------------- */
+
+  function pin(id: string): void {
+    pinned = toggle(pinned, id);
+    removed = removed.filter((held) => held !== id);
+    touched();
+  }
+
+  function remove(id: string): void {
+    removed = removed.includes(id) ? removed : [...removed, id];
+    pinned = pinned.filter((held) => held !== id);
+    touched();
+  }
+
+  function restore(id: string): void {
+    removed = removed.filter((held) => held !== id);
+    touched();
+  }
+
+  function addManual(id: string): void {
+    if (!manual.includes(id)) manual = [...manual, id];
+    search = '';
+    touched();
+  }
+
+  function dropManual(id: string): void {
+    manual = manual.filter((held) => held !== id);
+    touched();
+  }
+
+  function nudge(id: string, by: number): void {
+    const index = manual.indexOf(id);
+    if (index < 0) return;
+    manual = shift(manual, index, by);
+    touched();
+  }
+
+  /** the manual list as it reads: every listed id, shipping or not */
+  const manualRows = $derived(
+    manual.map((id) => {
+      const ships = (models ?? []).find((row) => row.id === id);
+      const kept = blocked.find((row) => row.id === id);
+      const gone = missing.find((row) => row.id === id);
+      return {
+        id,
+        row: ships ?? kept ?? byId[id] ?? null,
+        name: ships?.name ?? kept?.name ?? gone?.name ?? byId[id]?.name ?? id,
+        ships: Boolean(ships),
+        lacks: kept?.lacks ?? [],
+        unreachable: Boolean(gone)
+      };
+    })
+  );
+
   /* ---------------------------------------------------------------------- */
-  /* shipping                                                                */
+  /* shipping and the menu                                                   */
   /* ---------------------------------------------------------------------- */
 
   async function shipNow(): Promise<void> {
     if (button.disabled) return;
     shipping = true;
     said = null;
-    // the weights on screen have to be the weights on the box before it ships
     if (timer) clearTimeout(timer);
     await save();
     const result = await api.applyProfile(name, options);
@@ -273,10 +451,6 @@
     said = { ok: true, text: combo ? `Shipped as ${combo}.` : 'Shipped.' };
     void refresh();
   }
-
-  /* ---------------------------------------------------------------------- */
-  /* the menu                                                                */
-  /* ---------------------------------------------------------------------- */
 
   function openMenu(what: '' | 'copy' | 'rename' | 'delete'): void {
     menuOpen = false;
@@ -335,6 +509,8 @@
     }
     await goto('/profiles');
   }
+
+  const pct = (value: number): string => (value * 100).toFixed(0);
 </script>
 
 <svelte:head><title>{name} · Sieve</title></svelte:head>
@@ -346,12 +522,37 @@
   }}
 />
 
+{#snippet tags(row: Listed | null)}
+  {#if row?.abilities}
+    <span class="tags">
+      {#each NEEDS as need (need)}
+        {#if row.abilities[need] === true}<span class="tag">{NEED_TAG[need]}</span>{/if}
+      {/each}
+    </span>
+  {/if}
+{/snippet}
+
+{#snippet pinIcon(on: boolean)}
+  <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+    <path
+      d="M6 1.5h4l-.6 4 2.6 2.5v1.2H9v5.3l-1 .5-1-.5V9.2H4V8l2.6-2.5z"
+      fill={on ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      stroke-width="1.2"
+      stroke-linejoin="round"
+    />
+  </svg>
+{/snippet}
+
+<a class="back" href="/profiles">
+  <span aria-hidden="true">←</span> All profiles
+</a>
+
 {#if loading}
   <p class="muted">Loading…</p>
 {:else if gone}
   <h1 class="display name">{name}</h1>
   <p class="muted">{explainError(gone)}</p>
-  <p><a href="/profiles">Back to the profiles</a></p>
 {:else if profile}
   <header class="head">
     <div class="who">
@@ -415,89 +616,244 @@
 
   <div class="columns">
     <div class="controls">
-      <section class="panel weights">
-        <h2>Weights</h2>
-        <p class="sub">move one, the others follow</p>
+      <!-- mode -->
+      <section class="panel">
+        <h2>How the list is made</h2>
+        <div class="segment" role="radiogroup" aria-label="List mode">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={mode === 'auto'}
+            class:on={mode === 'auto'}
+            onclick={() => setMode('auto')}
+          >
+            <strong>Auto</strong>
+            <span>ranked by weights</span>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={mode === 'manual'}
+            class:on={mode === 'manual'}
+            onclick={() => setMode('manual')}
+          >
+            <strong>Manual</strong>
+            <span>picked by hand</span>
+          </button>
+        </div>
+      </section>
 
-        {#each chosen as axis (axis)}
-          <div class="axis">
-            <div class="axis-top">
-              <div class="axis-who">
-                <div class="axis-name">{labels[axis] ?? axis}</div>
-                <div class="axis-meaning">{meanings[axis] ?? ''}</div>
-              </div>
-              <div class="axis-right">
-                <span class="mono value">{weights[axis].toFixed(2)}</span>
-                <button
-                  type="button"
-                  class="drop"
-                  aria-label={`Remove ${labels[axis] ?? axis}`}
-                  onclick={() => drop(axis)}>✕</button
-                >
-              </div>
-            </div>
-            <input
-              class="slider"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              aria-label={labels[axis] ?? axis}
-              value={weights[axis]}
-              style:--share={barWidth(weights[axis])}
-              oninput={(event) => move(axis, Number(event.currentTarget.value))}
-            />
+      <!-- needs -->
+      <section class="panel">
+        <h2>Must support</h2>
+        {#if describable}
+          <p class="sub">a model ships only if its source says it can</p>
+          <div class="checks">
+            {#each NEEDS as need (need)}
+              <label class="check">
+                <input
+                  type="checkbox"
+                  checked={needs.includes(need)}
+                  onchange={() => toggleNeed(need)}
+                />
+                <span class="check-name">{NEED_LABEL[need]}</span>
+                <span class="mono check-count">{supportCount[need]}/{pool.length}</span>
+              </label>
+            {/each}
           </div>
-        {/each}
+        {:else if pool.length}
+          <p class="sub">no source describes what these models can do</p>
+        {:else}
+          <p class="sub">waiting for the list…</p>
+        {/if}
+      </section>
 
-        <div class="add">
-          {#if adding}
-            <select
-              aria-label="Add an axis"
-              onchange={(event) => {
-                const picked = event.currentTarget.value;
-                if (picked) add(picked);
-              }}
+      {#if mode === 'manual'}
+        <!-- the picker -->
+        <section class="panel">
+          <h2>Add models</h2>
+          <p class="sub">
+            {manual.length} in the list · no limit{needs.length ? ' · filtered by Must support' : ''}
+          </p>
+          <input
+            class="search"
+            type="search"
+            placeholder="Search reachable models…"
+            bind:value={search}
+            spellcheck="false"
+            autocomplete="off"
+          />
+          <ul class="picks">
+            {#each picks as row (row.id)}
+              <li>
+                <button type="button" class="pick" onclick={() => addManual(row.id)}>
+                  <span class="pick-who">
+                    <span class="pick-name">{row.name}</span>
+                    {@render tags(row)}
+                  </span>
+                  <span class="mono pick-score">{row.score.toFixed(2)}</span>
+                  <span class="plus" aria-hidden="true">+</span>
+                </button>
+              </li>
+            {:else}
+              <li class="sub none">
+                {pool.length ? 'nothing else matches' : 'waiting for the list…'}
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {:else}
+        <!-- weights -->
+        <section class="panel weights">
+          <div class="panel-head">
+            <h2>Weights</h2>
+            <span class="sub">move one, the unlocked others follow</span>
+          </div>
+
+          <div class="presets">
+            {#each PRESETS as item (item.id)}
+              <button
+                type="button"
+                class="chip"
+                title={item.says}
+                disabled={item.id !== 'even' && !(COST_AXIS in weights)}
+                onclick={() => preset(item.id)}>{item.label}</button
+              >
+            {/each}
+            <button type="button" class="chip" title="the weights this page opened with" onclick={() => preset('reset')}
+              >Reset</button
             >
-              <option value="">choose an axis…</option>
-              {#each spare as axis (axis.name)}
-                <option value={axis.name}>{axis.label || axis.name}</option>
-              {/each}
-            </select>
-            <button type="button" class="quiet" onclick={() => (adding = false)}>Cancel</button>
-          {:else}
+          </div>
+
+          {#each shown as axis (axis)}
+            <div class="axis" class:held={locked.includes(axis)}>
+              <div class="axis-top">
+                <div class="axis-who">
+                  <div class="axis-name">{labels[axis] ?? axis}</div>
+                  {#if meanings[axis]}<div class="axis-meaning">{meanings[axis]}</div>{/if}
+                </div>
+                <div class="axis-right">
+                  <label class="exact">
+                    <input
+                      class="mono"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      aria-label={`${labels[axis] ?? axis}, percent`}
+                      value={pct(weights[axis])}
+                      disabled={locked.includes(axis)}
+                      onchange={(event) => exact(axis, event.currentTarget.value)}
+                    /><span>%</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="icon"
+                    class:active={locked.includes(axis)}
+                    aria-pressed={locked.includes(axis)}
+                    title={locked.includes(axis) ? 'Unlock: let it follow the others' : 'Lock: hold this share'}
+                    aria-label={`Lock ${labels[axis] ?? axis}`}
+                    onclick={() => lock(axis)}
+                  >
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                      <rect x="3" y="7" width="10" height="7" rx="1.5" fill={locked.includes(axis) ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="1.3" />
+                      <path d={locked.includes(axis) ? 'M5.5 7V5a2.5 2.5 0 0 1 5 0v2' : 'M5.5 7V5a2.5 2.5 0 0 1 4.9-.7'} fill="none" stroke="currentColor" stroke-width="1.3" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="icon"
+                    aria-label={`Remove ${labels[axis] ?? axis}`}
+                    title="Remove this axis"
+                    onclick={() => drop(axis)}>✕</button
+                  >
+                </div>
+              </div>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                aria-label={labels[axis] ?? axis}
+                value={weights[axis]}
+                disabled={locked.includes(axis)}
+                style:--share={barWidth(weights[axis])}
+                oninput={(event) => move(axis, Number(event.currentTarget.value))}
+              />
+            </div>
+          {/each}
+
+          <div class="add">
+            {#if adding}
+              <select
+                aria-label="Add an axis"
+                onchange={(event) => {
+                  const picked = event.currentTarget.value;
+                  if (picked) add(picked);
+                }}
+              >
+                <option value="">choose an axis…</option>
+                {#each spare as axis (axis.name)}
+                  <option value={axis.name}>{axis.label || axis.name}</option>
+                {/each}
+              </select>
+              <button type="button" class="quiet" onclick={() => (adding = false)}>Cancel</button>
+            {:else}
+              <button
+                type="button"
+                class="ghost"
+                disabled={spare.length === 0}
+                title={spare.length === 0 ? 'every axis for this modality is already weighted' : ''}
+                onclick={() => (adding = true)}>+ Add an axis</button
+              >
+            {/if}
+          </div>
+        </section>
+
+        <!-- how many -->
+        <section class="panel howmany">
+          <div>
+            <h2>How many to ship</h2>
+            <p class="sub">
+              the first is used, the rest are fallbacks{pinned.length ? ` · ${pinned.length} pinned` : ''}
+            </p>
+          </div>
+          <div class="stepper">
             <button
               type="button"
-              class="ghost"
-              disabled={spare.length === 0}
-              title={spare.length === 0 ? 'every axis for this modality is already weighted' : ''}
-              onclick={() => (adding = true)}>+ Add an axis</button
+              aria-label="One fewer"
+              disabled={ship <= SHIP_MIN}
+              onclick={() => setShip(ship - 1)}>−</button
             >
-          {/if}
-        </div>
-      </section>
+            <input
+              class="display count"
+              type="number"
+              min={SHIP_MIN}
+              aria-label="How many to ship"
+              value={ship}
+              onchange={(event) => setShip(Number(event.currentTarget.value))}
+            />
+            <button type="button" aria-label="One more" onclick={() => setShip(ship + 1)}>+</button>
+          </div>
+        </section>
 
-      <section class="panel howmany">
-        <div>
-          <h2>How many to ship</h2>
-          <p class="sub">the first is used, the rest are fallbacks</p>
-        </div>
-        <div class="stepper">
-          <button
-            type="button"
-            aria-label="One fewer"
-            disabled={ship <= SHIP_MIN}
-            onclick={() => setShip(ship - 1)}>−</button
-          >
-          <span class="display count">{ship}</span>
-          <button
-            type="button"
-            aria-label="One more"
-            disabled={ship >= SHIP_MAX}
-            onclick={() => setShip(ship + 1)}>+</button
-          >
-        </div>
-      </section>
+        {#if removed.length}
+          <section class="panel">
+            <h2>Removed</h2>
+            <p class="sub">never shipped, however they score</p>
+            <ul class="plain">
+              {#each removed as id (id)}
+                {@const row = removedRows.find((r) => r.id === id) ?? byId[id]}
+                <li class="restorable">
+                  <span class="pick-name">{row?.name ?? id}</span>
+                  <button type="button" class="link" onclick={() => restore(id)}>Restore</button>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
+      {/if}
 
       <button
         type="button"
@@ -508,6 +864,7 @@
       >
     </div>
 
+    <!-- the answer -->
     <section class="panel list">
       <div class="list-head">
         <h2>What ships</h2>
@@ -516,7 +873,7 @@
         </span>
       </div>
 
-      {#if listing === 'ranking'}
+      {#if listing === 'ranking' && models === null}
         <p class="state">Ranking…</p>
       {:else if listing === 'busy'}
         <p class="state">
@@ -529,32 +886,145 @@
           {failed}
           <button type="button" class="link" onclick={() => refresh()}>Try again</button>
         </p>
-      {:else if listing === 'empty'}
-        <p class="state">Nothing ships: no model this box can reach scores on these weights.</p>
+      {:else if mode === 'manual'}
+        {#if manual.length === 0}
+          <p class="state">The list is empty. Add models from the left.</p>
+        {/if}
+        {#each manualRows as item, index (item.id)}
+          <div class="row" class:out={!item.ships} class:stale={pending}>
+            <span class="mono rank">{index + 1}</span>
+            <div class="who-cell">
+              <div class="model-name">{item.name}</div>
+              <div class="model-meta">
+                {#if item.unreachable}
+                  <span class="warn">not reachable — skipped</span>
+                {:else if item.lacks.length}
+                  <span class="warn">
+                    skipped — not known to support {item.lacks.map((n) => NEED_TAG[n]).join(', ')}
+                  </span>
+                {:else}
+                  <span class="mono model-id">{item.row?.local_ids[0] ?? item.id}</span>
+                {/if}
+                {@render tags(item.row)}
+              </div>
+            </div>
+            <span class="mono number">{item.row ? item.row.score.toFixed(2) : '—'}</span>
+            <div class="row-acts">
+              <button type="button" class="icon" aria-label="Move up" disabled={index === 0} onclick={() => nudge(item.id, -1)}>↑</button>
+              <button type="button" class="icon" aria-label="Move down" disabled={index === manual.length - 1} onclick={() => nudge(item.id, 1)}>↓</button>
+              <button type="button" class="icon" aria-label={`Remove ${item.name}`} onclick={() => dropManual(item.id)}>✕</button>
+            </div>
+          </div>
+        {/each}
+      {:else if listing === 'empty' && !blocked.length}
+        <p class="state">
+          Nothing ships: no reachable model {needs.length ? 'supports everything checked' : 'scores on these weights'}.
+        </p>
       {:else}
         {#each models ?? [] as row, index (row.id)}
-          <div class="row">
+          <div class="row" class:pinned={row.pinned} class:stale={pending}>
             <span class="mono rank">{index + 1}</span>
-            <div class="model-name">{row.name}</div>
-            <div class="mono model-id">{row.local_ids[0] ?? row.id}</div>
-            <div class="bar"><div class="fill" style:width={barWidth(row.score)}></div></div>
+            <div class="who-cell">
+              <div class="model-name">{row.name}</div>
+              <div class="model-meta">
+                <span class="mono model-id">{row.local_ids[0] ?? row.id}</span>
+                {@render tags(row)}
+              </div>
+            </div>
+            <div class="score-cell">
+              <div class="bar"><div class="fill" style:width={barWidth(row.score)}></div></div>
+              <span class="mono number">{row.score.toFixed(2)}</span>
+            </div>
+            <div class="row-acts">
+              <button
+                type="button"
+                class="icon"
+                class:active={row.pinned}
+                aria-pressed={row.pinned}
+                title={row.pinned ? 'Unpin' : 'Pin: always ship, first'}
+                aria-label={`${row.pinned ? 'Unpin' : 'Pin'} ${row.name}`}
+                onclick={() => pin(row.id)}>{@render pinIcon(Boolean(row.pinned))}</button
+              >
+              <button
+                type="button"
+                class="icon"
+                title="Remove from the list"
+                aria-label={`Remove ${row.name}`}
+                onclick={() => remove(row.id)}>✕</button
+              >
+            </div>
+          </div>
+        {/each}
+
+        {#each blocked as row (row.id)}
+          <div class="row out">
+            <span class="mono rank">·</span>
+            <div class="who-cell">
+              <div class="model-name">{row.name}</div>
+              <div class="model-meta">
+                <span class="warn">
+                  pinned, skipped — not known to support {(row.lacks ?? []).map((n) => NEED_TAG[n]).join(', ')}
+                </span>
+              </div>
+            </div>
             <span class="mono number">{row.score.toFixed(2)}</span>
+            <div class="row-acts">
+              <button type="button" class="icon active" title="Unpin" aria-label={`Unpin ${row.name}`} onclick={() => pin(row.id)}>{@render pinIcon(true)}</button>
+            </div>
+          </div>
+        {/each}
+
+        {#each missing as row (row.id)}
+          <div class="row out">
+            <span class="mono rank">·</span>
+            <div class="who-cell">
+              <div class="model-name">{row.name}</div>
+              <div class="model-meta"><span class="warn">pinned, not reachable — skipped</span></div>
+            </div>
+            <span></span>
+            <div class="row-acts">
+              <button type="button" class="icon active" title="Unpin" aria-label={`Unpin ${row.name}`} onclick={() => pin(row.id)}>{@render pinIcon(true)}</button>
+            </div>
           </div>
         {/each}
 
         {#if next.length}
-          {#each showMore ? next : next.slice(0, 2) as row, index (row.id)}
-            <div class="row after" class:first={index === 0}>
+          <div class="divider"><span>next in line</span></div>
+          {#each showMore ? next : next.slice(0, 3) as row, index (row.id)}
+            <div class="row after" class:stale={pending}>
               <span class="mono rank">{(models?.length ?? 0) + index + 1}</span>
-              <div class="model-name">{row.name}</div>
-              <div class="mono model-id">{row.local_ids[0] ?? row.id}</div>
-              <div class="bar"><div class="fill" style:width={barWidth(row.score)}></div></div>
-              <span class="mono number">{row.score.toFixed(2)}</span>
+              <div class="who-cell">
+                <div class="model-name">{row.name}</div>
+                <div class="model-meta">
+                  <span class="mono model-id">{row.local_ids[0] ?? row.id}</span>
+                  {@render tags(row)}
+                </div>
+              </div>
+              <div class="score-cell">
+                <div class="bar"><div class="fill" style:width={barWidth(row.score)}></div></div>
+                <span class="mono number">{row.score.toFixed(2)}</span>
+              </div>
+              <div class="row-acts">
+                <button
+                  type="button"
+                  class="icon"
+                  title="Pin: always ship, first"
+                  aria-label={`Pin ${row.name}`}
+                  onclick={() => pin(row.id)}>{@render pinIcon(false)}</button
+                >
+                <button
+                  type="button"
+                  class="icon"
+                  title="Remove: never ship"
+                  aria-label={`Remove ${row.name}`}
+                  onclick={() => remove(row.id)}>✕</button
+                >
+              </div>
             </div>
           {/each}
-          {#if next.length > 2}
+          {#if next.length > 3}
             <button type="button" class="more" onclick={() => (showMore = !showMore)}
-              >{showMore ? 'show fewer' : 'show more'}</button
+              >{showMore ? 'show fewer' : `show ${next.length - 3} more`}</button
             >
           {/if}
         {/if}
@@ -597,7 +1067,21 @@
     font-family: var(--mono);
   }
 
-  /* -- header ------------------------------------------------------------ */
+  /* -- back and header --------------------------------------------------- */
+
+  .back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted);
+    text-decoration: none;
+    margin-bottom: 14px;
+    padding: 4px 0;
+  }
+  .back:hover {
+    color: var(--ink);
+  }
 
   .head {
     display: flex;
@@ -705,7 +1189,8 @@
     gap: 8px;
     color: var(--muted);
   }
-  .ask input {
+  .ask input,
+  .search {
     background: var(--panel2);
     border: 1px solid var(--rule);
     border-radius: 7px;
@@ -749,7 +1234,7 @@
   .controls {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 14px;
   }
   .panel {
     border: 1px solid var(--rule);
@@ -762,10 +1247,168 @@
     font-weight: 600;
     margin: 0;
   }
+  .panel-head {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
   .sub {
     font-size: 12px;
     color: var(--muted);
-    margin: 0 0 4px;
+    margin: 2px 0 0;
+  }
+
+  /* -- mode --------------------------------------------------------------- */
+
+  .segment {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 4px;
+    margin-top: 12px;
+    border: 1px solid var(--rule);
+    border-radius: 9px;
+    background: var(--panel2);
+  }
+  .segment button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    padding: 8px 10px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .segment strong {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .segment span {
+    font-size: 11px;
+  }
+  .segment button.on {
+    background: var(--panel);
+    border-color: var(--rule);
+    color: var(--ink);
+  }
+  .segment button.on strong {
+    color: var(--accent);
+  }
+  .segment button:focus-visible,
+  .icon:focus-visible,
+  .chip:focus-visible,
+  .pick:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* -- needs -------------------------------------------------------------- */
+
+  .checks {
+    display: flex;
+    flex-direction: column;
+    margin-top: 8px;
+  }
+  .check {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid var(--rule);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .check:first-child {
+    border-top: none;
+  }
+  .check input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .check-count {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* -- picker ------------------------------------------------------------- */
+
+  .search {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 12px;
+    padding: 9px 11px;
+    font-size: 14px;
+  }
+  .picks,
+  .plain {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+  }
+  .pick {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 20px;
+    align-items: center;
+    gap: 10px;
+    background: none;
+    border: none;
+    border-top: 1px solid var(--rule);
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+    padding: 9px 2px;
+    cursor: pointer;
+  }
+  .picks li:first-child .pick {
+    border-top: none;
+  }
+  .pick:hover {
+    background: var(--panel2);
+  }
+  .pick-who {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .pick-name {
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pick-score {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .plus {
+    color: var(--accent);
+    font-size: 18px;
+    text-align: center;
+  }
+  .none {
+    padding: 8px 0;
+  }
+  .restorable {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .restorable:first-child {
+    border-top: none;
   }
 
   /* -- weights ----------------------------------------------------------- */
@@ -774,17 +1417,40 @@
     display: flex;
     flex-direction: column;
   }
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 12px 0 4px;
+  }
+  .chip {
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    background: var(--panel2);
+    color: var(--ink);
+    font: inherit;
+    font-size: 12px;
+    padding: 5px 11px;
+    cursor: pointer;
+  }
+  .chip:hover:not(:disabled) {
+    border-color: var(--accent);
+  }
+  .chip:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
   .axis {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 14px 0;
+    gap: 6px;
+    padding: 12px 0;
     border-bottom: 1px solid var(--rule);
   }
   .axis-top {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     gap: 12px;
   }
   .axis-who {
@@ -803,23 +1469,70 @@
   .axis-right {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 4px;
     flex-shrink: 0;
   }
-  .value {
-    font-size: 14px;
+  .exact {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 12px;
+    color: var(--muted);
+    margin-right: 4px;
   }
-  .drop {
+  .exact input {
+    width: 3.2em;
+    background: var(--panel2);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    color: var(--ink);
+    font-size: 13px;
+    padding: 3px 5px;
+    text-align: right;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .exact input::-webkit-inner-spin-button,
+  .exact input::-webkit-outer-spin-button,
+  .count::-webkit-inner-spin-button,
+  .count::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .exact input:disabled {
+    opacity: 0.7;
+  }
+  .axis.held .axis-name::after {
+    content: ' · locked';
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  .icon {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
     background: none;
-    border: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
     color: var(--muted);
     font: inherit;
-    font-size: 14px;
+    font-size: 13px;
     padding: 0;
     cursor: pointer;
   }
-  .drop:hover {
+  .icon:hover:not(:disabled) {
     color: var(--ink);
+    background: var(--panel2);
+  }
+  .icon.active {
+    color: var(--accent);
+  }
+  .icon:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
 
   .slider {
@@ -831,10 +1544,13 @@
     cursor: pointer;
     margin: 0;
   }
+  .slider:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
   .slider::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: 2px;
-    /* the share this axis carries, filled from the left */
     background: linear-gradient(
       to right,
       var(--accent) 0 var(--share, 0%),
@@ -876,7 +1592,7 @@
   }
 
   .add {
-    padding-top: 14px;
+    padding-top: 12px;
     display: flex;
     gap: 8px;
     align-items: center;
@@ -905,17 +1621,14 @@
     justify-content: space-between;
     gap: 12px;
   }
-  .howmany .sub {
-    margin: 2px 0 0;
-  }
   .stepper {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
   }
   .stepper button {
-    width: 36px;
-    height: 36px;
+    width: 34px;
+    height: 34px;
     border: 1px solid var(--rule);
     border-radius: 7px;
     background: var(--panel2);
@@ -929,9 +1642,21 @@
     cursor: not-allowed;
   }
   .count {
-    font-size: 28px;
-    width: 30px;
+    width: 2.4em;
+    font-size: 24px;
     text-align: center;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--ink);
+    padding: 0;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .count:hover,
+  .count:focus {
+    border-color: var(--rule);
+    outline: none;
   }
 
   .phone-ship {
@@ -978,37 +1703,85 @@
 
   .row {
     display: grid;
-    grid-template-columns: 28px minmax(0, 1fr) 176px 34px;
-    grid-template-areas:
-      'rank name bar num'
-      'rank id bar num';
-    gap: 2px 16px;
+    grid-template-columns: 24px minmax(0, 1fr) 190px auto;
+    gap: 16px;
     align-items: center;
-    padding: 14px 0;
+    padding: 12px 0;
     border-top: 1px solid var(--rule);
+    transition: opacity 120ms;
+  }
+  .row.stale {
+    opacity: 0.6;
+  }
+  .row.pinned .rank {
+    color: var(--accent);
+  }
+  .row.pinned {
+    box-shadow: inset 2px 0 0 var(--accent);
+    padding-left: 8px;
+    margin-left: -8px;
+  }
+  .row.out .model-name {
+    color: var(--muted);
+    text-decoration: line-through;
+    text-decoration-color: var(--rule);
   }
   .rank {
-    grid-area: rank;
     font-size: 13px;
     color: var(--accent);
-    align-self: center;
+  }
+  .who-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
   }
   .model-name {
-    grid-area: name;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
-    align-self: end;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .model-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 8px;
     min-width: 0;
   }
   .model-id {
-    grid-area: id;
     font-size: 11px;
     color: var(--muted);
-    align-self: start;
-    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  .warn {
+    font-size: 12px;
+    color: var(--warn);
+  }
+  .tags {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .tag {
+    font-size: 10px;
+    line-height: 1;
+    color: var(--muted);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 3px 5px;
+  }
+  .score-cell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 34px;
+    align-items: center;
+    gap: 10px;
   }
   .bar {
-    grid-area: bar;
     height: 8px;
     background: var(--panel2);
     border-radius: 4px;
@@ -1019,27 +1792,44 @@
     background: var(--accent);
   }
   .number {
-    grid-area: num;
     font-size: 12px;
     text-align: right;
   }
+  .row-acts {
+    display: flex;
+    gap: 2px;
+    justify-content: flex-end;
+  }
 
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--rule);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
   .after {
     color: var(--muted);
-    padding: 12px 0;
-  }
-  .after.first {
-    border-top: 1px dashed var(--rule);
   }
   .after .rank {
     color: var(--muted);
   }
   .after .model-name {
-    font-size: 15px;
     font-weight: 400;
   }
   .after .fill {
     background: var(--rule);
+  }
+  .after .row-acts {
+    opacity: 0.65;
+  }
+  .after:hover .row-acts {
+    opacity: 1;
   }
 
   .more {
@@ -1078,12 +1868,18 @@
     font-size: 12px;
   }
 
-  /* -- the phone --------------------------------------------------------- */
+  /* -- narrower ---------------------------------------------------------- */
+
+  @media (max-width: 1180px) {
+    .row {
+      grid-template-columns: 24px minmax(0, 1fr) 120px auto;
+    }
+  }
 
   @media (max-width: 900px) {
     .columns {
       grid-template-columns: minmax(0, 1fr);
-      gap: 16px;
+      gap: 14px;
     }
     .name {
       font-size: 26px;
@@ -1105,7 +1901,7 @@
       padding: 14px;
     }
     .slider {
-      height: 44px;
+      height: 40px;
     }
     .slider::-webkit-slider-thumb {
       width: 24px;
@@ -1116,13 +1912,14 @@
       width: 24px;
       height: 24px;
     }
+    .icon {
+      width: 36px;
+      height: 36px;
+    }
     .stepper button {
       width: 44px;
       height: 44px;
       font-size: 20px;
-    }
-    .count {
-      font-size: 30px;
     }
     .ghost {
       width: 100%;
@@ -1131,31 +1928,29 @@
       font-size: 14px;
     }
     .row {
-      grid-template-columns: 14px minmax(0, 1fr) auto;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
       grid-template-areas:
-        'rank name num'
-        'rank bar bar'
-        'rank id id';
-      gap: 5px 12px;
-      padding: 12px 0;
-      align-items: baseline;
+        'rank who acts'
+        'rank score score';
+      gap: 6px 10px;
     }
     .rank {
+      grid-area: rank;
       align-self: start;
+      padding-top: 2px;
     }
-    .model-name {
-      font-size: 15px;
-      align-self: baseline;
+    .who-cell {
+      grid-area: who;
     }
-    .bar {
-      height: 6px;
-      border-radius: 3px;
+    .row-acts {
+      grid-area: acts;
     }
-    .fill {
-      height: 6px;
+    .score-cell,
+    .row > .number {
+      grid-area: score;
     }
-    .number {
-      font-size: 13px;
+    .row > .number {
+      text-align: left;
     }
     .history li {
       grid-template-columns: minmax(0, 1fr);

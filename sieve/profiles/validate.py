@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from sieve.contracts import SHIP_MAX, SHIP_MIN, Profile
+from sieve.contracts import SHIP_MIN, Profile
 
 WEIGHT_TOLERANCE = 0.001
 
@@ -44,5 +44,7 @@ def validate_profile(
                 f"-- add data/axes/{profile.modality}/{axis}.yaml or fix the name"
             )
 
-    if not SHIP_MIN <= profile.ship <= SHIP_MAX:
-        yield f"{where}: ship must be between {SHIP_MIN} and {SHIP_MAX}, got {profile.ship}"
+    if profile.ship < SHIP_MIN:
+        yield f"{where}: ship must be at least {SHIP_MIN}, got {profile.ship}"
+    if profile.mode == "manual" and not profile.manual:
+        yield f"{where}: manual mode with an empty list ships nothing"

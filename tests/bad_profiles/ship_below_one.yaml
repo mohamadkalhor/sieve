@@ -1,0 +1,8 @@
+# A list of none is not a list: `ship` is at least one, and a file saying
+# otherwise must be refused rather than quietly clamped. There is no upper bound.
+name: bad_ship
+modality: llm
+purpose: ships no model at all
+weights:
+  agentic_coding: 1.0
+ship: 0

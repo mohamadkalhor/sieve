@@ -206,6 +206,11 @@ export interface Profile {
   purpose: string;
   weights: Record<string, number>;
   ship?: number;
+  mode?: "auto" | "manual";
+  manual?: string[];
+  pinned?: string[];
+  removed?: string[];
+  needs?: ("vision" | "reasoning" | "tools" | "structured_output")[];
 }
 
 

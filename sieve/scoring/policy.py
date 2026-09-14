@@ -21,9 +21,11 @@ asking why the gateway did not move.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from datetime import datetime
 
-from sieve.contracts import Chain, Decision, Profile, Rank, Ranking
+from sieve.contracts import Capability, Chain, Decision, Profile, Rank, Ranking
+from sieve.scoring.select import select
 
 
 def shipped(ranking: Ranking, ship: int) -> list[Rank]:
@@ -71,10 +73,19 @@ def chain_from(
 
 
 def decide(
-    profile: Profile, incumbent: Chain | None, ranking: Ranking, now: datetime
+    profile: Profile,
+    incumbent: Chain | None,
+    ranking: Ranking,
+    now: datetime,
+    capabilities: Mapping[str, Capability] | None = None,
 ) -> tuple[Chain | None, Decision | None]:
-    """The list to ship, and whether it differs from the one last shipped."""
-    rows = shipped(ranking, profile.ship)
+    """The list to ship, and whether it differs from the one last shipped.
+
+    The list is `select`'s: pins, removals, a manual list and capability needs
+    are applied here exactly as the page previews them. Pass `capabilities`
+    whenever the profile has needs, or every need reads as unknown.
+    """
+    rows = select(ranking.ranks, profile, capabilities).rows
     if not rows:
         reason = "hold: nothing reachable ranks for this profile"
         return incumbent, _decision(profile, "hold", reason, None, None)

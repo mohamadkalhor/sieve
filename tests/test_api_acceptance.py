@@ -198,8 +198,8 @@ def test_the_settings_are_the_weights_and_how_many_to_ship(workspace: Config) ->
     headers = {"Authorization": "Bearer s3cret"}
     with TestClient(app) as client:
         settings = client.get("/v1/profiles/judge/settings").json()
-        assert set(settings) == {"ship", "weights"}, "a profile is its weights, and a length"
-        assert 1 <= settings["ship"] <= 10
+        assert set(settings) == {"ship", "weights", "mode", "manual", "pinned", "removed", "needs"}
+        assert settings["ship"] >= 1 and settings["mode"] == "auto"
         assert all(isinstance(w, float) for w in settings["weights"].values())
 
         changed = client.put("/v1/profiles/judge/settings", json={"ship": 3}, headers=headers)
@@ -238,7 +238,7 @@ def test_the_weights_move_the_list_and_the_preview_says_what_would_ship(
         body = preview.json()
         assert body["ship"] == 2 and len(body["models"]) <= 2
         first = body["models"][0]
-        assert set(first) == {"id", "name", "local_ids", "score"}
+        assert set(first) == {"id", "name", "local_ids", "score", "abilities", "lacks", "pinned"}
         assert first["local_ids"], "only a model this box can reach may ship"
         assert first["name"] and first["name"] != first["id"], "the page shows a name"
         assert len(body["next"]) <= 10
@@ -304,7 +304,15 @@ def test_the_retired_profile_keys_are_accepted_and_named(workspace: Config) -> N
     headers = {"Authorization": "Bearer s3cret"}
     with TestClient(app) as client:
         held = client.get("/v1/profiles/judge").json()
-        assert set(held) == {"name", "modality", "purpose", "weights", "ship"}
+        assert set(held) == {"name", "modality", "purpose"} | {
+            "ship",
+            "weights",
+            "mode",
+            "manual",
+            "pinned",
+            "removed",
+            "needs",
+        }
 
         response = client.put(
             "/v1/profiles/judge",

@@ -436,7 +436,10 @@ def decide_chain(
     policy_mod = deps.policy
     if policy_mod is None:
         return incumbent, None
-    chain, decision = policy_mod.decide(profile, incumbent, ranking, at)
+    from sieve.profiles import control
+
+    caps = control.capability_map(store, profile.modality) if profile.needs else None
+    chain, decision = policy_mod.decide(profile, incumbent, ranking, at, caps)
     if decision is not None and not decision.actor:
         decision = decision.model_copy(update={"actor": actor})
     return chain, decision

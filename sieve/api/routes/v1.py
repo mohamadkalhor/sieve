@@ -717,13 +717,23 @@ def get_experience(request: Request, name: str, _: Read = None) -> Any:
 NEXT_UP = 10
 
 
-def listed(rank: Any, names: dict[str, str]) -> dict[str, Any]:
-    """One row of a shipped list, as a page draws it."""
+def listed(
+    rank: Any,
+    names: dict[str, str],
+    caps: dict[str, Any] | None = None,
+    needs: list[str] | None = None,
+) -> dict[str, Any]:
+    """One row of a list, as a page draws it: who, how it scores, what it can do."""
+    from sieve.scoring.select import abilities, lacks
+
+    capability = (caps or {}).get(rank.model_id)
     return {
         "id": rank.model_id,
         "name": names.get(rank.model_id) or rank.model_id,
         "local_ids": rank.local_ids,
         "score": rank.final,
+        "abilities": abilities(capability),
+        "lacks": lacks(capability, needs or []),
     }
 
 
@@ -731,11 +741,13 @@ def listed(rank: Any, names: dict[str, str]) -> dict[str, Any]:
 def preview(
     request: Request, name: str, body: Annotated[dict[str, Any], Body()], _: Read = None
 ) -> Any:
-    """What these weights would ship, without shipping it.
+    """What these settings would ship, without shipping it.
 
-    The answer is the list itself -- the top `ship` reachable models, in score
-    order -- and the ten behind it, so a page can show what is next in line
-    without asking twice. Meant to be called on every slider move: it reweighs
+    The answer is the list itself -- as `sieve.scoring.select` makes it, with
+    pins, removals, a manual list and needs applied -- the ten behind it, the
+    removed rows (so they can be put back), and `pool`: every reachable model
+    of this modality with its score and abilities, which is what a hand-made
+    list is picked from. Meant to be called on every slider move: it reweighs
     the axis values the stored ranking already holds rather than rebuilding the
     observation table, and only a profile with no stored ranking at all pays
     for a full one.
@@ -757,16 +769,34 @@ def preview(
             cfg, store, candidate, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
         )
         store.put_ranking(ranking, owner_id)
+    from sieve.scoring.select import behind, select
+
     ranking = control.rerank_cached(ranking, proposed.weights)
     names = store.model_names(found.modality)
-    ships = control.shipped_rows(ranking.ranks, proposed.ship)
-    cut = len(ships)
-    after = [r for r in ranking.ranks if r.position > cut][:NEXT_UP]
+    caps = control.capability_map(store, found.modality)
+    needs = [str(need) for need in proposed.needs]
+    chosen = select(ranking.ranks, proposed, caps)
+    pinned = set(proposed.pinned) if proposed.mode == "auto" else set()
+    reachable = [r for r in ranking.ranks if r.position > 0]
+    by_id = {r.model_id: r for r in reachable}
+
+    def row(rank: Any) -> dict[str, Any]:
+        return {**listed(rank, names, caps, needs), "pinned": rank.model_id in pinned}
+
+    # a listed or pinned model that a need keeps out is still the person's
+    # choice, so it is shown in place and marked, not silently dropped
+    held = set(proposed.manual if proposed.mode == "manual" else proposed.pinned)
     return {
         "profile": name,
+        "mode": proposed.mode,
         "ship": proposed.ship,
-        "models": [listed(r, names) for r in ships],
-        "next": [listed(r, names) for r in after],
+        "models": [row(r) for r in chosen.rows],
+        "blocked": [row(r) for r in chosen.failed_needs if r.model_id in held],
+        "next": [row(r) for r in behind(ranking.ranks, proposed, chosen, caps)[:NEXT_UP]],
+        "removed": [row(by_id[m]) for m in proposed.removed if m in by_id],
+        "missing": [{"id": m, "name": names.get(m) or m} for m in chosen.missing],
+        "failed_needs": len({r.model_id for r in chosen.failed_needs}),
+        "pool": [row(r) for r in reachable],
         "settings": proposed,
         "computed_at": ranking.computed_at,
         "warnings": warnings,
@@ -878,7 +908,7 @@ def apply_profile(
     selected = control.settings(store, name, owner_id)
     if found is None or selected is None:
         return error(404, "not_found", f"no profile {name!r}")
-    found = found.model_copy(update={"weights": dict(selected.weights), "ship": selected.ship})
+    found = control.tuned(found, selected)
     ranking = rank_profile(
         cfg, store, found, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
     )
@@ -940,7 +970,11 @@ def evaluate(request: Request, name: str, authorization: Auth = None, _: Read = 
     chain = decision = None
     if policy is not None:
         chain, decision = policy.decide(
-            profile, store.chain(name, owner_id), ranking, datetime.now(UTC)
+            profile,
+            store.chain(name, owner_id),
+            ranking,
+            datetime.now(UTC),
+            control.capability_map(store, profile.modality) if profile.needs else None,
         )
         if decision is not None:
             decision = decision.model_copy(update={"actor": actor_for(request, authorization)})

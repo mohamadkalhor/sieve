@@ -331,9 +331,25 @@ export interface ConnectorProbe {
  * auto-apply switch all used to live here and all of them changed the answer
  * without moving a slider.
  */
+export type ProfileMode = 'auto' | 'manual';
+
+/** What a shipped model can be required to do. */
+export type Need = 'vision' | 'reasoning' | 'tools' | 'structured_output';
+
+export const NEEDS: Need[] = ['vision', 'reasoning', 'tools', 'structured_output'];
+
 export interface ProfileSettings {
   ship: number;
   weights: Record<string, number>;
+  /** auto: ranked by the weights; manual: exactly `manual`, in order */
+  mode?: ProfileMode;
+  manual?: string[];
+  /** auto: always ship these, first */
+  pinned?: string[];
+  /** auto: never ship these */
+  removed?: string[];
+  /** both: a model ships only if it is known to do each */
+  needs?: Need[];
   /** keys the server accepted and ignored, one sentence each */
   warnings?: string[];
 }
@@ -343,6 +359,11 @@ export interface SettingsPatch {
   ship?: number;
   weights?: Record<string, number | null>;
   remove_axes?: string[];
+  mode?: ProfileMode;
+  manual?: string[];
+  pinned?: string[];
+  removed?: string[];
+  needs?: Need[];
 }
 
 /** One model on a list, as a page draws it. */
@@ -351,6 +372,11 @@ export interface Listed {
   name: string;
   local_ids: string[];
   score: number;
+  /** true, false, or null when no source said */
+  abilities?: Partial<Record<Need, boolean | null>>;
+  /** the profile's needs this model is not known to meet */
+  lacks?: Need[];
+  pinned?: boolean;
 }
 
 /**
@@ -361,9 +387,18 @@ export interface Listed {
  */
 export interface PreviewResult {
   profile: string;
+  mode?: ProfileMode;
   ship: number;
   models: Listed[];
   next: Listed[];
+  /** pinned or listed models a need keeps out, shown in place */
+  blocked?: Listed[];
+  removed?: Listed[];
+  /** pinned or listed ids nothing reachable serves */
+  missing?: { id: string; name: string }[];
+  failed_needs?: number;
+  /** every reachable model of this modality, for picking by hand */
+  pool?: Listed[];
   settings: ProfileSettings;
   computed_at: string;
   warnings: string[];
