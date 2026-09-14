@@ -53,14 +53,22 @@ class ConfigBundle(StrictModel):
     connectors: list[ConnectorBundle] = Field(default_factory=list)
 
 
-def export_config(store: Store) -> dict[str, Any]:
+def export_config(store: Store, owner_id: str | None = None) -> dict[str, Any]:
+    """One owner's configuration, and nothing anybody else made.
+
+    Unscoped, this was the widest leak in the API: a single GET handed back
+    every person's profiles, their connectors' base URLs and the names of the
+    environment variables holding their tokens.
+    """
     profiles: list[dict[str, Any]] = []
-    for profile in control.profiles(store):
-        settings = control.settings(store, profile.name) or control.default_settings(profile)
+    for profile in control.profiles(store, owner_id, shared=False):
+        settings = control.settings(store, profile.name, owner_id) or control.default_settings(
+            profile
+        )
         statuses = {
             model_id: {"status": status, "pin_order": pin_order}
             for model_id, (status, pin_order) in sorted(
-                control.statuses(store, profile.name).items()
+                control.statuses(store, profile.name, owner_id).items()
             )
         }
         profiles.append(
@@ -83,14 +91,14 @@ def export_config(store: Store) -> dict[str, Any]:
             "write": item.write,
             "poll_minutes": item.poll_minutes,
         }
-        for item in store.connectors()
+        for item in store.connectors(owner_id)
     ]
     return {
         "version": VERSION,
         "exported_at": datetime.now(UTC).isoformat(),
         "profiles": profiles,
-        "axes": [item.model_dump(mode="json") for item in axis_control.axes(store)],
-        "cost_multipliers": control.multipliers(store),
+        "axes": [item.model_dump(mode="json") for item in axis_control.axes(store, None, owner_id)],
+        "cost_multipliers": control.multipliers(store, owner_id),
         "connectors": connectors,
     }
 
@@ -106,7 +114,9 @@ def _validate_statuses(profile: ProfileBundle) -> None:
             raise ValueError(f"profile {profile.name} model {model_id}: bad pin_order")
 
 
-def validate_config(raw: dict[str, Any], store: Store, source_names: set[str]) -> ConfigBundle:
+def validate_config(
+    raw: dict[str, Any], store: Store, source_names: set[str], owner_id: str | None = None
+) -> ConfigBundle:
     try:
         bundle = ConfigBundle.model_validate(raw)
     except ValidationError as exc:
@@ -121,7 +131,9 @@ def validate_config(raw: dict[str, Any], store: Store, source_names: set[str]) -
         raise ValueError("duplicate connector name")
 
     proposed_axes = {(axis.modality, axis.name) for axis in bundle.axes}
-    held_axes = {(axis.modality, axis.name): axis for axis in axis_control.axes(store)}
+    held_axes = {
+        (axis.modality, axis.name): axis for axis in axis_control.axes(store, None, owner_id)
+    }
     current_axes = set(held_axes)
     for axis in bundle.axes:
         if not _NAME.match(axis.name):
@@ -209,11 +221,22 @@ def desired_config(current: dict[str, Any], incoming: ConfigBundle, prune: bool)
 
 
 def apply_config(
-    store: Store, target: dict[str, Any], changes: list[dict[str, Any]], actor: str
+    store: Store,
+    target: dict[str, Any],
+    changes: list[dict[str, Any]],
+    actor: str,
+    owner_id: str | None = None,
 ) -> None:
+    """Write a bundle back, inside one owner's half of the store.
+
+    Every statement here is scoped, and the pruning ones especially: an import
+    that deleted "the profiles not in this bundle" would have deleted everybody
+    else's, because a bundle only ever describes what its owner can see.
+    """
     stamp = datetime.now(UTC).isoformat()
-    current_profiles = {p.name: p for p in control.profiles(store)}
-    current_connectors = {c.name: c for c in store.connectors()}
+    current_profiles = {p.name: p for p in control.profiles(store, owner_id, shared=False)}
+    current_connectors = {c.name: c for c in store.connectors(owner_id)}
+    owned = "IFNULL(owner_id,'') = IFNULL(?,'')"
     with store.tx() as db:
         wanted_profiles: set[str] = set()
         for item in target["profiles"]:
@@ -235,8 +258,8 @@ def apply_config(
                 }
             )
             db.execute(
-                "INSERT INTO profiles(name,modality,json,settings,created_at,updated_at) "
-                "VALUES(?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET "
+                "INSERT INTO profiles(name,modality,json,settings,owner_id,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?) ON CONFLICT(IFNULL(owner_id,''),name) DO UPDATE SET "
                 "modality=excluded.modality,json=excluded.json,"
                 "settings=excluded.settings,updated_at=excluded.updated_at",
                 (
@@ -244,20 +267,25 @@ def apply_config(
                     profile.modality,
                     profile.model_dump_json(),
                     json.dumps(item["settings"]),
+                    owner_id,
                     stamp,
                     stamp,
                 ),
             )
-            db.execute("DELETE FROM profile_models WHERE profile=?", (profile.name,))
+            db.execute(
+                f"DELETE FROM profile_models WHERE profile=? AND {owned}",
+                (profile.name, owner_id),
+            )
             for model_id, state in item["model_status"].items():
                 db.execute(
-                    "INSERT INTO profile_models VALUES(?,?,?,?)",
-                    (profile.name, model_id, state["status"], state.get("pin_order")),
+                    "INSERT INTO profile_models(profile,model_id,status,pin_order,owner_id)"
+                    " VALUES(?,?,?,?,?)",
+                    (profile.name, model_id, state["status"], state.get("pin_order"), owner_id),
                 )
         if target.get("_prune"):
             db.executemany(
-                "DELETE FROM profiles WHERE name=?",
-                [(name,) for name in set(current_profiles) - wanted_profiles],
+                f"DELETE FROM profiles WHERE name=? AND {owned}",
+                [(name, owner_id) for name in set(current_profiles) - wanted_profiles],
             )
 
         wanted_axes: set[tuple[str, str]] = set()
@@ -265,36 +293,43 @@ def apply_config(
             axis = Axis.model_validate(item)
             wanted_axes.add((axis.modality, axis.name))
             builtin = db.execute(
-                "SELECT builtin FROM axes WHERE modality=? AND name=?", (axis.modality, axis.name)
+                f"SELECT builtin FROM axes WHERE modality=? AND name=? AND {owned}",
+                (axis.modality, axis.name, owner_id),
             ).fetchone()
             db.execute(
-                "INSERT INTO axes(name,modality,json,builtin,created_at,updated_at) "
-                "VALUES(?,?,?,?,?,?) ON CONFLICT(modality,name) DO UPDATE SET "
+                "INSERT INTO axes(name,modality,json,builtin,owner_id,visibility,"
+                "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(IFNULL(owner_id,''),modality,name) DO UPDATE SET "
                 "json=excluded.json,updated_at=excluded.updated_at",
                 (
                     axis.name,
                     axis.modality,
                     axis.model_dump_json(),
                     builtin["builtin"] if builtin else 0,
+                    owner_id,
+                    "shared" if owner_id is None else "private",
                     stamp,
                     stamp,
                 ),
             )
         if target.get("_prune"):
-            for row in db.execute("SELECT modality,name FROM axes").fetchall():
+            for row in db.execute(
+                f"SELECT modality,name FROM axes WHERE {owned}", (owner_id,)
+            ).fetchall():
                 if (row["modality"], row["name"]) not in wanted_axes:
                     db.execute(
-                        "DELETE FROM axes WHERE modality=? AND name=?",
-                        (row["modality"], row["name"]),
+                        f"DELETE FROM axes WHERE modality=? AND name=? AND {owned}",
+                        (row["modality"], row["name"], owner_id),
                     )
 
         if target.get("_prune"):
-            db.execute("DELETE FROM cost_multipliers")
+            db.execute(f"DELETE FROM cost_multipliers WHERE {owned}", (owner_id,))
         for prefix, value in target["cost_multipliers"].items():
             db.execute(
-                "INSERT INTO cost_multipliers VALUES(?,?) ON CONFLICT(prefix) "
+                "INSERT INTO cost_multipliers(prefix,multiplier,owner_id) VALUES(?,?,?) "
+                "ON CONFLICT(IFNULL(owner_id,''),prefix) "
                 "DO UPDATE SET multiplier=excluded.multiplier",
-                (prefix, value),
+                (prefix, value, owner_id),
             )
 
         wanted_connectors: set[str] = set()
@@ -305,18 +340,21 @@ def apply_config(
                 connector = old_connector.model_copy(update=item)
             else:
                 connector = Connector(
-                    id=uuid.uuid4().hex[:12], created_at=datetime.now(UTC), **item
+                    id=uuid.uuid4().hex[:12],
+                    created_at=datetime.now(UTC),
+                    owner_id=owner_id,
+                    **item,
                 )
             db.execute(
                 "INSERT OR REPLACE INTO connectors(id,name,kind,base_url,token_env,read,write,"
-                "poll_minutes,last_pull_at,last_push_at,last_error,options,created_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "poll_minutes,last_pull_at,last_push_at,last_error,options,created_at,owner_id) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 Store._connector_row(connector),
             )
         if target.get("_prune"):
             db.executemany(
-                "DELETE FROM connectors WHERE name=?",
-                [(name,) for name in set(current_connectors) - wanted_connectors],
+                f"DELETE FROM connectors WHERE name=? AND {owned}",
+                [(name, owner_id) for name in set(current_connectors) - wanted_connectors],
             )
 
         for change in changes:

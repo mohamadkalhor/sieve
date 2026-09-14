@@ -95,19 +95,24 @@ def from_toml(cfg: Config) -> list[Connector]:
     return [c for c in made if c.kind in KINDS]
 
 
-def seed_from_toml(cfg: Config, store: Store) -> list[Connector]:
+def seed_from_toml(cfg: Config, store: Store, owner_id: str | None = None) -> list[Connector]:
     """Seed once, on an empty table. Returns what it created, usually nothing.
 
     Cheap enough to call on every start and at the top of every loop: one
     `SELECT` when the table already has rows, which after the first start it
     always does.
+
+    The TOML describes the box's own router, so what it seeds belongs to the
+    gate owner -- `owner_id` here is theirs. A member never gets one: they add
+    their own connector on the Connectors page, and the check is scoped so an
+    empty seat does not re-seed the owner's gateway under their name.
     """
     if store.has_connectors():
         return []
     made: list[Connector] = []
     for connector in from_toml(cfg):
         try:
-            store.add_connector(connector)
+            store.add_connector(connector.model_copy(update={"owner_id": owner_id}))
         except sqlite3.IntegrityError:
             # Another process seeded between the check and the insert. Its row
             # is as good as this one; there is nothing to repair.

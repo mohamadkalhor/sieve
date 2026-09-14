@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
 
-from sieve.api.auth import Token
+from sieve.api.auth import Token, owner_of_request
 from sieve.api.auth import require as require_scope
 from sieve.api.routes.v1 import Read, config_of, error, store_of
 from sieve.axes import control as axis_control
@@ -28,18 +28,19 @@ def _indexed(document: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _ready(request: Request) -> tuple[Any, Any]:
+def _ready(request: Request) -> tuple[Any, Any, str | None]:
     cfg, store = config_of(request), store_of(request)
-    control.seed(store, cfg.profiles_dir)
+    owner_id = owner_of_request(request)
+    control.seed(store, cfg.profiles_dir, owner_id)
     axis_control.seed(store, cfg.axes_dir)
-    seed_from_toml(cfg, store)
-    return cfg, store
+    seed_from_toml(cfg, store, owner_id)
+    return cfg, store, owner_id
 
 
 @router.get("/config")
 def get_config(request: Request, _: Read = None) -> dict[str, Any]:
-    _, store = _ready(request)
-    return export_config(store)
+    _, store, owner_id = _ready(request)
+    return export_config(store, owner_id)
 
 
 @router.put("/config")
@@ -50,10 +51,10 @@ def put_config(
     dry_run: bool = False,
     prune: bool = False,
 ) -> Any:
-    cfg, store = _ready(request)
-    before = export_config(store)
+    cfg, store, owner_id = _ready(request)
+    before = export_config(store, owner_id)
     try:
-        incoming = validate_config(body, store, set(cfg.sources))
+        incoming = validate_config(body, store, set(cfg.sources), owner_id)
         target = desired_config(before, incoming, prune)
     except ValueError as exc:
         return error(400, "bad_config", str(exc))
@@ -61,7 +62,7 @@ def put_config(
     if dry_run:
         return changes
     target["_prune"] = prune
-    apply_config(store, target, changes, token.name)
+    apply_config(store, target, changes, token.name, owner_id)
     return {"diff": changes, "applied": len(changes)}
 
 

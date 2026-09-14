@@ -25,6 +25,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 import httpx
 from fastapi import Header, HTTPException, Request
@@ -54,6 +55,16 @@ _GATE_TTL = 60.0
 _GATE_MISS_TTL = 10.0
 _gate_cache: dict[str, tuple[float, Token | None]] = {}
 _gate_lock = threading.Lock()
+
+
+def _store_for(request: Request) -> Any:
+    """The app's store, if this app has one. Auth must not build one itself."""
+    return getattr(request.app.state, "store", None)
+
+
+def _profiles_dir(request: Request) -> Any:
+    cfg = getattr(request.app.state, "config", None)
+    return getattr(cfg, "profiles_dir", None) if cfg else None
 
 
 def gate_identity(request: Request) -> Token | None:
@@ -88,12 +99,15 @@ def gate_identity(request: Request) -> Token | None:
         )
         if reply.status_code == 200:
             body = reply.json()
-            scopes = ROLE_SCOPES.get(str(body.get("role", "")), frozenset())
+            role = str(body.get("role", ""))
+            scopes = ROLE_SCOPES.get(role, frozenset())
+            email = str(body.get("email") or "")
             if scopes:
                 token = Token(
-                    name=f"gate:{body.get('email') or body.get('user_id')}",
+                    name=f"gate:{email or body.get('user_id')}",
                     scopes=scopes,
                     sha256=key,
+                    owner_id=_resolve_owner(request, email, role, str(body.get("user_id") or "")),
                 )
     except Exception:
         # A gate that is down, slow or confused is not a gate that said yes.
@@ -104,6 +118,27 @@ def gate_identity(request: Request) -> Token | None:
             _gate_cache.clear()
         _gate_cache[key] = (now + (_GATE_TTL if token else _GATE_MISS_TTL), token)
     return token
+
+
+def _resolve_owner(request: Request, email: str, role: str, gate_id: str) -> str | None:
+    """Turn what gate said into the local `users.id` that owns this call's rows.
+
+    First sign-in is where the work happens: the configured owner adopts every
+    unowned row, anybody else is given private copies of the seed profiles. Both
+    are in `sieve.owners`, because they are facts about the data, not about HTTP.
+
+    A store that is not there yet (an app built without a lifespan) resolves to
+    None, which is the single-user behaviour -- never somebody else's id.
+    """
+    store = _store_for(request)
+    if store is None or not email:
+        return None
+    try:
+        from sieve import owners
+
+        return owners.sign_in(store, email, role, _profiles_dir(request), gate_id or None).id
+    except Exception:
+        return None
 
 
 @dataclass(frozen=True)
@@ -177,14 +212,63 @@ def forbidden(message: str) -> HTTPException:
     )
 
 
+def resolve_bearer(request: Request, secret: str) -> Token | None:
+    """The identity a bearer secret carries, from either place it can live.
+
+    `SIEVE_TOKENS` first: it is the box's own configuration, it authenticates as
+    the gate owner, and that is what keeps every script written before this card
+    working unchanged. Then the `tokens` table, where a token authenticates as
+    whoever minted it.
+    """
+    configured = Tokens.from_env().lookup(secret)
+    if configured is not None:
+        return Token(
+            name=configured.name,
+            scopes=configured.scopes,
+            sha256=configured.sha256,
+            owner_id=owner_identity(request),
+        )
+    store = _store_for(request)
+    if store is None:
+        return None
+    try:
+        from sieve import tokens as script_tokens
+
+        minted = script_tokens.lookup(store, secret)
+    except Exception:
+        return None
+    if minted is None:
+        return None
+    return Token(
+        name=minted.name, scopes=minted.scopes, sha256=minted.sha256, owner_id=minted.owner_id
+    )
+
+
+def owner_identity(request: Request) -> str | None:
+    """The gate owner's local id, for a call that came in on a configured token.
+
+    A script has no session, so it cannot sign anybody in; it inherits the
+    owner. On a box where the owner has never signed in there is no id yet, and
+    None is right: every row is unowned, so every row matches.
+    """
+    store = _store_for(request)
+    if store is None:
+        return None
+    try:
+        from sieve import owners
+
+        found = owners.owner(store)
+    except Exception:
+        return None
+    return found.id if found else None
+
+
 def actor_for(request: Request, authorization: str | None) -> str:
     """The actor recorded on every decision this call produces."""
     secret = bearer(authorization)
     if secret:
-        token = Tokens.from_env().lookup(secret)
-        if token:
-            return token.name
-        return "anonymous"
+        token = resolve_bearer(request, secret)
+        return token.name if token else "anonymous"
     signed_in = gate_identity(request)
     return signed_in.name if signed_in else "anonymous"
 
@@ -202,38 +286,69 @@ def require(scope: str):  # type: ignore[no-untyped-def]
             if not signed_in.allows(scope):
                 raise forbidden(f"your role does not allow {scope!r}")
             request.state.actor = signed_in.name
+            request.state.owner_id = signed_in.owner_id
             return signed_in
-        token = Tokens.from_env().lookup(secret)
+        token = resolve_bearer(request, secret)
         if token is None:
             raise unauthorized("unknown token")
         if not token.allows(scope):
             raise forbidden(f"token {token.name!r} does not hold the {scope!r} scope")
         request.state.actor = token.name
+        request.state.owner_id = token.owner_id
         return token
 
     return dependency
 
 
 def require_read():  # type: ignore[no-untyped-def]
-    """Reads are open unless the server is configured to demand a token."""
+    """Reads are open unless the server is configured to demand a token.
+
+    Open reads still resolve an identity when one is on the request, because
+    "no token required" must not mean "everybody's rows": an anonymous read on
+    a box with gate configured is answered as the owner, which is what it was
+    before several people existed.
+    """
 
     def dependency(
         request: Request, authorization: str | None = Header(default=None)
     ) -> Token | None:
         cfg = getattr(request.app.state, "config", None)
-        if cfg is None or not cfg.server.read_token:
-            return None
         secret = bearer(authorization)
+        if cfg is None or not cfg.server.read_token:
+            if secret:
+                found = resolve_bearer(request, secret)
+                if found is not None:
+                    request.state.actor = found.name
+                    request.state.owner_id = found.owner_id
+                    return found
+            signed_in = gate_identity(request)
+            if signed_in is not None:
+                request.state.actor = signed_in.name
+                request.state.owner_id = signed_in.owner_id
+                return signed_in
+            request.state.owner_id = owner_identity(request)
+            return None
         if not secret:
             signed_in = gate_identity(request)
             if signed_in is not None and signed_in.allows("read"):
                 request.state.actor = signed_in.name
+                request.state.owner_id = signed_in.owner_id
                 return signed_in
             raise unauthorized("this server requires a token for reads")
-        token = Tokens.from_env().lookup(secret)
+        token = resolve_bearer(request, secret)
         if token is None or not token.allows("read"):
             raise unauthorized("unknown token or missing 'read' scope")
         request.state.actor = token.name
+        request.state.owner_id = token.owner_id
         return token
 
     return dependency
+
+
+def owner_of_request(request: Request) -> str | None:
+    """Whose rows this call sees, once a dependency has run.
+
+    One place, so a route never has to know whether the identity came from a
+    cookie, a configured token or a minted one.
+    """
+    return getattr(request.state, "owner_id", None)
