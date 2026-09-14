@@ -1,12 +1,12 @@
-# `price:per_task` is derived by the engine from the published price and the
-# profile's shape, so a reader paying for 200k input tokens and a chat paying
-# for 2k do not share one cost ranking. neg_log: the gap from $0.10 to $1.00
+# `price:per_task` is derived by the engine from the published price and a
+# fixed shape per modality (`sieve.engine.SHAPES`): a rate cannot be ranked
+# against a benchmark score until something says how much of it one task uses. neg_log: the gap from $0.10 to $1.00
 # matters far more than the gap from $10 to $11.
 
 name: cost
 modality: llm
 label: "Cost"
-describes: "what one task costs at this profile's shape"
+describes: "what one task of this kind costs to run"
 fields:
   - {source: price, field: per_task, weight: 1.0, transform: neg_log}
 missing: renormalise

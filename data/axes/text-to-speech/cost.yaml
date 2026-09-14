@@ -5,7 +5,7 @@
 name: cost
 modality: text-to-speech
 label: "Cost"
-describes: "what one task costs at this profile's shape (per 1M characters)"
+describes: "what one task of this kind costs to run (per 1M characters)"
 fields:
   - {source: price, field: per_task, weight: 1.0, transform: neg_log}
 missing: renormalise

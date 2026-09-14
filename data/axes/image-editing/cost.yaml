@@ -5,7 +5,7 @@
 name: cost
 modality: image-editing
 label: "Cost"
-describes: "what one task costs at this profile's shape (per image)"
+describes: "what one task of this kind costs to run (per image)"
 fields:
   - {source: price, field: per_task, weight: 1.0, transform: neg_log}
 missing: renormalise

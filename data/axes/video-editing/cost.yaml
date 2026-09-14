@@ -5,7 +5,7 @@
 name: cost
 modality: video-editing
 label: "Cost"
-describes: "what one task costs at this profile's shape (per second of video)"
+describes: "what one task of this kind costs to run (per second of video)"
 fields:
   - {source: price, field: per_task, weight: 1.0, transform: neg_log}
 missing: renormalise
