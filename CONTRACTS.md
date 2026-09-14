@@ -135,34 +135,30 @@ class Axis(BaseModel):
     min_coverage: float = 0.5
     higher_is_better: bool = True
 
-class Shape(BaseModel):     # per profile; only the keys the modality uses
-    in_tokens: int | None = None; out_tokens: int | None = None; cached: float | None = None
-    images: int | None = None; seconds: float | None = None; chars: int | None = None
-    megapixels: float | None = None # output area, where a model is priced per megapixel;
-                            # a 1024x1024 image is 1.05
-    requests: int | None = None     # calls one task makes, where a model is priced per
-                            # request. One, unless a task is a batch.
-                            # The YAML spells the token fields `in` and `out`; both
-                            # spellings load, and the JSON names stay in_tokens/out_tokens.
-
-class Policy(BaseModel):
-    margin: float = 3.0
-    max_tenure_days: int = 14
-    min_confidence: float = 0.75
-    chain: int = 5
-    suspend_below_health: float = 0.75
-    auto_apply: bool = False
-    require_telemetry: bool = False
+SHIP_MIN, SHIP_MAX, SHIP_DEFAULT = 1, 10, 4
 
 class Profile(BaseModel):
     name: str; modality: Modality; purpose: str
-    weights: dict[str, float]           # axis name -> weight; must sum to 1 ± 0.001
-    require: dict[str, Any] = {}        # tools, reasoning, context_min, input_modalities, min_axis{axis:pct}, min_appearances
-    shape: Shape = Shape()
-    policy: Policy = Policy()
-    targets: list[str] = []             # target names from config this profile ships to
-    prefer_effort: str | None = None    # "best" | "cheapest_clearing" | a mode name; None leaves
-                                        # every mode of a family in the ranking as its own row
+    weights: dict[str, float]           # axis name -> share of the score; must sum to 1 ± 0.001
+    ship: int = SHIP_DEFAULT            # how many models it ships, 1..10: the first is used,
+                                        # the rest are fallbacks
+
+class ProfileSettings(BaseModel):       # the tuned half of a profile, and all of it
+    ship: int = SHIP_DEFAULT
+    weights: dict[str, float] = {}
+
+# A profile is its weights. `require`, `shape`, `policy`, `targets` and
+# `prefer_effort` are gone from Profile, and `list_length`, `floor_score`,
+# `price_sensitivity`, `experience_weight`, `auto_apply`, `cost_multipliers`
+# and per-weight `min`/`max`/`locked` are gone from ProfileSettings. Every one
+# of them changed the answer without moving a slider. For one release the write
+# doors accept them, drop them, and name them in `warnings` (see section 6);
+# stored rows and profile YAML written in the old shape read the same way.
+#
+# What replaced them: the shape of one task is a fixed internal default per
+# modality (`sieve.engine.SHAPES`), used only to turn a published rate into a
+# cost per task; health still multiplies the score, because a model that has
+# stopped working should rank lower rather than be vetoed by a knob.
 
 class AxisScore(BaseModel):
     axis: str; value: float | None; coverage: float; contribution: float
@@ -172,15 +168,14 @@ class Rank(BaseModel):
     score: float; confidence: float; health: float; final: float
     axes: list[AxisScore]
     cost_per_task: float | None
-    dominated_by: str | None = None
-    excluded_by: str | None = None      # constraint name, when excluded
     flip: str | None = None             # "raise cost to 0.31 and #2 leads" — only on position 1
 
 class Ranking(BaseModel):
     profile: str; modality: Modality; computed_at: datetime
     snapshot: str                        # id of the observation snapshot used
-    ranks: list[Rank]                    # ordered; position 1..N for ranked models, 0 for excluded or
-                                         # dominated ones, which stay in the list with their reason
+    ranks: list[Rank]                    # position 1..N over every *reachable* model, best first;
+                                         # 0 only for a model this box cannot call. Nothing else
+                                         # takes a model out of the ranking.
 
 class Chain(BaseModel):
     profile: str; computed_at: datetime
@@ -323,16 +318,14 @@ Bearer <secret>` and the scope in the table; reads are open unless
 | GET /v1/models?modality=&reachable=&q= | – | ModelRef + latest observations + prices + reachable |
 | GET /v1/models/{id} | – | one, with full observation history |
 | GET /v1/profiles?modality= · GET /v1/profiles/{name} | – | Profile (SQLite truth; YAML seeds an empty store). Document reads resolve weights through settings, including legacy edits; list, copy and ranking fallback use these effective weights. Document writes replace settings weight values and retain surviving axes' min/max/locked metadata |
-| GET · PUT /v1/profiles/{name}/settings | – · profiles:write | list controls, bounded/locked weights, profile multipliers. Weights merge per axis, so a page that knows one slider cannot wipe the others. **Removing an axis:** `{"weights": {"axis": null}}` (what a cleared form row sends) or `{"remove_axes": ["axis", ...]}` (what a script writes) drops it from the profile for real; both spellings may be combined with ordinary weight changes in one call. After merging/removal, the shared weight validator requires axes visible in GET /v1/axes?modality= for this profile, values in [0,1], and sum 1 ± 0.001; 400 `{error:{code:"bad_weights",message:...}}` names the axis or sum (bounds/settings errors use `bad_settings`). Existing min/max/locked semantics are retained |
-| GET · PUT /v1/profiles/{name}/models/{model_id}/status | – · profiles:write | active · pinned · removed and pin order |
+| GET · PUT /v1/profiles/{name}/settings | – · profiles:write | `{ship, weights}` and nothing else. Weights merge per axis, so a page that knows one slider cannot wipe the others; a weight may be sent as a number or as the old `{"value": …}` object. **Removing an axis:** `{"weights": {"axis": null}}` (what a cleared form row sends) or `{"remove_axes": ["axis", ...]}` (what a script writes) drops it from the profile for real; both spellings may be combined with ordinary weight changes in one call. After merging/removal, the shared weight validator requires axes visible in GET /v1/axes?modality= for this profile, values in [0,1], and sum 1 ± 0.001; 400 `{error:{code:"bad_weights",message:...}}` names the axis or sum (settings errors use `bad_settings`). **Retired keys** — `list_length` (read once as the old spelling of `ship`), `floor_score`, `price_sensitivity`, `experience_weight`, `auto_apply`, `cost_multipliers`, and a weight's `min`/`max`/`locked` — are accepted, dropped, and named in the answer's `warnings` |
 | GET · PUT /v1/cost-multipliers | – · profiles:write | default multiplier per reachable local-id prefix |
 | POST /v1/outcomes · GET /v1/profiles/{name}/experience | telemetry · – | append-only outcome · 30-day Laplace success score |
 | POST /v1/profiles/{name}/preview | – | unsaved controlled list using partial settings |
 | POST /v1/profiles · PATCH · DELETE /v1/profiles/{name} | profiles:write | create/copy (`from` or `copy_from`, optional replacement `weights`) · rename and/or re-describe · guarded delete. POST uses the same axis/[0,1]/sum validator as settings; invalid weights return 400 `bad_weights`. Copy carries effective settings weights. **PATCH takes `name`, `purpose`, or both**: `{"purpose": "..."}` alone rewrites the description and touches nothing else (400 with neither, 404 for an unknown profile), so fixing a sentence no longer means PUTting every weight and constraint back. **DELETE is 409 `in_use` only when the profile has a chain** — it was applied, so a write connector may still hold a combo under that name; a profile that was never applied deletes cleanly, and `?force=1` deletes either way |
 | POST /v1/profiles/{name}/apply · GET /v1/profiles/{name}/history | apply · – | ship controlled chain · decision history |
-| PUT /v1/profiles/{name} | profiles:write | Replace existing Profile (stored; decision logged); unknown name → 404 `not_found`, "create it with POST /v1/profiles". Same axis/[0,1]/sum validator as settings; 400 `bad_weights` names the axis or sum |
-| PATCH /v1/profiles/{name}/weights · /policy | profiles:write | Profile; /weights replaces weight values using the same axis/[0,1]/sum validator as settings; 400 `bad_weights` names the axis or sum |
-| PATCH /v1/profiles/{name}/constraints · /shape | profiles:write | Profile; the body *replaces* `require` (so a constraint can be removed at all) · replaces `Shape`, which re-prices every model and is logged as a decision |
+| PUT /v1/profiles/{name} | profiles:write | Replace existing Profile (stored; decision logged); unknown name → 404 `not_found`, "create it with POST /v1/profiles". Same axis/[0,1]/sum validator as settings; 400 `bad_weights` names the axis or sum. **Retired keys** — `require`, `shape`, `policy`, `targets`, `prefer_effort` — are accepted, dropped, and named in the answer's `warnings`; a body carrying `policy.chain` and no `ship` is read as that many to ship |
+| PATCH /v1/profiles/{name}/weights | profiles:write | Profile; replaces weight values using the same axis/[0,1]/sum validator as settings; 400 `bad_weights` names the axis or sum |
 | POST /v1/profiles/{name}/evaluate | – | {ranking, chain, decision} — dry run, nothing stored |
 | GET /v1/rankings/{profile} | – | Ranking (latest) |
 | GET /v1/chains/{profile} | – | Chain |

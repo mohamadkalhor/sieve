@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sieve.axes import control as axis_control
-from sieve.contracts import Axis, Connector, Modality, Profile, ProfileSettings
+from sieve.contracts import SHIP_DEFAULT, Axis, Connector, Modality, Profile, ProfileSettings
 from sieve.profiles import control
 from sieve.store import Store
 
@@ -30,8 +30,6 @@ class ProfileBundle(StrictModel):
     modality: Modality
     purpose: str
     settings: ProfileSettings
-    model_status: dict[str, dict[str, Any]] = Field(default_factory=dict)
-    auto_apply: bool = False
 
 
 class ConnectorBundle(StrictModel):
@@ -65,20 +63,12 @@ def export_config(store: Store, owner_id: str | None = None) -> dict[str, Any]:
         settings = control.settings(store, profile.name, owner_id) or control.default_settings(
             profile
         )
-        statuses = {
-            model_id: {"status": status, "pin_order": pin_order}
-            for model_id, (status, pin_order) in sorted(
-                control.statuses(store, profile.name, owner_id).items()
-            )
-        }
         profiles.append(
             {
                 "name": profile.name,
                 "modality": profile.modality,
                 "purpose": profile.purpose,
                 "settings": settings.model_dump(mode="json"),
-                "model_status": statuses,
-                "auto_apply": settings.auto_apply,
             }
         )
     connectors = [
@@ -101,17 +91,6 @@ def export_config(store: Store, owner_id: str | None = None) -> dict[str, Any]:
         "cost_multipliers": control.multipliers(store, owner_id),
         "connectors": connectors,
     }
-
-
-def _validate_statuses(profile: ProfileBundle) -> None:
-    for model_id, value in profile.model_status.items():
-        if set(value) - {"status", "pin_order"}:
-            raise ValueError(f"profile {profile.name} model {model_id}: unknown status field")
-        if value.get("status") not in {"active", "pinned", "removed"}:
-            raise ValueError(f"profile {profile.name} model {model_id}: bad status")
-        order = value.get("pin_order")
-        if order is not None and (not isinstance(order, int) or order < 1):
-            raise ValueError(f"profile {profile.name} model {model_id}: bad pin_order")
 
 
 def validate_config(
@@ -151,14 +130,14 @@ def validate_config(
     for profile in bundle.profiles:
         if not _NAME.match(profile.name):
             raise ValueError(f"bad profile name {profile.name!r}")
-        _validate_statuses(profile)
-        if profile.auto_apply != profile.settings.auto_apply:
-            raise ValueError(f"profile {profile.name}: auto_apply must match settings.auto_apply")
         for name, weight in profile.settings.weights.items():
             if (profile.modality, name) not in known_axes:
                 raise ValueError(f"profile {profile.name}: unknown axis {name!r}")
-            if not weight.min <= weight.value <= weight.max:
-                raise ValueError(f"profile {profile.name}: weight {name} outside [min,max]")
+            if not 0.0 <= weight <= 1.0:
+                raise ValueError(f"profile {profile.name}: weight {name} must be in [0,1]")
+        total = sum(profile.settings.weights.values())
+        if profile.settings.weights and abs(total - 1.0) > 0.001:
+            raise ValueError(f"profile {profile.name}: weights must sum to 1, got {total:.4f}")
     for prefix, value in bundle.cost_multipliers.items():
         if value < 0:
             raise ValueError(f"multiplier {prefix!r} must be non-negative")
@@ -254,7 +233,8 @@ def apply_config(
                 update={
                     "modality": item["modality"],
                     "purpose": item["purpose"],
-                    "weights": {k: v["value"] for k, v in item["settings"]["weights"].items()},
+                    "weights": dict(item["settings"]["weights"]),
+                    "ship": item["settings"].get("ship", SHIP_DEFAULT),
                 }
             )
             db.execute(
@@ -276,12 +256,6 @@ def apply_config(
                 f"DELETE FROM profile_models WHERE profile=? AND {owned}",
                 (profile.name, owner_id),
             )
-            for model_id, state in item["model_status"].items():
-                db.execute(
-                    "INSERT INTO profile_models(profile,model_id,status,pin_order,owner_id)"
-                    " VALUES(?,?,?,?,?)",
-                    (profile.name, model_id, state["status"], state.get("pin_order"), owner_id),
-                )
         if target.get("_prune"):
             db.executemany(
                 f"DELETE FROM profiles WHERE name=? AND {owned}",

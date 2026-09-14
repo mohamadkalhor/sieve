@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 
 from sieve.contracts import Profile
+from sieve.profiles.legacy import clean_profile
 
 
 class ProfileError(ValueError):
@@ -39,6 +40,9 @@ def parse_profile(path: str | Path) -> Profile:
     raw.setdefault("name", file.stem)
     if "modality" not in raw and file.parent.name:
         raw["modality"] = file.parent.name
+    # A file written before a profile was only its weights still loads: the
+    # keys that no longer mean anything are dropped on the way in.
+    raw, _ = clean_profile(raw)
     try:
         return Profile.model_validate(raw)
     except Exception as exc:  # pydantic ValidationError, reported with the path

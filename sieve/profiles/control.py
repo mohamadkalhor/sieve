@@ -1,12 +1,14 @@
-"""Database-backed, directly controlled profile lists."""
+"""Database-backed profiles: weights, and how many models to ship."""
 # ruff: noqa: E501
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sieve.contracts import Outcome, Profile, ProfileSettings, Ranking, WeightSetting
+from sieve.contracts import Outcome, Profile, ProfileSettings, Ranking
+from sieve.profiles.legacy import clean_profile, clean_settings
 from sieve.profiles.load import load_profiles
 from sieve.store import Store
 
@@ -16,10 +18,7 @@ def _iso(value: datetime) -> str:
 
 
 def default_settings(profile: Profile) -> ProfileSettings:
-    return ProfileSettings(
-        ship=profile.ship,
-        weights={name: WeightSetting(value=value) for name, value in profile.weights.items()},
-    )
+    return ProfileSettings(ship=profile.ship, weights=dict(profile.weights))
 
 
 def mine(owner_id: str | None, column: str = "owner_id") -> tuple[str, tuple[Any, ...]]:
@@ -66,7 +65,14 @@ def seed(store: Store, directory: Any, owner_id: str | None = None) -> None:
 
 
 def validate_weights(weights: dict[str, float], axes: set[str]) -> None:
-    """The same weight rules for every profile write door."""
+    """The same weight rules for every profile write door.
+
+    Each weight is a share of the score and the shares add to one. The page
+    keeps them there by renormalising the others whenever one moves, so a sum
+    that has drifted is a bug in a caller, not a thing to quietly fix here.
+    """
+    if not weights:
+        raise ValueError("a profile is its weights; it needs at least one axis")
     for axis, value in weights.items():
         if axis not in axes:
             raise ValueError(f"unknown weight axis {axis!r} for this modality")
@@ -77,11 +83,25 @@ def validate_weights(weights: dict[str, float], axes: set[str]) -> None:
         raise ValueError(f"weights must sum to 1 +/- 0.001, got {total:.4f}")
 
 
+def read_profile(raw: str | dict[str, Any]) -> Profile:
+    """One stored profile document, however old the shape it was written in."""
+    body = json.loads(raw) if isinstance(raw, str) else dict(raw)
+    cleaned, _ = clean_profile(body)
+    return Profile.model_validate(cleaned)
+
+
+def read_settings(raw: str | dict[str, Any]) -> ProfileSettings:
+    """One stored settings document, however old the shape it was written in."""
+    body = json.loads(raw) if isinstance(raw, str) else dict(raw)
+    cleaned, _ = clean_settings(body)
+    return ProfileSettings.model_validate(cleaned)
+
+
 def _effective_profile(row: Any) -> Profile:
-    """Resolve even legacy documents through their effective settings weights."""
-    value = Profile.model_validate_json(row["json"])
-    selected = ProfileSettings.model_validate_json(row["settings"])
-    return value.model_copy(update={"weights": {a: w.value for a, w in selected.weights.items()}})
+    """The profile as it is tuned: the document, resolved through its settings."""
+    value = read_profile(row["json"])
+    selected = read_settings(row["settings"])
+    return value.model_copy(update={"weights": dict(selected.weights), "ship": selected.ship})
 
 
 def profiles(store: Store, owner_id: str | None = None, shared: bool = True) -> list[Profile]:
@@ -114,7 +134,7 @@ def owner_of(store: Store, name: str, owner_id: str | None = None) -> str | None
 
 def settings(store: Store, name: str, owner_id: str | None = None) -> ProfileSettings | None:
     row = _row(store, name, owner_id)
-    return ProfileSettings.model_validate_json(row["settings"]) if row else None
+    return read_settings(row["settings"]) if row else None
 
 
 def put_profile(
@@ -124,19 +144,8 @@ def put_profile(
     owner_id: str | None = None,
 ) -> None:
     stamp = _iso(datetime.now(UTC))
-    current = settings(store, value.name, owner_id)
-    selected = value_settings or current or default_settings(value)
-    if value_settings is None:
-        selected = update_settings(
-            selected,
-            {
-                "weights": {axis: {"value": weight} for axis, weight in value.weights.items()},
-                "remove_axes": list(set(selected.weights) - set(value.weights)),
-            },
-        )
-    value = value.model_copy(
-        update={"weights": {axis: weight.value for axis, weight in selected.weights.items()}}
-    )
+    selected = value_settings or ProfileSettings(ship=value.ship, weights=dict(value.weights))
+    value = value.model_copy(update={"weights": dict(selected.weights), "ship": selected.ship})
     with store.tx() as db:
         db.execute(
             "INSERT INTO profiles(name,modality,json,settings,owner_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?) "
@@ -156,16 +165,37 @@ def put_profile(
 def put_settings(
     store: Store, name: str, value: ProfileSettings, owner_id: str | None = None
 ) -> None:
+    """Write the settings, and keep the profile document saying the same thing.
+
+    The document is what `GET /v1/profiles/{name}` answers with and what a copy
+    is made from; letting it drift from the settings is how a profile came to
+    have two sets of weights, one of which was a lie.
+    """
     clause, args = mine(owner_id)
+    row = _row(store, name, owner_id, shared=False)
+    document = None
+    if row is not None:
+        held = read_profile(row["json"])
+        document = held.model_copy(
+            update={"weights": dict(value.weights), "ship": value.ship}
+        ).model_dump_json()
     with store.tx() as db:
-        db.execute(
-            f"UPDATE profiles SET settings=?, updated_at=? WHERE name=? AND {clause}",
-            (value.model_dump_json(), _iso(datetime.now(UTC)), name, *args),
-        )
+        if document is None:
+            db.execute(
+                f"UPDATE profiles SET settings=?, updated_at=? WHERE name=? AND {clause}",
+                (value.model_dump_json(), _iso(datetime.now(UTC)), name, *args),
+            )
+        else:
+            db.execute(
+                f"UPDATE profiles SET settings=?, json=?, updated_at=? WHERE name=? AND {clause}",
+                (value.model_dump_json(), document, _iso(datetime.now(UTC)), name, *args),
+            )
 
 
-def update_settings(current: ProfileSettings, patch: dict[str, Any]) -> ProfileSettings:
-    """Merge a patch into one profile's settings, and say no to an invalid one.
+def update_settings(
+    current: ProfileSettings, patch: dict[str, Any]
+) -> tuple[ProfileSettings, list[str]]:
+    """Merge a patch into one profile's settings, and say what it ignored.
 
     Weights merge per axis rather than replacing the map, so a page that knows
     about one slider cannot wipe the other nine. Two spellings remove an axis
@@ -173,33 +203,31 @@ def update_settings(current: ProfileSettings, patch: dict[str, Any]) -> ProfileS
     row is cleared, and `{"remove_axes": ["axis"]}`, which is what a script
     writes when it means it -- because without either, an axis could be set to
     zero but never taken off the profile at all.
+
+    Retired keys (a floor, a price sensitivity, an experience weight, an
+    auto-apply switch) are accepted and dropped, with one sentence each in the
+    warnings, so a script written against the old shape keeps working and its
+    author finds out why nothing changed.
     """
+    cleaned, warnings = clean_settings(patch)
     raw = current.model_dump()
-    dropped = {str(axis) for axis in patch.get("remove_axes") or []}
-    patch = {k: v for k, v in patch.items() if k != "remove_axes"}
-    if "weights" in patch:
-        incoming = patch["weights"] or {}
-        merged = raw["weights"]
-        for axis, change in incoming.items():
-            if change is None:
+    dropped = {str(axis) for axis in cleaned.pop("remove_axes", None) or []}
+
+    if "weights" in cleaned:
+        merged = dict(raw["weights"])
+        for axis, value in (cleaned["weights"] or {}).items():
+            if value is None:
                 dropped.add(axis)
                 continue
-            old = merged.get(axis, {"value": 0.0, "min": 0.0, "max": 1.0, "locked": False})
-            candidate = {**old, **change}
-            if not candidate["min"] <= candidate["value"] <= candidate["max"]:
-                raise ValueError(f"weight {axis} value must be inside [min,max]")
-            merged[axis] = candidate
-        patch = {**patch, "weights": merged}
+            merged[axis] = float(value)
+        cleaned["weights"] = merged
     if dropped:
-        weights = dict(patch.get("weights", raw["weights"]))
+        weights = dict(cleaned.get("weights", raw["weights"]))
         for axis in dropped:
             weights.pop(axis, None)
-        patch = {**patch, "weights": weights}
-    result = ProfileSettings.model_validate({**raw, **patch})
-    for axis, weight in result.weights.items():
-        if weight.min > weight.max or not weight.min <= weight.value <= weight.max:
-            raise ValueError(f"weight {axis} value must be inside [min,max]")
-    return result
+        cleaned["weights"] = weights
+
+    return ProfileSettings.model_validate({**raw, **cleaned}), warnings
 
 
 def create(
@@ -226,9 +254,6 @@ def rename(store: Store, old: str, new: str, owner_id: str | None = None) -> Non
             f"UPDATE profiles SET name=?, json=?, updated_at=? WHERE name=? AND {clause}",
             (new, renamed.model_dump_json(), _iso(datetime.now(UTC)), old, *args),
         )
-        db.execute(
-            f"UPDATE profile_models SET profile=? WHERE profile=? AND {clause}", (new, old, *args)
-        )
         db.execute(f"UPDATE chains SET profile=? WHERE profile=? AND {clause}", (new, old, *args))
         db.execute(f"UPDATE outcomes SET profile=? WHERE profile=? AND {clause}", (new, old, *args))
         db.execute("UPDATE decisions SET profile=? WHERE profile=?", (new, old))
@@ -239,8 +264,8 @@ def set_purpose(store: Store, name: str, purpose: str, owner_id: str | None = No
 
     The description is the only part of a profile a person edits often, and
     until now the only way to change it was to PUT the whole profile back --
-    which meant a page had to hold, and re-send, every weight and constraint it
-    never asked about. One field, one call.
+    which meant a page had to hold, and re-send, every weight it never asked
+    about. One field, one call.
     """
     held = profile(store, name, owner_id)
     if held is None:
@@ -262,53 +287,6 @@ def delete(store: Store, name: str, owner_id: str | None = None) -> bool:
         db.execute(f"DELETE FROM profile_models WHERE profile=? AND {clause}", (name, *args))
         cur = db.execute(f"DELETE FROM profiles WHERE name=? AND {clause}", (name, *args))
     return bool(cur.rowcount)
-
-
-def status(store: Store, name: str, model_id: str, owner_id: str | None = None) -> dict[str, Any]:
-    clause, args = mine(owner_id)
-    row = store.db.execute(
-        f"SELECT status,pin_order FROM profile_models WHERE profile=? AND model_id=? AND {clause}",
-        (name, model_id, *args),
-    ).fetchone()
-    return {
-        "profile": name,
-        "model_id": model_id,
-        "status": row["status"] if row else "active",
-        "pin_order": row["pin_order"] if row else None,
-    }
-
-
-def put_status(
-    store: Store, name: str, model_id: str, state: str, owner_id: str | None = None
-) -> dict[str, Any]:
-    if state not in {"active", "pinned", "removed"}:
-        raise ValueError("status must be active, pinned or removed")
-    clause, args = mine(owner_id)
-    order = None
-    if state == "pinned":
-        row = store.db.execute(
-            f"SELECT COALESCE(MAX(pin_order),0)+1 n FROM profile_models WHERE profile=? AND {clause}",
-            (name, *args),
-        ).fetchone()
-        order = row["n"]
-    with store.tx() as db:
-        db.execute(
-            "INSERT INTO profile_models(profile,model_id,status,pin_order,owner_id) VALUES(?,?,?,?,?) ON CONFLICT(IFNULL(owner_id,''),profile,model_id) DO UPDATE SET status=excluded.status,pin_order=excluded.pin_order",
-            (name, model_id, state, order, owner_id),
-        )
-    return status(store, name, model_id, owner_id)
-
-
-def statuses(
-    store: Store, name: str, owner_id: str | None = None
-) -> dict[str, tuple[str, int | None]]:
-    clause, args = mine(owner_id)
-    return {
-        r["model_id"]: (r["status"], r["pin_order"])
-        for r in store.db.execute(
-            f"SELECT * FROM profile_models WHERE profile=? AND {clause}", (name, *args)
-        )
-    }
 
 
 def live_prefixes(store: Store, owner_id: str | None = None) -> set[str]:
@@ -410,6 +388,12 @@ def add_outcome(store: Store, value: Outcome, owner_id: str | None = None) -> No
 def experience(
     store: Store, name: str, at: datetime | None = None, owner_id: str | None = None
 ) -> list[dict[str, Any]]:
+    """What your own traffic says about each model on this seat.
+
+    Recorded, and worth reading, but it does not move a score: a number that
+    edits the ranking from behind the sliders is exactly what this rebuild took
+    out.
+    """
     cutoff = _iso((at or datetime.now(UTC)) - timedelta(days=30))
     clause, args = mine(owner_id)
     rows = store.db.execute(
@@ -427,7 +411,7 @@ def experience(
     ]
 
 
-def rerank_cached(ranking: Ranking, weights: dict[str, WeightSetting]) -> Ranking:
+def rerank_cached(ranking: Ranking, weights: dict[str, float]) -> Ranking:
     """Reweight cached axis values without rebuilding the observation table.
 
     The same arithmetic the engine does, over the axis values a ranking already
@@ -441,15 +425,15 @@ def rerank_cached(ranking: Ranking, weights: dict[str, WeightSetting]) -> Rankin
         contributions: dict[str, float] = {}
         confidence = 0.0
         score = 0.0
-        for axis, setting in weights.items():
+        for axis, weight in weights.items():
             cached = axes.get(axis)
             value = cached.value if cached else None
             coverage = cached.coverage if cached else 0.0
-            contribution = setting.value * (value if value is not None else 0.0)
+            contribution = weight * (value if value is not None else 0.0)
             contributions[axis] = contribution
             score += contribution
             if value is not None:
-                confidence += setting.value * coverage
+                confidence += weight * coverage
         updated_axes = [
             axis.model_copy(update={"contribution": contributions.get(axis.axis, 0.0)})
             for axis in row.axes

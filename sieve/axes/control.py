@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import Any
 
 from sieve.axes.load import check_axis, load_all_axes
-from sieve.contracts import Axis, Profile
+from sieve.contracts import Axis
+from sieve.profiles import control
 from sieve.store import Store
 
 
@@ -142,16 +143,13 @@ def profiles_using(
     for dbrow in store.db.execute(
         f"SELECT name,json,settings FROM profiles WHERE {clause} ORDER BY name", args
     ):
-        profile = Profile.model_validate_json(dbrow["json"])
+        profile = control.read_profile(dbrow["json"])
         if modality is not None and profile.modality != modality:
             continue
         # Settings are authoritative once present, but preserve old profile rows.
         try:
-            from sieve.contracts import ProfileSettings
-
-            settings = ProfileSettings.model_validate_json(dbrow["settings"])
-            weight = settings.weights.get(name)
-            used = bool(weight and weight.value > 0)
+            settings = control.read_settings(dbrow["settings"])
+            used = settings.weights.get(name, 0.0) > 0
         except Exception:
             used = profile.weights.get(name, 0) > 0
         if used:
@@ -226,19 +224,15 @@ def delete(
     clause, args = _mine(owner_id)
     with store.tx() as db:
         if force:
-            from sieve.contracts import ProfileSettings
-
             for profile_name in using:
                 current = db.execute(
                     f"SELECT settings,json FROM profiles WHERE name=? AND {clause}",
                     (profile_name, *args),
                 ).fetchone()
-                settings = ProfileSettings.model_validate_json(current["settings"])
-                if name in settings.weights:
-                    settings.weights[name].value = 0
-                profile = Profile.model_validate_json(current["json"])
-                if name in profile.weights:
-                    profile.weights[name] = 0
+                settings = control.read_settings(current["settings"])
+                settings.weights.pop(name, None)
+                profile = control.read_profile(current["json"])
+                profile.weights.pop(name, None)
                 db.execute(
                     f"UPDATE profiles SET settings=?,json=?,updated_at=? WHERE name=? AND {clause}",
                     (

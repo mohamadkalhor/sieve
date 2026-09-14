@@ -17,7 +17,7 @@ from ruamel.yaml import YAML
 from sieve.contracts import Profile
 from sieve.profiles.load import profile_path
 
-KEY_ORDER = ("name", "modality", "purpose", "weights", "require", "shape", "policy", "targets")
+KEY_ORDER = ("name", "modality", "purpose", "weights", "ship")
 
 
 def _yaml() -> YAML:
@@ -29,21 +29,8 @@ def _yaml() -> YAML:
 
 
 def as_mapping(profile: Profile) -> dict[str, Any]:
-    """The profile as YAML sees it: `shape` uses the `in`/`out` spelling, and
-    every empty optional is dropped rather than written as null."""
+    """The profile as YAML sees it: five keys, in the order a person reads."""
     body = profile.model_dump(mode="json", exclude_defaults=False)
-
-    shape = {k: v for k, v in (body.get("shape") or {}).items() if v is not None}
-    if "in_tokens" in shape:
-        shape["in"] = shape.pop("in_tokens")
-    if "out_tokens" in shape:
-        shape["out"] = shape.pop("out_tokens")
-    body["shape"] = shape
-
-    for key in ("require", "shape", "targets"):
-        if not body.get(key):
-            body.pop(key, None)
-
     return {k: body[k] for k in KEY_ORDER if k in body}
 
 

@@ -184,17 +184,6 @@ export interface Observation {
 }
 
 
-export interface Policy {
-  margin?: number;
-  max_tenure_days?: number;
-  min_confidence?: number;
-  chain?: number;
-  suspend_below_health?: number;
-  auto_apply?: boolean;
-  require_telemetry?: boolean;
-}
-
-
 export interface Price {
   model_id: string;
   source: string;
@@ -210,16 +199,13 @@ export interface Price {
 }
 
 
+/** One seat: what it is for, what it cares about, and how many to ship. Every axis in `weights` is a share of the score and the shares add to one, so raising on... */
 export interface Profile {
   name: string;
   modality: Modality;
   purpose: string;
   weights: Record<string, number>;
-  require?: Record<string, unknown>;
-  shape?: Shape;
-  policy?: Policy;
-  targets?: string[];
-  prefer_effort?: string | null;
+  ship?: number;
 }
 
 
@@ -248,8 +234,6 @@ export interface Rank {
   axes?: AxisScore[];
   cost_per_task?: number | null;
   cost_from?: "shape" | "telemetry" | null;
-  dominated_by?: string | null;
-  excluded_by?: string | null;
   flip?: string | null;
 }
 
@@ -278,19 +262,6 @@ export interface Reachable {
   capability?: Capability;
   seen_at: string;
   stale?: boolean;
-}
-
-
-/** Per profile; only the keys the modality uses. The YAML spells the token fields `in` and `out` (PLAN section 4); both are accepted, and the JSON name stays `i... */
-export interface Shape {
-  in_tokens?: number | null;
-  out_tokens?: number | null;
-  cached?: number | null;
-  images?: number | null;
-  seconds?: number | null;
-  chars?: number | null;
-  megapixels?: number | null;
-  requests?: number | null;
 }
 
 

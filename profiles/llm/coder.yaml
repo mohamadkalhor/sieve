@@ -1,10 +1,7 @@
-# The seat that changes most often, so it has the tightest margin: a coding
-# agent feels a real difference quickly, and the work is expensive enough to
-# be worth switching for.
-
 name: coder
 modality: llm
-purpose: "agentic coding inside a repository"
+purpose: agentic coding inside a repository
+...
 weights:
   agentic_coding: 0.45
   cost: 0.2
@@ -12,25 +9,4 @@ weights:
   reasoning: 0.1
   long_context: 0.1
   latency: 0.05
-require:
-  tools: true
-  reasoning: true
-  context_min: 200000
-  # Raised from 0.5 to 0.75 with prefer_effort: cheapest_clearing. The floor
-  # is now doing two jobs -- excluding weak models, and deciding how far down
-  # a family's effort ladder this seat may go -- so it has to be the standard
-  # a coding agent actually needs, not the lowest tolerable one.
-  min_axis: {agentic_coding: 0.75}
-shape: {in: 30000, out: 4000, cached: 0.5}
-policy:
-  margin: 3.0
-  max_tenure_days: 14
-  min_confidence: 0.75
-  chain: 5
-  suspend_below_health: 0.75
-  auto_apply: true
-
-# Seat the *lowest* effort mode of a family that still clears the floor
-# below. The floor is what makes this safe: without one, cheapest_clearing
-# would always seat the bottom of the ladder.
-prefer_effort: cheapest_clearing
+ship: 5

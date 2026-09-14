@@ -35,7 +35,6 @@ from sieve.contracts import (
     Profile,
     Ranking,
     Reachable,
-    Shape,
     TargetDiff,
     TargetResult,
     TelemetryEvent,
@@ -43,6 +42,7 @@ from sieve.contracts import (
 from sieve.engine import Deps as EngineDeps
 from sieve.engine import OwnerMissingError, apply_targets, rank_profile
 from sieve.profiles import control
+from sieve.profiles.legacy import clean_profile
 from sieve.scoring import leaderboard
 from sieve.scoring.health import health as health_of
 from sieve.scoring.health import health_series
@@ -107,12 +107,6 @@ def error(status: int, code: str, message: str, **extra: Any) -> JSONResponse:
         status_code=status, content={"error": {"code": code, "message": message}, **extra}
     )
 
-
-#: The constraints `require:` understands. An unknown key would silently never
-#: match, which reads to a person as "the constraint is not working".
-KNOWN_CONSTRAINTS = frozenset(
-    {"tools", "reasoning", "structured_output", "context_min", "min_axis", "input_modalities"}
-)
 
 #: A profile name becomes a file name and a chain key, so it stays boring.
 _PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$", re.I)
@@ -461,11 +455,24 @@ def _save(
 def put_profile(
     request: Request,
     name: str,
-    profile: Profile,
+    body: Annotated[dict[str, Any], Body()],
     token: Annotated[Token, Depends(require_scope("profiles:write"))],
 ) -> Any:
+    """Replace a profile: its purpose, its weights, and how many it ships.
+
+    A body written against the old shape -- a policy, a require block, a shape,
+    a preferred effort mode -- is accepted, its retired keys are dropped, and
+    the answer says which ones in `warnings`. Seed files and scripts written
+    last month keep working, and their authors find out why the knob they sent
+    did nothing.
+    """
     cfg, store = config_of(request), store_of(request)
     owner_id = owner_of(request)
+    cleaned, warnings = clean_profile(body)
+    try:
+        profile = Profile.model_validate(cleaned)
+    except ValidationError as exc:
+        return error(400, "bad_request", str(exc.errors()[0].get("msg", exc)))
     if profile.name != name:
         return error(400, "bad_request", "the body's name must match the path")
     try:
@@ -487,7 +494,7 @@ def put_profile(
         profile.model_dump(mode="json"),
         f"profile {name} replaced by {token.name}",
     )
-    return profile
+    return {**profile.model_dump(mode="json"), "warnings": warnings}
 
 
 @router.patch("/profiles/{name}/weights")
@@ -513,122 +520,6 @@ def patch_weights(
         return error(400, "bad_weights", str(exc))
     log_decision(
         store, name, "weights", token.name, profile.weights, weights, f"weights set by {token.name}"
-    )
-    return updated
-
-
-@router.patch("/profiles/{name}/policy")
-def patch_policy(
-    request: Request,
-    name: str,
-    policy: Annotated[dict[str, Any], Body()],
-    token: Annotated[Token, Depends(require_scope("profiles:write"))],
-) -> Any:
-    cfg, store = config_of(request), store_of(request)
-    owner_id = owner_of(request)
-    try:
-        profile = load_profile(cfg, name, store, owner_id)
-    except OwnerMissingError:
-        return not_built(Profile, "B", "sieve.profiles.load")
-    if profile is None:
-        return error(404, "not_found", f"no profile {name!r}")
-    merged = profile.policy.model_copy(update=policy)
-    updated = profile.model_copy(update={"policy": merged})
-    _save(cfg, updated, store, owner_id)
-    log_decision(
-        store,
-        name,
-        "policy",
-        token.name,
-        profile.policy.model_dump(mode="json"),
-        merged.model_dump(mode="json"),
-        f"policy set by {token.name}",
-    )
-    return updated
-
-
-@router.patch("/profiles/{name}/constraints")
-def patch_constraints(
-    request: Request,
-    name: str,
-    require: Annotated[dict[str, Any], Body()],
-    token: Annotated[Token, Depends(require_scope("profiles:write"))],
-) -> Any:
-    """Replace the `require` block: tools, reasoning, context_min, min_axis.
-
-    Replaced rather than merged, because the interesting edit is *removing* a
-    constraint. A merge cannot express "stop requiring tools" -- you would have
-    to send `{"tools": false}`, which reads as "require the absence of tools".
-    """
-    cfg, store = config_of(request), store_of(request)
-    owner_id = owner_of(request)
-    try:
-        profile = load_profile(cfg, name, store, owner_id)
-    except OwnerMissingError:
-        return not_built(Profile, "B", "sieve.profiles.load")
-    if profile is None:
-        return error(404, "not_found", f"no profile {name!r}")
-
-    unknown = set(require) - KNOWN_CONSTRAINTS
-    if unknown:
-        return error(
-            400,
-            "bad_constraints",
-            f"unknown constraint(s): {', '.join(sorted(unknown))}. "
-            f"Known: {', '.join(sorted(KNOWN_CONSTRAINTS))}",
-        )
-
-    updated = profile.model_copy(update={"require": require})
-    _save(cfg, updated, store, owner_id)
-    log_decision(
-        store,
-        name,
-        "policy",
-        token.name,
-        profile.require,
-        require,
-        f"constraints set by {token.name}",
-    )
-    return updated
-
-
-@router.patch("/profiles/{name}/shape")
-def patch_shape(
-    request: Request,
-    name: str,
-    shape: Annotated[dict[str, Any], Body()],
-    token: Annotated[Token, Depends(require_scope("profiles:write"))],
-) -> Any:
-    """The shape a task has on this seat -- what cost is computed against.
-
-    Changing it re-prices every model, so it is a decision row like any other:
-    a seat that quietly started costing tasks at 200k input instead of 2k would
-    otherwise look like the models had changed.
-    """
-    cfg, store = config_of(request), store_of(request)
-    owner_id = owner_of(request)
-    try:
-        profile = load_profile(cfg, name, store, owner_id)
-    except OwnerMissingError:
-        return not_built(Profile, "B", "sieve.profiles.load")
-    if profile is None:
-        return error(404, "not_found", f"no profile {name!r}")
-
-    try:
-        merged = Shape.model_validate({**profile.shape.model_dump(exclude_none=True), **shape})
-    except ValidationError as exc:
-        return error(400, "bad_shape", str(exc.errors()[0].get("msg", exc)))
-
-    updated = profile.model_copy(update={"shape": merged})
-    _save(cfg, updated, store, owner_id)
-    log_decision(
-        store,
-        name,
-        "policy",
-        token.name,
-        profile.shape.model_dump(mode="json"),
-        merged.model_dump(mode="json"),
-        f"shape set by {token.name}",
     )
     return updated
 
@@ -726,7 +617,7 @@ def put_profile_settings(
     if before is None:
         return error(404, "not_found", f"no profile {name!r}")
     try:
-        after = control.update_settings(before, body)
+        after, warnings = control.update_settings(before, body)
     except (ValidationError, ValueError, TypeError) as exc:
         return error(400, "bad_settings", str(exc))
     found = control.profile(store, name, owner_id)
@@ -735,7 +626,7 @@ def put_profile_settings(
         _validate_profile_weights(
             cfg,
             store,
-            found.model_copy(update={"weights": {a: w.value for a, w in after.weights.items()}}),
+            found.model_copy(update={"weights": dict(after.weights)}),
             owner_id,
         )
     except ValueError as exc:
@@ -750,39 +641,7 @@ def put_profile_settings(
         after.model_dump(mode="json"),
         f"settings set by {token.name}",
     )
-    return after
-
-
-@router.get("/profiles/{name}/models/{model_id:path}/status")
-def get_model_status(request: Request, name: str, model_id: str, _: Read = None) -> Any:
-    store = store_of(request)
-    owner_id = owner_of(request)
-    if control.profile(store, name, owner_id) is None:
-        return error(404, "not_found", f"no profile {name!r}")
-    return control.status(store, name, model_id, owner_id)
-
-
-@router.put("/profiles/{name}/models/{model_id:path}/status")
-def put_model_status(
-    request: Request,
-    name: str,
-    model_id: str,
-    body: Annotated[dict[str, str], Body()],
-    token: Annotated[Token, Depends(require_scope("profiles:write"))],
-) -> Any:
-    store = store_of(request)
-    owner_id = owner_of(request)
-    if control.profile(store, name, owner_id) is None:
-        return error(404, "not_found", f"no profile {name!r}")
-    before = control.status(store, name, model_id, owner_id)
-    try:
-        after = control.put_status(store, name, model_id, body.get("status", ""), owner_id)
-    except ValueError as exc:
-        return error(400, "bad_status", str(exc))
-    log_decision(
-        store, name, "policy", token.name, before, after, f"model status set by {token.name}"
-    )
-    return after
+    return {**after.model_dump(mode="json"), "warnings": warnings}
 
 
 @router.get("/cost-multipliers")
@@ -865,13 +724,12 @@ def preview(
     if found is None or current is None:
         return error(404, "not_found", f"no profile {name!r}")
     try:
-        proposed = control.update_settings(current, body)
+        proposed, _warnings = control.update_settings(current, body)
     except (ValidationError, ValueError, TypeError) as exc:
         return error(400, "bad_settings", str(exc))
     ranking = store.ranking(name, None, owner_id)
     if ranking is None:
-        weights = {axis: item.value for axis, item in proposed.weights.items()}
-        candidate = found.model_copy(update={"weights": weights})
+        candidate = found.model_copy(update={"weights": dict(proposed.weights)})
         ranking = rank_profile(
             cfg, store, candidate, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
         )
@@ -986,8 +844,7 @@ def apply_profile(
     selected = control.settings(store, name, owner_id)
     if found is None or selected is None:
         return error(404, "not_found", f"no profile {name!r}")
-    weights = {axis: item.value for axis, item in selected.weights.items()}
-    found = found.model_copy(update={"weights": weights})
+    found = found.model_copy(update={"weights": dict(selected.weights), "ship": selected.ship})
     ranking = rank_profile(
         cfg, store, found, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
     )
@@ -1025,8 +882,8 @@ def evaluate(request: Request, name: str, authorization: Auth = None, _: Read = 
         {
             "profile": name,
             "snapshot": ranking.snapshot,
-            "ranked": len([r for r in ranking.ranks if not r.excluded_by]),
-            "leader": next((r.model_id for r in ranking.ranks if not r.excluded_by), None),
+            "ranked": len([r for r in ranking.ranks if r.position > 0]),
+            "leader": next((r.model_id for r in ranking.ranks if r.position > 0), None),
         },
     )
     policy = deps.policy

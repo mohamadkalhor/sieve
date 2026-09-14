@@ -39,6 +39,7 @@ class TaskShape:
     megapixels: float | None = None
     requests: int | None = None
 
+
 AxesByModel = dict[str, dict[str, tuple[float | None, float]]]
 Scored = dict[str, tuple[float, float, dict[str, float]]]
 

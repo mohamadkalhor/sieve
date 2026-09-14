@@ -26,7 +26,7 @@ TOOLS: dict[str, dict[str, Any]] = {
         "schema": {"modality": {"type": "string"}},
     },
     "get_profile": {
-        "description": "One profile: weights, constraints, shape and policy.",
+        "description": "One profile: its weights and how many models it ships.",
         "method": "GET",
         "path": "/v1/profiles/{name}",
         "schema": {"name": {"type": "string"}},
@@ -43,13 +43,13 @@ TOOLS: dict[str, dict[str, Any]] = {
         },
         "required": ["name", "weights"],
     },
-    "set_policy": {
-        "description": "Change a profile's switching policy. Needs the profiles:write scope.",
-        "method": "PATCH",
-        "path": "/v1/profiles/{name}/policy",
-        "body": "policy",
-        "schema": {"name": {"type": "string"}, "policy": {"type": "object"}},
-        "required": ["name", "policy"],
+    "set_ship": {
+        "description": "How many models a profile ships (1-10). Needs the profiles:write scope.",
+        "method": "PUT",
+        "path": "/v1/profiles/{name}/settings",
+        "body": "*",
+        "schema": {"name": {"type": "string"}, "ship": {"type": "integer"}},
+        "required": ["name", "ship"],
     },
     "evaluate": {
         "description": "Dry run: the ranking, chain and decision a profile would produce now.",
@@ -194,16 +194,16 @@ def build_server(bridge: Bridge | None = None) -> Any:
         return await hub.call("list_profiles", {"modality": modality})
 
     async def get_profile(name: str) -> Any:
-        """One profile: weights, constraints, shape and policy."""
+        """One profile: its weights and how many models it ships."""
         return await hub.call("get_profile", {"name": name})
 
     async def set_weights(name: str, weights: dict[str, float]) -> Any:
         """Replace a profile's axis weights (they must sum to 1). Needs profiles:write."""
         return await hub.call("set_weights", {"name": name, "weights": weights})
 
-    async def set_policy(name: str, policy: dict[str, Any]) -> Any:
-        """Change a profile's switching policy. Needs profiles:write."""
-        return await hub.call("set_policy", {"name": name, "policy": policy})
+    async def set_ship(name: str, ship: int) -> Any:
+        """How many models a profile ships, 1 to 10. Needs profiles:write."""
+        return await hub.call("set_ship", {"name": name, "ship": ship})
 
     async def evaluate(name: str) -> Any:
         """Dry run: the ranking, chain and decision this profile would produce now."""
@@ -246,7 +246,7 @@ def build_server(bridge: Bridge | None = None) -> Any:
         list_profiles,
         get_profile,
         set_weights,
-        set_policy,
+        set_ship,
         evaluate,
         recommend,
         get_ranking,

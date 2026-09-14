@@ -91,6 +91,13 @@ Transform = Literal["identity", "neg_log", "log", "invert"]
 
 Scope = Literal["read", "profiles:write", "apply", "telemetry"]
 
+#: How many models a profile ships, and the room that number has to move in.
+#: One is a routing decision with no fallback; ten is more fallbacks than any
+#: gateway has ever walked.
+SHIP_MIN = 1
+SHIP_MAX = 10
+SHIP_DEFAULT = 4
+
 SCOPES: tuple[Scope, ...] = ("read", "profiles:write", "apply", "telemetry")
 
 
@@ -270,54 +277,17 @@ class Axis(_Model):
     higher_is_better: bool = True
 
 
-class Shape(_Model):
-    """Per profile; only the keys the modality uses.
+class ProfileSettings(_Model):
+    """The tuned half of a profile: its weights, and how many models to ship.
 
-    The YAML spells the token fields `in` and `out` (PLAN section 4); both are
-    accepted, and the JSON name stays `in_tokens` / `out_tokens`.
+    There is nothing else, on purpose. A floor, a price sensitivity, an
+    experience weight, per-weight bounds and an auto-apply switch all used to
+    live here, and every one of them changed the answer without moving a
+    slider -- which made the sliders unreadable.
     """
 
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
-
-    in_tokens: int | None = Field(default=None, validation_alias="in")
-    out_tokens: int | None = Field(default=None, validation_alias="out")
-    cached: float | None = None
-    images: int | None = None
-    seconds: float | None = None
-    chars: int | None = None
-    #: Output area for a model priced per megapixel. A 1024x1024 image is 1.05.
-    megapixels: float | None = None
-    #: How many calls one task makes, for a model priced per request. One,
-    #: unless a task is a batch.
-    requests: int | None = None
-
-
-class Policy(_Model):
-    margin: float = 3.0
-    max_tenure_days: int = 14
-    min_confidence: float = 0.75
-    chain: int = 5
-    suspend_below_health: float = 0.75
-    auto_apply: bool = False
-    require_telemetry: bool = False
-
-
-class WeightSetting(_Model):
-    value: float = Field(ge=0.0, le=1.0)
-    min: float = Field(default=0.0, ge=0.0, le=1.0)
-    max: float = Field(default=1.0, ge=0.0, le=1.0)
-    locked: bool = False
-
-
-class ProfileSettings(_Model):
-    ship: int = Field(default=4, ge=1, le=10)
-    list_length: int = Field(default=5, ge=1, le=100)
-    floor_score: float = Field(default=0.0, ge=0.0, le=1.0)
-    price_sensitivity: float = Field(default=1.0, ge=0.0, le=1.0)
-    experience_weight: float = Field(default=0.0, ge=0.0, le=1.0)
-    weights: dict[str, WeightSetting] = Field(default_factory=dict)
-    cost_multipliers: dict[str, float] = Field(default_factory=dict)
-    auto_apply: bool = False
+    ship: int = Field(default=SHIP_DEFAULT, ge=SHIP_MIN, le=SHIP_MAX)
+    weights: dict[str, float] = Field(default_factory=dict)
 
 
 class Outcome(_Model):
@@ -332,23 +302,19 @@ class Outcome(_Model):
 
 
 class Profile(_Model):
+    """One seat: what it is for, what it cares about, and how many to ship.
+
+    Every axis in `weights` is a share of the score and the shares add to one,
+    so raising one lowers the others and the whole profile is readable at a
+    glance. `ship` is the length of the list: the first model is used, the rest
+    are fallbacks.
+    """
+
     name: str
     modality: Modality
     purpose: str
     weights: dict[str, float]
-    #: how many models the profile ships: the first is used, the rest are
-    #: fallbacks. The whole list, and the only number on it that is not a
-    #: weight.
-    ship: int = Field(default=4, ge=1, le=10)
-    require: dict[str, Any] = Field(default_factory=dict)
-    shape: Shape = Field(default_factory=Shape)
-    policy: Policy = Field(default_factory=Policy)
-    targets: list[str] = Field(default_factory=list)
-    # Which effort mode of a family to seat when several are reachable.
-    # "best" takes the highest mode, "cheapest_clearing" the lowest one that
-    # still meets every floor, and a mode name pins that mode. None leaves
-    # every mode in the ranking as its own row, which is the old behaviour.
-    prefer_effort: str | None = None
+    ship: int = Field(default=SHIP_DEFAULT, ge=SHIP_MIN, le=SHIP_MAX)
 
 
 class AxisScore(_Model):
@@ -375,8 +341,6 @@ class Rank(_Model):
     # own observed output tokens. A cost nobody can tell is an estimate is worse
     # than one that admits it.
     cost_from: Literal["shape", "telemetry"] | None = None
-    dominated_by: str | None = None
-    excluded_by: str | None = None
     flip: str | None = None
 
 
@@ -745,8 +709,6 @@ EXPORTED: tuple[type[BaseModel], ...] = (
     Reachable,
     AxisField,
     Axis,
-    Shape,
-    Policy,
     Profile,
     AxisScore,
     Rank,
