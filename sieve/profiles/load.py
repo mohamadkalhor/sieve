@@ -45,8 +45,21 @@ def parse_profile(path: str | Path) -> Profile:
         raise ProfileError(file, str(exc)) from exc
 
 
-def load_profiles(directory: str | Path) -> Iterator[Profile]:
-    """Every profile under `directory`. Raises on the first unreadable file."""
+def load_profiles(
+    directory: str | Path, store: Any | None = None, owner_id: str | None = None
+) -> Iterator[Profile]:
+    """Every profile under `directory`, or every profile one person owns.
+
+    With a store, the store wins: profiles have been editable through the API
+    since the control plane landed, and once several people share a box the
+    YAML on disk is only the owner's seed, not everybody's configuration.
+    """
+    if store is not None:
+        from sieve.profiles import control
+
+        control.seed(store, directory, owner_id)
+        yield from control.profiles(store, owner_id)
+        return
     for file in profile_files(directory):
         yield parse_profile(file)
 

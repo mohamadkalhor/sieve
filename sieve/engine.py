@@ -282,6 +282,7 @@ def rank_profile(
     deps: Deps,
     snapshot: str,
     at: datetime | None = None,
+    owner_id: str | None = None,
 ) -> Ranking:
     """One profile, scored end to end. Empty (with warnings) until A has landed."""
     at = at or datetime.now(UTC)
@@ -295,15 +296,15 @@ def rank_profile(
         else {}
     )
     costs, costed_from_telemetry = add_cost_observations(obs, profile, at, measured_tokens)
-    local = store.local_ids()
+    local = store.local_ids(owner_id)
     # A router-local prefix can carry a negotiated price multiplier. Since one
     # canonical model may be available through several prefixes, use its cheapest
     # reachable effective price; profile overrides win over defaults.
     try:
         from sieve.profiles import control
 
-        configured = control.settings(store, profile.name)
-        defaults = control.multipliers(store)
+        configured = control.settings(store, profile.name, owner_id)
+        defaults = control.multipliers(store, owner_id)
         overrides = configured.cost_multipliers if configured else {}
         for model_id, amount in list(costs.items()):
             factors = [
@@ -337,7 +338,7 @@ def rank_profile(
     from sieve.axes import control as axis_control
 
     axis_control.seed(store, cfg.axes_dir)
-    axes: list[Axis] = axis_control.axes(store, profile.modality)
+    axes: list[Axis] = axis_control.axes(store, profile.modality, owner_id)
     wanted = {a.name for a in axes if a.name in profile.weights}
     pool = obs.models()
 
@@ -403,11 +404,11 @@ def rank_profile(
     try:
         from sieve.profiles import control
 
-        selected = control.settings(store, profile.name)
+        selected = control.settings(store, profile.name, owner_id)
         if selected and selected.experience_weight:
             observed = {
                 row["model_id"]: row["experience"]
-                for row in control.experience(store, profile.name, at)
+                for row in control.experience(store, profile.name, at, owner_id)
             }
             share = selected.experience_weight
             for model_id, (score, confidence, contributions) in list(scored.items()):
@@ -494,10 +495,11 @@ def decide_chain(
     deps: Deps,
     actor: str,
     at: datetime | None = None,
+    owner_id: str | None = None,
 ) -> tuple[Chain | None, Decision | None]:
     """Apply the profile's policy to the new ranking. Every call is a decision row."""
     at = at or datetime.now(UTC)
-    incumbent = store.chain(profile.name)
+    incumbent = store.chain(profile.name, owner_id)
     policy_mod = deps.policy
     if policy_mod is None:
         return incumbent, None
@@ -514,30 +516,41 @@ def run(
     dry_run: bool = True,
     actor: str = "cli",
     store: Store | None = None,
+    owner_id: str | None = None,
 ) -> EngineResult:
-    """Score every profile, decide its chain, and (unless dry) store and ship it."""
+    """Score every profile, decide its chain, and (unless dry) store and ship it.
+
+    Everything read and written here belongs to one person: their profiles,
+    their reachable models, their chains. The daily run calls this once per
+    user rather than once per box, so one ranking never mixes two people's
+    routers.
+    """
     at = datetime.now(UTC)
     owned = store or Store(cfg.db_path)
     deps = Deps()
 
     if profiles is None:
         loader = deps.profiles
-        profiles = list(loader.load_profiles(cfg.profiles_dir)) if loader else []
+        profiles = list(loader.load_profiles(cfg.profiles_dir, owned, owner_id)) if loader else []
 
     snapshot = owned.new_snapshot(source_rows=owned.count_observations())
     result = EngineResult(snapshot=snapshot, at=at, dry_run=dry_run)
 
     for profile in profiles:
-        ranking = rank_profile(cfg, owned, profile, deps=deps, snapshot=snapshot, at=at)
+        ranking = rank_profile(
+            cfg, owned, profile, deps=deps, snapshot=snapshot, at=at, owner_id=owner_id
+        )
         result.rankings.append(ranking)
         if not dry_run:
-            owned.put_ranking(ranking)
+            owned.put_ranking(ranking, owner_id)
 
-        chain, decision = decide_chain(owned, profile, ranking, deps=deps, actor=actor, at=at)
+        chain, decision = decide_chain(
+            owned, profile, ranking, deps=deps, actor=actor, at=at, owner_id=owner_id
+        )
         if chain is not None:
             result.chains.append(chain)
             if not dry_run:
-                owned.put_chain(chain)
+                owned.put_chain(chain, owner_id)
         if decision is not None:
             result.decisions.append(decision)
             if not dry_run:
@@ -555,6 +568,7 @@ def apply_targets(
     dry_run: bool = True,
     actor: str = "cli",
     store: Store | None = None,
+    owner_id: str | None = None,
 ) -> list[TargetResult]:
     """Write chains outward: every connector switched on for writing, then the
     `[targets.*]` blocks the config still names. Nothing else writes outward.
@@ -568,8 +582,10 @@ def apply_targets(
     from sieve.connectors.base import ConnectorError
 
     owned = store or Store(cfg.db_path)
-    seed_from_toml(cfg, owned)
-    by_name = {c.name: c for c in owned.connectors()}
+    seed_from_toml(cfg, owned, owner_id)
+    # Only this person's connectors: a write goes out on somebody's token, and
+    # `[targets.*]` from sieve.toml stays the box operator's business.
+    by_name = {c.name: c for c in owned.connectors(owner_id)}
     wanted = targets or [
         *(name for name, c in by_name.items() if c.write),
         *(name for name in cfg.targets if name not in by_name),
