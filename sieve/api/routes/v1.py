@@ -793,7 +793,18 @@ def get_cost_multipliers(request: Request, _: Read = None) -> dict[str, float]:
     kept (a configuration export still carries it), but a knob wired to nothing
     does not belong on a screen.
     """
-    return control.live_multipliers(store_of(request))
+    return control.live_multipliers(store_of(request), owner_of(request))
+
+
+@router.delete("/cost-multipliers/{prefix:path}")
+def delete_cost_multiplier(
+    request: Request,
+    prefix: str,
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    if not store_of(request).delete_cost_multiplier(prefix, owner_of(request)):
+        return error(404, "not_found", f"no cost multiplier {prefix!r}")
+    return {"deleted": prefix, "actor": token.name}
 
 
 @router.put("/cost-multipliers")
@@ -1477,6 +1488,7 @@ def post_pull(
     request: Request,
     name: str,
     token: Annotated[Token, Depends(require_scope("apply"))],
+    force: bool = False,
 ) -> Any:
     from sieve import plugins
     from sieve.http import client as http_client
@@ -1485,6 +1497,8 @@ def post_pull(
     source_cfg = cfg.sources.get(name)
     if source_cfg is None:
         return error(404, "not_found", f"no source {name!r}")
+    if not source_cfg.enabled and not force:
+        return error(409, "source_disabled", f"source {name!r} is disabled; use force=true to pull")
     try:
         source = plugins.load(plugins.SOURCES, name)
     except (LookupError, ImportError) as exc:
@@ -1522,6 +1536,23 @@ def get_inventory(
     return store_of(request).reachable(unmatched=unmatched, include_stale=include_stale)
 
 
+@router.get("/aliases")
+def get_aliases(request: Request, _: Read = None) -> list[dict[str, str]]:
+    return store_of(request).alias_rows()
+
+
+@router.delete("/aliases/{alias:path}")
+def delete_alias(
+    request: Request,
+    alias: str,
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+    modality: Modality = "llm",
+) -> Any:
+    if not store_of(request).delete_alias(alias, modality):
+        return error(404, "not_found", f"no alias {alias!r} for {modality}")
+    return {"deleted": alias, "modality": modality, "actor": token.name}
+
+
 @router.put("/aliases")
 def put_alias(
     request: Request,
@@ -1533,6 +1564,10 @@ def put_alias(
     modality = body.get("modality", "llm")
     if not alias or not model_id:
         return error(400, "bad_request", "alias and model_id are required")
+    if not store.db.execute(
+        "SELECT 1 FROM models WHERE id=? AND modality=?", (model_id, modality)
+    ).fetchone():
+        return error(400, "unknown_model", f"no model {model_id!r} for modality {modality!r}")
     store.put_alias(alias, modality, model_id)  # type: ignore[arg-type]
     store.db.execute(
         "UPDATE reachable SET model_id=? WHERE local_id=? AND model_id IS NULL",

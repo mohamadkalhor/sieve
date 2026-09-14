@@ -1,12 +1,15 @@
 <script lang="ts">
   /** Sources: what has been pulled, and the ids nothing could be matched to. */
-  import { api, type ApiError, type SourceRow } from '$lib/api/client';
+  import { api, type AliasRow, type ApiError, type ModelRow, type SourceRow } from '$lib/api/client';
   import type { Reachable } from '$lib/types';
   import Chip from '$lib/components/Chip.svelte';
   import Empty from '$lib/components/Empty.svelte';
 
   let sources = $state<SourceRow[]>([]);
   let unmatched = $state<Reachable[]>([]);
+  let aliases = $state<AliasRow[]>([]);
+  let models = $state<ModelRow[]>([]);
+  let choices = $state<Record<string, string>>({});
   let error = $state<ApiError | null>(null);
   let token = $state('');
   let notice = $state('');
@@ -14,16 +17,52 @@
   let loading = $state(true);
 
   async function load() {
-    const [s, i] = await Promise.all([api.sources(), api.inventory(true)]);
+    error = null;
+    const [s, i, a] = await Promise.all([api.sources(), api.inventory(true), api.aliases()]);
     if (s.ok) sources = s.value;
     else error = s.error;
-    unmatched = i.ok ? i.value : [];
+    if (i.ok) unmatched = i.value;
+    else error = i.error;
+    if (a.ok) aliases = a.value.filter((row) => row.origin === 'user');
+    else error = a.error;
+    const catalogue: ModelRow[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await api.models({ limit: 500, cursor });
+      if (!page.ok) {
+        error = page.error;
+        break;
+      }
+      catalogue.push(...page.value.items);
+      cursor = page.value.next_cursor ?? undefined;
+    } while (cursor);
+    models = catalogue;
     loading = false;
   }
 
   $effect(() => {
     void load();
   });
+
+  async function saveAlias(item: Reachable) {
+    const model = models.find((m) => `${m.modality}:${m.id}` === choices[item.local_id]);
+    if (!model) return;
+    busy = `alias:${item.local_id}`;
+    const result = await api.alias(item.local_id, model.id, model.modality, { token: token || undefined });
+    busy = '';
+    if (!result.ok) { error = result.error; return; }
+    notice = `${item.local_id} aliased as ${model.id}.`;
+    await load();
+  }
+
+  async function removeAlias(row: AliasRow) {
+    busy = `alias:${row.alias}`;
+    const result = await api.removeAlias(row.alias, row.modality, { token: token || undefined });
+    busy = '';
+    if (!result.ok) { error = result.error; return; }
+    notice = `${row.alias} removed.`;
+    await load();
+  }
 
   async function pull(name: string) {
     busy = name;
@@ -49,7 +88,7 @@
 <p class="lede">Where the numbers come from, and what could not be matched to a model.</p>
 
 <label class="token">
-  <span>Token (needed to pull)</span>
+  <span>Token (apply to pull; profiles:write for aliases)</span>
   <input type="password" bind:value={token} placeholder="a token with apply" autocomplete="off" />
 </label>
 {#if notice}<p class="notice">{notice}</p>{/if}
@@ -65,7 +104,9 @@
       <article class="card" class:off={!source.enabled}>
         <header>
           <span class="name mono">{source.name}</span>
-          <button type="button" onclick={() => pull(source.name)} disabled={busy === source.name}>
+          <button type="button" onclick={() => pull(source.name)}
+            disabled={!source.enabled || busy === source.name}
+            title={!source.enabled ? 'This source is disabled; enable it before pulling.' : 'Pull this source'}>
             {busy === source.name ? 'pulling…' : 'Pull now'}
           </button>
         </header>
@@ -117,12 +158,39 @@
       <li>
         <span class="mono">{item.local_id}</span>
         <span class="from">{item.inventory}</span>
+        <form onsubmit={(event) => { event.preventDefault(); void saveAlias(item); }}>
+          <label>Alias as
+            <select bind:value={choices[item.local_id]} required>
+              <option value="">Choose a model</option>
+              {#each models as model (`${model.modality}:${model.id}`)}
+                <option value={`${model.modality}:${model.id}`}>{model.name} · {model.modality} · {model.id}</option>
+              {/each}
+            </select>
+          </label>
+          <button type="submit" disabled={!choices[item.local_id] || busy === `alias:${item.local_id}`}>Save</button>
+        </form>
       </li>
     {/each}
   </ul>
 {/if}
 
+<h2>User aliases</h2>
+<p class="muted small">Removing an alias undoes its inventory match. Source aliases may also be deleted through the API, but the next source pull may recreate them.</p>
+<ul class="unmatched">
+  {#each aliases as row (`${row.modality}:${row.alias}`)}
+    <li>
+      <span class="mono">{row.alias} → {row.model_id}</span>
+      <span class="from">{row.modality}</span>
+      <button type="button" disabled={busy === `alias:${row.alias}`} onclick={() => void removeAlias(row)}>Remove</button>
+    </li>
+  {:else}
+    <li class="muted">No user aliases.</li>
+  {/each}
+</ul>
+
 <style>
+  form { display: flex; gap: 0.4rem; align-items: center; }
+  select { background: var(--panel2); color: var(--ink); border: 1px solid var(--rule); border-radius: 7px; font: inherit; padding: 0.3rem; max-width: 26rem; }
   h1 {
     font-size: 1.6rem;
     margin: 0;

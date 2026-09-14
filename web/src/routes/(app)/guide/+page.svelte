@@ -1,13 +1,26 @@
 <script lang="ts">
-  /**
-   * The guide: what the loop is, what each screen is for, and where the two
-   * readings live that the rail no longer lists.
-   *
-   * It exists because the rail is six items long on purpose. Sources and Pulse
-   * are worth reading and not worth a permanent place beside the screens you
-   * actually work on, so they are named here instead of crowding the column.
-   */
+  import { api, type ApiError } from '$lib/api/client';
+  import { blocks, inline } from '$lib/markdown';
+
+  let markdown = $state('');
+  let error = $state<ApiError | null>(null);
+  let loading = $state(true);
+  $effect(() => {
+    void api.guide().then((result) => {
+      if (result.ok) markdown = result.value;
+      else error = result.error;
+      loading = false;
+    });
+  });
 </script>
+
+{#snippet text(value: string)}
+  {#each inline(value) as part}
+    {#if part.kind === 'code'}<code>{part.text}</code>
+    {:else if part.kind === 'strong'}<strong>{part.text}</strong>
+    {:else}{part.text}{/if}
+  {/each}
+{/snippet}
 
 <svelte:head><title>Guide · Sieve</title></svelte:head>
 
@@ -17,34 +30,21 @@
   list to your gateways. It does that in three steps, and you can run any of them by hand.
 </p>
 
-<section>
-  <h2>The three steps</h2>
-  <dl>
-    <dt>Pull sources</dt>
-    <dd>
-      Fetch the benchmark sources — Artificial Analysis for LLMs and media, OpenRouter for prices,
-      anything you put in <code>data/observations</code> by hand — into the store. Nothing is ranked
-      here; this is only the measuring.
-    </dd>
-    <dt>Harvest connectors</dt>
-    <dd>
-      Ask every connector what it is serving right now, match each local id to a model in the
-      catalogue, and re-read the id prefixes that carry your negotiated cost multipliers. A model
-      your gateway quietly dropped leaves the inventory here.
-    </dd>
-    <dt>Ship profiles</dt>
-    <dd>
-      Rank every seat against that inventory, decide its list, and write the combo to the gateway
-      for the seats with auto-apply on. Every seat records a decision, a hold included, so a run
-      that changed nothing is as visible as one that changed everything.
-    </dd>
-    <dt>Full run</dt>
-    <dd>Harvest, then pull, then ship — harvest first, so nothing is ranked against a model that is no longer served.</dd>
-  </dl>
-  <p>
-    The box at the top of every page runs any of them and sets how often each should go on its own.
-    The <a href="/runs">Runs</a> screen keeps the record, with each run's log.
-  </p>
+<section class="operating">
+  {#if loading}<p>Loading operating guide…</p>
+  {:else if error}<p class="error">{error.message}</p>
+  {:else}
+    {#each blocks(markdown) as block}
+      {#if block.kind === 'heading'}
+        <svelte:element this={`h${Math.min(block.level + 1, 6)}`}>{@render text(block.text)}</svelte:element>
+      {:else if block.kind === 'code'}<pre><code>{block.text}</code></pre>
+      {:else if block.kind === 'paragraph'}<p>{@render text(block.text)}</p>
+      {:else if block.kind === 'list'}
+        {#if block.ordered}<ol>{#each block.items as item}<li>{@render text(item)}</li>{/each}</ol>
+        {:else}<ul>{#each block.items as item}<li>{@render text(item)}</li>{/each}</ul>{/if}
+      {/if}
+    {/each}
+  {/if}
 </section>
 
 <section>
@@ -90,20 +90,10 @@
     margin-bottom: 1.6rem;
     max-width: 46rem;
   }
-  dl {
-    margin: 0;
-  }
-  dt {
-    color: var(--ink);
-    font-size: 0.82rem;
-    margin-top: 0.6rem;
-  }
-  dd {
-    margin: 0.15rem 0 0;
-    color: var(--muted);
-    font-size: 0.8rem;
-    line-height: 1.55;
-  }
+  .operating { font-size: 0.85rem; line-height: 1.65; overflow-wrap: anywhere; }
+  .operating :global(h2), .operating :global(h3) { margin-top: 1.4rem; font-family: var(--ui); }
+  pre { overflow-x: auto; padding: 0.8rem; background: var(--panel2); border: 1px solid var(--rule); border-radius: var(--radius); }
+  .error { color: var(--bad); }
   p {
     color: var(--muted);
     font-size: 0.8rem;

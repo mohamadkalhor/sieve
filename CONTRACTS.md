@@ -327,8 +327,13 @@ Bearer <secret>` and the scope in the table; reads are open unless
 | POST /v1/apply {profiles:[...], targets:[...]} | apply | TargetResult[] |
 | POST /v1/telemetry [TelemetryEvent] | telemetry | {accepted} |
 | GET /v1/decisions?profile=&kind=&since= | – | Decision[] |
-| GET /v1/sources · POST /v1/sources/{name}/pull | – / apply | status; pull is async, returns job id |
-| GET /v1/inventory?unmatched=true&include_stale=true · PUT /v1/aliases | – / profiles:write | Reachable[] — the last pull per connector; `include_stale` adds the retired rows, each `stale:true` with the `seen_at` it was last served / alias saved |
+| GET /v1/sources · POST /v1/sources/{name}/pull?force=true | – / apply | status; synchronous pull returns {job,source,added,warnings}; 404 unknown source; 409 `source_disabled` before any pull unless `force=true` |
+| GET /v1/inventory?unmatched=true&include_stale=true | – | Reachable[] — the last pull per connector; `include_stale` adds retired rows |
+| GET /v1/aliases | – | {alias,model_id,modality,origin}[]; origin is user or source |
+| PUT /v1/aliases | profiles:write | {alias,model_id,actor}; body {alias,model_id,modality}, modality defaults to llm. 400 `unknown_model` when id is absent in that modality: {"error":{"code":"unknown_model","message":"no model 'missing/id' for modality 'llm'"}} |
+| DELETE /v1/aliases/{alias}?modality=llm | profiles:write | {deleted,modality,actor}; URL-encode alias (slashes supported); 404 unknown alias/modality; undoes its inventory attachment. Source-origin aliases can be deleted too, but the next source pull may recreate them |
+| DELETE /v1/cost-multipliers/{prefix} | profiles:write | {deleted,actor}; URL-encode prefix (slashes supported); 404 when unknown for caller. Removes stored default, not per-profile overrides; reachable prefixes may be recreated at 1.0 when multipliers are next read/synchronised |
+| GET /v1/guide | – | text/markdown: OPERATING.md, rendered on /guide |
 | GET /v1/connectors · GET /v1/connectors/{id} | – | Connector[] + token_present; never a token |
 | POST /v1/connectors · PUT /v1/connectors/{id} · DELETE /v1/connectors/{id} | apply | Connector |
 | POST /v1/connectors/{id}/test | – | ConnectorTest — 200 with `ok:false` when the router is down |

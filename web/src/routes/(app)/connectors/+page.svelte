@@ -313,6 +313,23 @@
   );
   const allPrefixes = $derived(Object.keys(multipliers ?? {}).length);
 
+  async function removeMultiplier(prefix: string) {
+    savingPrefix = prefix;
+    const result = await api.removeCostMultiplier(prefix, options);
+    savingPrefix = '';
+    multiplierSaid = {
+      ...multiplierSaid,
+      [prefix]: result.ok
+        ? { ok: true, text: 'removed; the next harvest may restore default 1.0' }
+        : { ok: false, text: explainError(result.error) }
+    };
+    if (result.ok && multipliers) {
+      const next = { ...multipliers };
+      delete next[prefix];
+      multipliers = next;
+    }
+  }
+
   async function setMultiplier(prefix: string, raw: string, box: HTMLInputElement) {
     const value = Number(raw);
     if (!Number.isFinite(value) || value < 0) {
@@ -601,6 +618,9 @@
               <td class="who">{seen?.inventories.join(', ') || '—'}</td>
               <td class={last && !last.ok ? 'error one-line' : 'note'}>
                 {savingPrefix === prefix ? 'saving…' : last ? last.text : 'default 1.0'}
+                <button type="button" disabled={savingPrefix === prefix}
+                  title="Remove the stored multiplier; the next multiplier refresh may recreate default 1.0"
+                  onclick={() => void removeMultiplier(prefix)}>Remove</button>
               </td>
             </tr>
           {:else}

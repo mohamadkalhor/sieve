@@ -268,6 +268,41 @@ class Store:
                 (alias, modality, model_id),
             )
 
+    def alias_rows(self) -> list[dict[str, str]]:
+        return [
+            dict(row)
+            for row in self.db.execute(
+                "SELECT alias, modality, model_id, origin FROM aliases ORDER BY alias, modality"
+            )
+        ]
+
+    def delete_alias(self, alias: str, modality: Modality) -> bool:
+        with self.tx() as db:
+            row = db.execute(
+                "SELECT model_id FROM aliases WHERE alias=? AND modality=?", (alias, modality)
+            ).fetchone()
+            if row is None:
+                return False
+            db.execute("DELETE FROM aliases WHERE alias=? AND modality=?", (alias, modality))
+            # Undo the inventory attachment made by PUT, without clearing a
+            # different mapping or another modality's surviving alias.
+            db.execute(
+                "UPDATE reachable SET model_id=NULL WHERE local_id=? AND model_id=?"
+                " AND NOT EXISTS (SELECT 1 FROM aliases WHERE alias=? AND model_id=?)",
+                (alias, row["model_id"], alias, row["model_id"]),
+            )
+        return True
+
+    def delete_cost_multiplier(self, prefix: str, owner_id: str | None = None) -> bool:
+        with self.tx() as db:
+            return (
+                db.execute(
+                    "DELETE FROM cost_multipliers WHERE prefix=? AND owner_id IS ?",
+                    (prefix, owner_id),
+                ).rowcount
+                > 0
+            )
+
     def aliases(self, modality: Modality | None = None) -> dict[str, str]:
         sql = "SELECT alias, model_id FROM aliases"
         args: tuple[Any, ...] = ()

@@ -64,6 +64,7 @@ export interface RequestOptions {
   method?: string;
   body?: unknown;
   signal?: AbortSignal;
+  responseType?: 'json' | 'text';
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<Result<T>> {
@@ -94,7 +95,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   let payload: unknown = null;
   try {
-    payload = await response.json();
+    payload = response.ok && options.responseType === 'text'
+      ? await response.text()
+      : await response.json();
   } catch {
     payload = null;
   }
@@ -229,6 +232,13 @@ export interface AxisRow extends Axis {
 export interface SourceFieldRow {
   field: string;
   rows: number;
+}
+
+export interface AliasRow {
+  alias: string;
+  model_id: string;
+  modality: Modality;
+  origin: 'user' | 'source';
 }
 
 export interface SourceRow {
@@ -406,6 +416,16 @@ const q = (params: Record<string, string | number | boolean | undefined>): strin
 };
 
 export const api = {
+  guide: (o?: RequestOptions) => request<string>('/v1/guide', { ...o, responseType: 'text' }),
+  aliases: (o?: RequestOptions) => request<AliasRow[]>('/v1/aliases', o),
+  removeAlias: (alias: string, modality: Modality, o?: RequestOptions) =>
+    request<{ deleted: string }>(`/v1/aliases/${encodeURIComponent(alias)}${q({ modality })}`, {
+      ...o, method: 'DELETE'
+    }),
+  removeCostMultiplier: (prefix: string, o?: RequestOptions) =>
+    request<{ deleted: string }>(`/v1/cost-multipliers/${encodeURIComponent(prefix)}`, {
+      ...o, method: 'DELETE'
+    }),
   status: (o?: RequestOptions) => request<StatusRow>('/v1/status', o),
 
   /* -- who is calling, and the loop under hand control (AMS-31) ----------- */
@@ -473,7 +493,7 @@ export const api = {
     ),
 
   models: (
-    params: { modality?: Modality; reachable?: boolean; q?: string; limit?: number } = {},
+    params: { modality?: Modality; reachable?: boolean; q?: string; limit?: number; cursor?: string } = {},
     o?: RequestOptions
   ) => request<Page<ModelRow>>(`/v1/models${q(params)}`, o),
 
