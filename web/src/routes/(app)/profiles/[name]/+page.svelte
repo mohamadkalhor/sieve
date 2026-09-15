@@ -969,7 +969,7 @@
           <h2>Prefix weights</h2>
           <span class="sub">
             multiplies the score of every model a router serves, apart from cost ·
-            1.5 lifts, 0.5 halves, blank is 1
+            1.5 lifts, 0.5 halves, blank is 1 · a model on several routers takes its best one
           </span>
         </div>
         {#if prefixes.length}
