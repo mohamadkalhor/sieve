@@ -24,7 +24,7 @@
   let { unreachable = false }: Props = $props();
 
   /**
-   * The six sections, in this order, everywhere. Sources and Pulse are still
+   * The sections, in this order, everywhere. Sources and Pulse are still
    * there -- the Guide links to them -- but they are readings, not places you
    * work, and a rail that lists everything lists nothing.
    */
@@ -32,6 +32,7 @@
     { href: '/field', label: 'Overview' },
     { href: '/profiles', label: 'Profiles' },
     { href: '/axes', label: 'Axes' },
+    { href: '/unscored', label: 'Unscored' },
     { href: '/connectors', label: 'Connectors' },
     { href: '/runs', label: 'Runs' },
     { href: '/guide', label: 'Guide' }

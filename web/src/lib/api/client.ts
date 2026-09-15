@@ -452,6 +452,44 @@ export interface NewProfileBody {
   copy_from?: string;
 }
 
+/** Every modality, for a form that has to ask which one a model is. */
+export const MODALITY_OPTIONS: Modality[] = [
+  'llm',
+  'text-to-image',
+  'image-editing',
+  'text-to-video',
+  'image-to-video',
+  'video-editing',
+  'text-to-speech',
+  'speech-to-text',
+  'speech-to-speech',
+  'music'
+];
+
+/**
+ * `GET /v1/unscored`: a model a router serves that no source has benchmarked.
+ * `no_match` means the router's id matched nothing in the catalogue;
+ * `no_scores` means it matched a model nobody has measured.
+ */
+export interface UnscoredRow {
+  local_id: string;
+  model_id: string | null;
+  name: string;
+  modality: Modality | null;
+  reason: 'no_match' | 'no_scores';
+  /** axis -> 0..1, given by hand */
+  hand: Record<string, number>;
+  router: string;
+}
+
+/** `PUT /v1/hand-scores`: 0..1 per axis, `null` clears one. */
+export interface HandScoresBody {
+  local_id: string;
+  modality: Modality;
+  scores: Record<string, number | null>;
+  name?: string;
+}
+
 const q = (params: Record<string, string | number | boolean | undefined>): string => {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -710,6 +748,15 @@ export const api = {
       ...o,
       method: 'PUT',
       body: values
+    }),
+
+  unscored: (o?: RequestOptions) => request<UnscoredRow[]>('/v1/unscored', o),
+
+  saveHandScores: (body: HandScoresBody, o?: RequestOptions) =>
+    request<{ model_id: string; hand: Record<string, number> }>('/v1/hand-scores', {
+      ...o,
+      method: 'PUT',
+      body
     }),
 
   inventory: (unmatched?: boolean, o?: RequestOptions) =>

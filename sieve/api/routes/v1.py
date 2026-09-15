@@ -23,6 +23,7 @@ from sieve.api.sse import events
 from sieve.axes import control as axis_control
 from sieve.config import Config
 from sieve.contracts import (
+    MODALITIES,
     Axis,
     BoardRow,
     Chain,
@@ -763,10 +764,21 @@ def preview(
     except (ValidationError, ValueError, TypeError) as exc:
         return error(400, "bad_settings", str(exc))
     ranking = store.ranking(name, None, owner_id)
+    from sieve.profiles import hand
+
+    touched = hand.changed_at(store, found.modality, owner_id)
+    if ranking is not None and touched is not None and ranking.computed_at < touched:
+        # hand scores changed after this ranking was stored: rank again once
+        ranking = None
     if ranking is None:
         candidate = found.model_copy(update={"weights": dict(proposed.weights)})
         ranking = rank_profile(
-            cfg, store, candidate, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
+            cfg,
+            store,
+            candidate,
+            deps=EngineDeps(),
+            snapshot=store.latest_snapshot() or "none",
+            owner_id=owner_id,
         )
         store.put_ranking(ranking, owner_id)
     from sieve.scoring.select import behind, select
@@ -1521,6 +1533,71 @@ def put_alias(
     )
     store.db.commit()
     return {"alias": alias, "model_id": model_id, "actor": token.name}
+
+
+@router.get("/unscored")
+def get_unscored(request: Request, _: Read = None) -> list[dict[str, Any]]:
+    """Every model a router serves that no source has benchmarked.
+
+    `reason` is `no_match` (the router id matched nothing in the catalogue) or
+    `no_scores` (it matched a model nobody has measured). `hand` holds the
+    scores already given. Score one with `PUT /v1/hand-scores`, or link a
+    `no_match` id to a model the catalogue knows with `PUT /v1/aliases`.
+    """
+    from sieve.profiles import hand
+
+    return hand.unscored(store_of(request), owner_of(request))
+
+
+@router.put("/hand-scores")
+def put_hand_scores(
+    request: Request,
+    body: Annotated[dict[str, Any], Body()],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    """Score a model by hand, axis by axis.
+
+    Body: `{"local_id": "ag/gemini-pro-agent", "modality": "llm",
+    "scores": {"intelligence": 0.7, "cost": null}, "name": "Gemini Pro Agent"}`.
+    Each value is 0..1 and becomes that axis's value for the model; `null`
+    clears one. `name` is used only when the id matched nothing and a
+    catalogue entry has to be made for it.
+    """
+    from sieve.profiles import hand
+
+    cfg, store = config_of(request), store_of(request)
+    owner_id = owner_of(request)
+    local_id = str(body.get("local_id") or "").strip()
+    modality = str(body.get("modality") or "llm")
+    given = body.get("scores")
+    if not local_id or not isinstance(given, dict) or not given:
+        return error(400, "bad_request", "give `local_id` and a non-empty `scores` object")
+    if modality not in MODALITIES:
+        return error(400, "bad_request", f"unknown modality {modality!r}")
+    axis_control.seed(store, cfg.axes_dir)
+    axes = {a.name for a in axis_control.axes(store, modality, owner_id)}
+    try:
+        model_id = hand.put(
+            store,
+            local_id,
+            modality,
+            {str(k): (None if v is None else float(v)) for k, v in given.items()},
+            axes,
+            by=token.name,
+            name=body.get("name"),
+            owner_id=owner_id,
+        )
+    except LookupError as exc:
+        return error(404, "not_found", str(exc))
+    except (TypeError, ValueError) as exc:
+        return error(400, "bad_scores", str(exc))
+    return {
+        "local_id": local_id,
+        "model_id": model_id,
+        "modality": modality,
+        "hand": hand.scores(store, modality, owner_id).get(model_id, {}),
+        "actor": token.name,
+    }
 
 
 @router.get("/events")

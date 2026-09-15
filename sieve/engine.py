@@ -356,6 +356,18 @@ def _rank_profile(
             continue
         per_axis[axis.name] = axes_compute.axis_values(axis, obs, pool)
 
+    # A score given by hand is the axis value itself, and it wins: it exists
+    # only because no source measured the model, or a person decided the
+    # measurement was wrong for them (`sieve.profiles.hand`).
+    from sieve.profiles import hand
+
+    for model_id, given in hand.scores(store, profile.modality, owner_id).items():
+        if model_id not in pool:
+            continue
+        for axis_name, value in given.items():
+            if axis_name in per_axis:
+                per_axis[axis_name][model_id] = (value, 1.0)
+
     axes_by_model: dict[str, dict[str, tuple[float | None, float]]] = {}
     for model_id in pool:
         axes_by_model[model_id] = {

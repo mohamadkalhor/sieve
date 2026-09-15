@@ -71,6 +71,35 @@ success the YAML on disk changes — git stays the record — and a decision is
 logged. `POST /v1/profiles/coder/evaluate` is the same computation as a dry run
 that stores nothing.
 
+## Scoring a model no source has measured
+
+A router can serve a model no benchmark covers. `GET /v1/unscored` lists every
+one, with any hand scores already given:
+
+```json
+[{"local_id": "ag/gemini-pro-agent", "model_id": null, "name": "gemini-pro-agent",
+  "modality": null, "reason": "no_match", "hand": {}, "router": "gateway"}]
+```
+
+`reason` is `no_match` (the id matched nothing in the catalogue) or `no_scores`
+(it matched a model nobody has measured). If the catalogue already knows the
+model under another name, link it instead: `PUT /v1/aliases`.
+
+Otherwise, score it:
+
+```bash
+curl -X PUT http://127.0.0.1:8111/v1/hand-scores \
+  -H 'authorization: Bearer <secret>' -H 'content-type: application/json' \
+  -d '{"local_id": "ag/gemini-pro-agent", "modality": "llm", "name": "Gemini Pro Agent",
+       "scores": {"intelligence": 0.8, "reasoning": 0.75, "cost": null}}'
+```
+
+Each score is 0..1 on that axis, where 1 is as good as the best model, and it
+*is* the axis value for that model -- it wins over anything computed. `null`
+clears one. An unmatched id gets a catalogue entry `hand/<local_id>` so the
+scores have a model to belong to. Profiles rank on the scores from their next
+preview; the scheduled run ships them.
+
 ## Pagination and events
 
 List endpoints take `?limit=&cursor=` and return
