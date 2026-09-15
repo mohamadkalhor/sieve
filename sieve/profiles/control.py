@@ -208,7 +208,7 @@ def update_settings(
     """Merge a patch into one profile's settings, and say what it ignored.
 
     The hand controls -- `manual`, `pinned`, `removed`, `needs`, and the
-    per-seat `cost_multipliers` -- replace what was there; a patch that does not
+    per-seat `prefix_weights` -- replace what was there; a patch that does not
     name one leaves it alone.
 
     Weights merge per axis rather than replacing the map, so a page that knows
@@ -241,15 +241,16 @@ def update_settings(
             weights.pop(axis, None)
         cleaned["weights"] = weights
 
-    if "cost_multipliers" in cleaned:
+    if "prefix_weights" in cleaned:
         wanted = {
             str(prefix): float(value)
-            for prefix, value in (cleaned["cost_multipliers"] or {}).items()
+            for prefix, value in (cleaned["prefix_weights"] or {}).items()
             if value is not None
         }
         if any(value < 0 for value in wanted.values()):
-            raise ValueError("multipliers must be non-negative")
-        cleaned["cost_multipliers"] = wanted
+            raise ValueError("prefix weights must be non-negative")
+        # 1 is what an unnamed prefix already counts as; storing it says nothing
+        cleaned["prefix_weights"] = {k: v for k, v in wanted.items() if v != 1.0}
 
     return ProfileSettings.model_validate({**raw, **cleaned}), warnings
 
@@ -435,7 +436,9 @@ def experience(
     ]
 
 
-def rerank_cached(ranking: Ranking, weights: dict[str, float]) -> Ranking:
+def rerank_cached(
+    ranking: Ranking, weights: dict[str, float], prefix_weights: dict[str, float] | None = None
+) -> Ranking:
     """Reweight cached axis values without rebuilding the observation table.
 
     The same arithmetic the engine does, over the axis values a ranking already
@@ -443,6 +446,8 @@ def rerank_cached(ranking: Ranking, weights: dict[str, float]) -> Ranking:
     makes a slider answer in milliseconds instead of seconds, and it has to
     agree with the engine to the last decimal or the preview is a lie.
     """
+    from sieve.scoring.select import prefix_factor
+
     ranks = []
     for row in ranking.ranks:
         axes = {axis.axis: axis for axis in row.axes}
@@ -468,7 +473,7 @@ def rerank_cached(ranking: Ranking, weights: dict[str, float]) -> Ranking:
                     "position": 0,
                     "score": score,
                     "confidence": confidence,
-                    "final": score * row.health,
+                    "final": score * row.health * prefix_factor(row.local_ids, prefix_weights),
                     "axes": updated_axes,
                 }
             )

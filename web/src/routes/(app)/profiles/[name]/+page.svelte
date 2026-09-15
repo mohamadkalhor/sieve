@@ -13,8 +13,10 @@
    *                 percentage, a lock that holds it while the others move
    *   How many      (auto) at least one, no upper bound; pins count towards it
    *   Removed       (auto) what was taken off the list, to put back
-   *   Cost multipliers  per router prefix, for this profile only, over the
-   *                 defaults on the Connectors page; blank uses the default
+   *   Find a model  (auto) search every reachable model: where it ranks, and
+   *                 pin, remove or restore it from there
+   *   Prefix weights  per router prefix, a multiplier on the score of every
+   *                 model it serves -- apart from cost; blank is 1
    *
    * Axes keep the order they were added in. A list that re-sorted itself by
    * weight on every drag moved the row out from under the pointer.
@@ -100,9 +102,10 @@
   let removed = $state<string[]>([]);
   let needs = $state<Need[]>([]);
   /** this profile's own multiplier per router prefix; a prefix not here uses the default */
-  let multipliers = $state<Record<string, number>>({});
-  let defaults = $state<Record<string, number>>({});
-  const prefixes = $derived(Object.keys(defaults).sort());
+  let prefixWeights = $state<Record<string, number>>({});
+  /** the router prefixes this box reaches, from the Connectors page's list */
+  let prefixes = $state<string[]>([]);
+  let finding = $state('');
 
   let loading = $state(true);
   let gone = $state<ApiError | null>(null);
@@ -227,7 +230,7 @@
       pinned = [...(held?.pinned ?? [])];
       removed = [...(held?.removed ?? [])];
       needs = [...(held?.needs ?? [])];
-      multipliers = { ...(held?.cost_multipliers ?? {}) };
+      prefixWeights = { ...(held?.prefix_weights ?? {}) };
       try {
         const stored = JSON.parse(localStorage.getItem(lockKey()) ?? '[]');
         locked = Array.isArray(stored) ? stored.filter((a) => a in weights) : [];
@@ -242,7 +245,7 @@
       ]);
       if (wanted !== name) return;
       if (axes.ok && Array.isArray(axes.value)) everyAxis = axes.value;
-      if (prices.ok && prices.value) defaults = prices.value;
+      if (prices.ok && prices.value) prefixes = Object.keys(prices.value).sort();
 
       await refresh();
     })();
@@ -265,7 +268,7 @@
       pinned,
       removed,
       needs,
-      cost_multipliers: multipliers,
+      prefix_weights: prefixWeights,
       remove_axes: everyAxis.map((a: AxisRow) => a.name).filter((a: string) => !(a in weights))
     };
   }
@@ -331,15 +334,39 @@
     touched();
   }
 
-  function setMultiplier(prefix: string, raw: string): void {
+  function setPrefixWeight(prefix: string, raw: string): void {
     const value = Number(raw);
-    const rest = Object.fromEntries(Object.entries(multipliers).filter(([key]) => key !== prefix));
-    // blank, or the default itself, means "no override": nothing to remember
-    multipliers =
-      raw.trim() === '' || !Number.isFinite(value) || value < 0 || value === defaults[prefix]
+    const rest = Object.fromEntries(Object.entries(prefixWeights).filter(([key]) => key !== prefix));
+    // blank, or 1, is what an unnamed prefix already counts as
+    prefixWeights =
+      raw.trim() === '' || !Number.isFinite(value) || value < 0 || value === 1
         ? rest
         : { ...rest, [prefix]: value };
     touched();
+  }
+
+  /** a search over every reachable model, with where each one stands */
+  const found = $derived.by(() => {
+    const needle = finding.trim().toLowerCase();
+    if (!needle) return [];
+    return pool
+      .map((row, index) => ({ row, rank: index + 1 }))
+      .filter(
+        ({ row }) =>
+          row.name.toLowerCase().includes(needle) ||
+          row.id.toLowerCase().includes(needle) ||
+          row.local_ids.some((id) => id.toLowerCase().includes(needle))
+      )
+      .slice(0, 12);
+  });
+
+  function standing(id: string): string {
+    const at = (models ?? []).findIndex((row) => row.id === id);
+    if (removed.includes(id)) return 'removed';
+    if (at >= 0) return pinned.includes(id) ? `pinned · ships #${at + 1}` : `ships #${at + 1}`;
+    if (pinned.includes(id)) return 'pinned · skipped';
+    if (needs.length && (byId[id]?.lacks ?? []).length) return 'fails Must support';
+    return 'not shipping';
   }
 
   function toggleNeed(need: Need): void {
@@ -729,6 +756,61 @@
           </ul>
         </section>
       {:else}
+        <!-- find a model -->
+        <section class="panel">
+          <h2>Find a model</h2>
+          <p class="sub">where it ranks for this profile, and pin or remove it</p>
+          <input
+            class="search"
+            type="search"
+            placeholder="Search {pool.length || ''} reachable models…"
+            bind:value={finding}
+            spellcheck="false"
+            autocomplete="off"
+          />
+          {#if finding.trim()}
+            <ul class="picks">
+              {#each found as { row, rank } (row.id)}
+                {@const state = standing(row.id)}
+                <li class="found">
+                  <span class="mono found-rank">#{rank}</span>
+                  <span class="pick-who">
+                    <span class="pick-name">{row.name}</span>
+                    <span class="found-meta">
+                      <span class="mono">{row.score.toFixed(2)}</span>
+                      <span class:ships={state.includes('ships')} class:gone={state === 'removed'}>{state}</span>
+                    </span>
+                  </span>
+                  {#if removed.includes(row.id)}
+                    <button type="button" class="link" onclick={() => restore(row.id)}>Restore</button>
+                  {:else}
+                    <span class="found-acts">
+                      <button
+                        type="button"
+                        class="icon"
+                        class:active={pinned.includes(row.id)}
+                        aria-pressed={pinned.includes(row.id)}
+                        title={pinned.includes(row.id) ? 'Unpin' : 'Pin: always ship, first'}
+                        aria-label={`${pinned.includes(row.id) ? 'Unpin' : 'Pin'} ${row.name}`}
+                        onclick={() => pin(row.id)}>{@render pinIcon(pinned.includes(row.id))}</button
+                      >
+                      <button
+                        type="button"
+                        class="icon"
+                        title="Remove: never ship"
+                        aria-label={`Remove ${row.name}`}
+                        onclick={() => remove(row.id)}>✕</button
+                      >
+                    </span>
+                  {/if}
+                </li>
+              {:else}
+                <li class="sub none">no reachable model matches</li>
+              {/each}
+            </ul>
+          {/if}
+        </section>
+
         <!-- weights -->
         <section class="panel weights">
           <div class="panel-head">
@@ -881,40 +963,39 @@
         {/if}
       {/if}
 
-      <!-- per-seat price multipliers -->
+      <!-- per-seat prefix weights -->
       <section class="panel">
         <div class="panel-head">
-          <h2>Cost multipliers</h2>
+          <h2>Prefix weights</h2>
           <span class="sub">
-            this profile only · leave blank to use the default{COST_AXIS in weights || mode === 'manual'
-              ? ''
-              : ' · weigh Cost for these to matter'}
+            multiplies the score of every model a router serves, apart from cost ·
+            1.5 lifts, 0.5 halves, blank is 1
           </span>
         </div>
         {#if prefixes.length}
           <ul class="plain multipliers">
             {#each prefixes as prefix (prefix)}
-              {@const own = prefix in multipliers}
+              {@const own = prefix in prefixWeights}
               <li class="multiplier" class:own>
                 <span class="mono prefix">{prefix}</span>
-                <span class="mono default" title="the default for every profile">×{defaults[prefix]}</span>
+                <span class="mono default">{own ? `×${prefixWeights[prefix]}` : ''}</span>
                 <input
                   class="mono"
                   type="number"
                   min="0"
-                  step="0.05"
-                  placeholder={String(defaults[prefix])}
-                  aria-label={`Multiplier for ${prefix} on this profile`}
-                  value={own ? multipliers[prefix] : ''}
-                  onchange={(event) => setMultiplier(prefix, event.currentTarget.value)}
+                  step="0.1"
+                  placeholder="1"
+                  aria-label={`Weight for ${prefix} on this profile`}
+                  value={own ? prefixWeights[prefix] : ''}
+                  onchange={(event) => setPrefixWeight(prefix, event.currentTarget.value)}
                 />
                 <button
                   type="button"
                   class="icon"
-                  aria-label={`Use the default for ${prefix}`}
-                  title="Use the default"
+                  aria-label={`Reset ${prefix} to 1`}
+                  title="Reset to 1"
                   disabled={!own}
-                  onclick={() => setMultiplier(prefix, '')}>↺</button
+                  onclick={() => setPrefixWeight(prefix, '')}>↺</button
                 >
               </li>
             {/each}
@@ -1763,7 +1844,38 @@
     color: var(--muted);
   }
   .multiplier.own .default {
-    text-decoration: line-through;
+    color: var(--accent);
+  }
+  .found {
+    display: grid;
+    grid-template-columns: 2.6em minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid var(--rule);
+  }
+  .picks .found:first-child {
+    border-top: none;
+  }
+  .found-rank {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .found-meta {
+    display: flex;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .found-meta .ships {
+    color: var(--good);
+  }
+  .found-meta .gone {
+    color: var(--warn);
+  }
+  .found-acts {
+    display: flex;
+    gap: 2px;
   }
   .multiplier.own .prefix {
     color: var(--accent);

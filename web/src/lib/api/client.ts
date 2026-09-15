@@ -350,8 +350,8 @@ export interface ProfileSettings {
   removed?: string[];
   /** both: a model ships only if it is known to do each */
   needs?: Need[];
-  /** router prefix -> this profile's own price multiplier */
-  cost_multipliers?: Record<string, number>;
+  /** router prefix -> a multiplier on the score of every model it serves */
+  prefix_weights?: Record<string, number>;
   /** keys the server accepted and ignored, one sentence each */
   warnings?: string[];
 }
@@ -366,7 +366,7 @@ export interface SettingsPatch {
   pinned?: string[];
   removed?: string[];
   needs?: Need[];
-  cost_multipliers?: Record<string, number>;
+  prefix_weights?: Record<string, number>;
 }
 
 /** One model on a list, as a page draws it. */

@@ -256,8 +256,8 @@
    *
    * It belongs here because a prefix *is* a connector: the local ids a gateway
    * serves are `oc-go/glm-5.3`, and the number in front of the slash is the
-   * thing being paid for. Every profile inherits these; a seat that pays
-   * differently overrides one on its own page.
+   * thing being paid for. Every profile inherits these. A profile's own say
+   * about a router is its prefix weights, which multiply the score, not the price.
    *
    * The prefixes are Sieve's own -- it derives them from the inventory it has
    * seen -- so this screen offers the ones that come back and never invents
@@ -597,8 +597,8 @@
   <h2>Default cost multipliers</h2>
   <p class="lede">
     Multiplies the list price for every id with this prefix; 0.1 means a flat-rate subscription you
-    barely pay for. Every profile inherits these, and a seat that pays differently overrides one on
-    its own page.
+    barely pay for. Every profile inherits these; to favour a router for one profile, use its prefix
+    weights on that profile's page.
   </p>
 
   {#if multipliersLoading}

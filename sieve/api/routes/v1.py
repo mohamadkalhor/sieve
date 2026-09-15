@@ -763,20 +763,7 @@ def preview(
     except (ValidationError, ValueError, TypeError) as exc:
         return error(400, "bad_settings", str(exc))
     ranking = store.ranking(name, None, owner_id)
-    # A multiplier moves a price, and a price moves the cost percentile of every
-    # model in the pool, so a seat with its own multipliers cannot be reweighed
-    # from a cached ranking: it is ranked again (about 0.2 s on the box), and
-    # that ranking is not stored, because these settings may not be saved.
-    if proposed.cost_multipliers or current.cost_multipliers:
-        ranking = rank_profile(
-            cfg,
-            store,
-            control.tuned(found, proposed),
-            deps=EngineDeps(),
-            snapshot=store.latest_snapshot() or "none",
-            owner_id=owner_id,
-        )
-    elif ranking is None:
+    if ranking is None:
         candidate = found.model_copy(update={"weights": dict(proposed.weights)})
         ranking = rank_profile(
             cfg, store, candidate, deps=EngineDeps(), snapshot=store.latest_snapshot() or "none"
@@ -784,7 +771,7 @@ def preview(
         store.put_ranking(ranking, owner_id)
     from sieve.scoring.select import behind, select
 
-    ranking = control.rerank_cached(ranking, proposed.weights)
+    ranking = control.rerank_cached(ranking, proposed.weights, proposed.prefix_weights)
     names = store.model_names(found.modality)
     caps = control.capability_map(store, found.modality)
     needs = [str(need) for need in proposed.needs]

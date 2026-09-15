@@ -270,19 +270,18 @@ def _cheapest_multipliers(
     costs: dict[str, float],
     local: dict[str, list[str]],
     owner_id: str | None,
-    overrides: dict[str, float] | None = None,
 ) -> dict[str, float]:
-    """Apply the per-router price multipliers to the costs.
+    """Apply the box's negotiated per-router price multipliers to the costs.
 
     A router-local prefix can carry a rate multiplier, and one canonical model
     may be reachable through several prefixes, so the cheapest reachable price
-    is the one that is true for this box. The box's defaults hold for every
-    seat; a profile's own `cost_multipliers` replace them prefix by prefix, for
-    a seat that pays differently -- a subscription it barely pays for, say.
+    is the one that is true for this box. These are a property of the routers,
+    not of a profile. A profile's own say about a router is `prefix_weights`,
+    which multiplies the score rather than the price.
     """
     from sieve.profiles import control
 
-    defaults = {**control.multipliers(store, owner_id), **(overrides or {})}
+    defaults = control.multipliers(store, owner_id)
     if not defaults:
         return costs
     out = dict(costs)
@@ -321,7 +320,7 @@ def _rank_profile(
     costs, costed_from_telemetry = add_cost_observations(obs, profile, at, measured_tokens)
     local = store.local_ids(owner_id)
     try:
-        adjusted = _cheapest_multipliers(store, costs, local, owner_id, profile.cost_multipliers)
+        adjusted = _cheapest_multipliers(store, costs, local, owner_id)
     except (RuntimeError, AttributeError):
         adjusted = costs
     for model_id, amount in adjusted.items():
@@ -370,10 +369,13 @@ def _rank_profile(
     if health_mod is not None:
         health_by_model = health_mod.health(store.telemetry(since=at - timedelta(days=7)), at)
 
+    from sieve.scoring.select import prefix_factor
+
     ranks: list[Rank] = []
     for model_id, result in scored.items():
         score, confidence, contributions = result
         health_value = health_by_model.get(model_id, 1.0)
+        boost = prefix_factor(local.get(model_id, []), profile.prefix_weights)
         axis_scores = [
             AxisScore(
                 axis=name,
@@ -392,7 +394,7 @@ def _rank_profile(
                 score=score,
                 confidence=confidence,
                 health=health_value,
-                final=score * health_value,
+                final=score * health_value * boost,
                 axes=axis_scores,
                 cost_per_task=costs.get(model_id),
                 cost_from=(

@@ -25,6 +25,20 @@ from typing import Any
 from sieve.contracts import NEEDS, Capability, Need
 
 
+def prefix_factor(local_ids: Iterable[str], weights: Mapping[str, float] | None) -> float:
+    """What a profile's prefix weights multiply this model's score by.
+
+    A model is served under local ids like `cx/gpt-5.6`, and the part before the
+    slash is the router. A prefix the profile does not name counts as 1. When
+    several routers serve the same model the best of them counts, because the
+    gateway can reach it through that one.
+    """
+    if not weights:
+        return 1.0
+    factors = [weights.get(i.split("/", 1)[0], 1.0) for i in local_ids if "/" in i]
+    return max(factors) if factors else 1.0
+
+
 def has(capability: Capability | None, need: str) -> bool | None:
     """Whether a model does `need`: True, False, or None when nobody said."""
     if capability is None:

@@ -206,7 +206,7 @@ def test_the_settings_are_the_weights_and_how_many_to_ship(workspace: Config) ->
             "pinned",
             "removed",
             "needs",
-            "cost_multipliers",
+            "prefix_weights",
         }
         assert settings["ship"] >= 1 and settings["mode"] == "auto"
         assert all(isinstance(w, float) for w in settings["weights"].values())
@@ -321,7 +321,7 @@ def test_the_retired_profile_keys_are_accepted_and_named(workspace: Config) -> N
             "pinned",
             "removed",
             "needs",
-            "cost_multipliers",
+            "prefix_weights",
         }
 
         response = client.put(

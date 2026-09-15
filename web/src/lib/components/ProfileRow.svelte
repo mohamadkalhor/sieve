@@ -27,6 +27,8 @@
 
   /** how many axes a row names before it says "and two more" */
   const SHOWN = 4;
+  /** how many shipped models a row lists; the page has the rest */
+  const TOP = 5;
 
   let chain = $state<Chain | null>(null);
   let loading = $state(true);
@@ -78,10 +80,13 @@
       <p class="quiet">not shipped yet</p>
     {:else}
       <ol>
-        {#each shipped as id, index (id)}
+        {#each shipped.slice(0, TOP) as id, index (id)}
           <li><span class="mono pos">{index + 1}</span> <span class="mono id">{id}</span></li>
         {/each}
       </ol>
+      {#if shipped.length > TOP}
+        <a class="all" {href}>and {shipped.length - TOP} more</a>
+      {/if}
     {/if}
   </div>
 
@@ -135,6 +140,16 @@
 
   .ships {
     min-width: 0;
+  }
+  .all {
+    display: inline-block;
+    margin-top: 0.3rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .all:hover {
+    color: var(--accent);
   }
   .head {
     display: flex;

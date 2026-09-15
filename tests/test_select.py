@@ -72,10 +72,54 @@ def test_a_need_is_met_only_when_it_is_known() -> None:
     assert {"b", "c", "d", "e"} <= set(_ids(chosen.failed_needs))
 
 
-def test_a_seat_multiplier_overrides_the_default_prefix_by_prefix() -> None:
+def test_a_prefix_weight_is_stored_only_when_it_says_something() -> None:
     from sieve.profiles.control import update_settings
 
-    after, _ = update_settings(ProfileSettings(), {"cost_multipliers": {"cc": 0.1, "ag": None}})
-    assert after.cost_multipliers == {"cc": 0.1}
-    cleared, _ = update_settings(after, {"cost_multipliers": {}})
-    assert cleared.cost_multipliers == {}
+    body = {"prefix_weights": {"cc": 1.5, "ag": None, "cx": 1}}
+    after, _ = update_settings(ProfileSettings(), body)
+    assert after.prefix_weights == {"cc": 1.5}
+    cleared, _ = update_settings(after, {"prefix_weights": {}})
+    assert cleared.prefix_weights == {}
+
+
+def test_a_prefix_weight_multiplies_the_score_through_the_best_router() -> None:
+    from sieve.scoring.select import prefix_factor
+
+    assert prefix_factor(["cx/a", "cc/a"], {}) == 1.0
+    assert prefix_factor(["cx/a"], {"cx": 0.5}) == 0.5
+    assert prefix_factor(["cx/a", "cc/a"], {"cx": 0.5, "cc": 2}) == 2
+    assert prefix_factor(["cx/a", "cc/a"], {"cx": 0.5}) == 1.0, "cc is unnamed, so it counts 1"
+
+
+def test_the_cached_rerank_applies_the_prefix_weights() -> None:
+    from datetime import UTC, datetime
+
+    from sieve.contracts import AxisScore, Rank, Ranking
+    from sieve.profiles.control import rerank_cached
+
+    def rank(model_id: str, value: float, local: str) -> Rank:
+        axis = AxisScore(axis="q", value=value, coverage=1.0, contribution=value)
+        return Rank(
+            position=1,
+            model_id=model_id,
+            reachable=True,
+            local_ids=[local],
+            score=value,
+            confidence=1.0,
+            health=1.0,
+            final=value,
+            axes=[axis],
+        )
+
+    ranking = Ranking(
+        profile="p",
+        modality="llm",
+        computed_at=datetime.now(UTC),
+        snapshot="s",
+        ranks=[rank("a", 0.9, "cx/a"), rank("b", 0.6, "cc/b")],
+    )
+    plain = rerank_cached(ranking, {"q": 1.0})
+    assert [r.model_id for r in plain.ranks] == ["a", "b"]
+    boosted = rerank_cached(ranking, {"q": 1.0}, {"cc": 2.0})
+    assert [r.model_id for r in boosted.ranks] == ["b", "a"]
+    assert boosted.ranks[0].final == 1.2 and boosted.ranks[0].score == 0.6
