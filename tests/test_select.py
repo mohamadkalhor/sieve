@@ -70,3 +70,12 @@ def test_a_need_is_met_only_when_it_is_known() -> None:
     chosen = select(RANKED, ProfileSettings(ship=5, needs=["vision"]), caps)
     assert _ids(chosen.rows) == ["a"]
     assert {"b", "c", "d", "e"} <= set(_ids(chosen.failed_needs))
+
+
+def test_a_seat_multiplier_overrides_the_default_prefix_by_prefix() -> None:
+    from sieve.profiles.control import update_settings
+
+    after, _ = update_settings(ProfileSettings(), {"cost_multipliers": {"cc": 0.1, "ag": None}})
+    assert after.cost_multipliers == {"cc": 0.1}
+    cleared, _ = update_settings(after, {"cost_multipliers": {}})
+    assert cleared.cost_multipliers == {}

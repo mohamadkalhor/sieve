@@ -266,18 +266,23 @@ def rank_profile(
 
 
 def _cheapest_multipliers(
-    store: Store, costs: dict[str, float], local: dict[str, list[str]], owner_id: str | None
+    store: Store,
+    costs: dict[str, float],
+    local: dict[str, list[str]],
+    owner_id: str | None,
+    overrides: dict[str, float] | None = None,
 ) -> dict[str, float]:
-    """Apply the box's negotiated per-router price multipliers to the costs.
+    """Apply the per-router price multipliers to the costs.
 
     A router-local prefix can carry a rate multiplier, and one canonical model
     may be reachable through several prefixes, so the cheapest reachable price
-    is the one that is true for this box. These are a property of the routers,
-    not of a profile: nobody tunes them per seat.
+    is the one that is true for this box. The box's defaults hold for every
+    seat; a profile's own `cost_multipliers` replace them prefix by prefix, for
+    a seat that pays differently -- a subscription it barely pays for, say.
     """
     from sieve.profiles import control
 
-    defaults = control.multipliers(store, owner_id)
+    defaults = {**control.multipliers(store, owner_id), **(overrides or {})}
     if not defaults:
         return costs
     out = dict(costs)
@@ -316,7 +321,7 @@ def _rank_profile(
     costs, costed_from_telemetry = add_cost_observations(obs, profile, at, measured_tokens)
     local = store.local_ids(owner_id)
     try:
-        adjusted = _cheapest_multipliers(store, costs, local, owner_id)
+        adjusted = _cheapest_multipliers(store, costs, local, owner_id, profile.cost_multipliers)
     except (RuntimeError, AttributeError):
         adjusted = costs
     for model_id, amount in adjusted.items():

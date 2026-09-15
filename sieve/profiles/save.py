@@ -20,7 +20,7 @@ from sieve.profiles.load import profile_path
 KEY_ORDER = ("name", "modality", "purpose", "weights", "ship")
 #: written only when they say something, so an ordinary auto profile's file
 #: stays the five keys a person reads
-OPTIONAL_KEYS = ("mode", "manual", "pinned", "removed", "needs")
+OPTIONAL_KEYS = ("mode", "manual", "pinned", "removed", "needs", "cost_multipliers")
 
 
 def _yaml() -> YAML:

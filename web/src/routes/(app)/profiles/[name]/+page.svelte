@@ -13,6 +13,8 @@
    *                 percentage, a lock that holds it while the others move
    *   How many      (auto) at least one, no upper bound; pins count towards it
    *   Removed       (auto) what was taken off the list, to put back
+   *   Cost multipliers  per router prefix, for this profile only, over the
+   *                 defaults on the Connectors page; blank uses the default
    *
    * Axes keep the order they were added in. A list that re-sorted itself by
    * weight on every drag moved the row out from under the pointer.
@@ -97,6 +99,10 @@
   let pinned = $state<string[]>([]);
   let removed = $state<string[]>([]);
   let needs = $state<Need[]>([]);
+  /** this profile's own multiplier per router prefix; a prefix not here uses the default */
+  let multipliers = $state<Record<string, number>>({});
+  let defaults = $state<Record<string, number>>({});
+  const prefixes = $derived(Object.keys(defaults).sort());
 
   let loading = $state(true);
   let gone = $state<ApiError | null>(null);
@@ -221,6 +227,7 @@
       pinned = [...(held?.pinned ?? [])];
       removed = [...(held?.removed ?? [])];
       needs = [...(held?.needs ?? [])];
+      multipliers = { ...(held?.cost_multipliers ?? {}) };
       try {
         const stored = JSON.parse(localStorage.getItem(lockKey()) ?? '[]');
         locked = Array.isArray(stored) ? stored.filter((a) => a in weights) : [];
@@ -229,8 +236,13 @@
       }
       loading = false;
 
-      const axes = await api.axes(p.value.modality);
-      if (wanted === name && axes.ok && Array.isArray(axes.value)) everyAxis = axes.value;
+      const [axes, prices] = await Promise.all([
+        api.axes(p.value.modality),
+        api.costMultipliers(options)
+      ]);
+      if (wanted !== name) return;
+      if (axes.ok && Array.isArray(axes.value)) everyAxis = axes.value;
+      if (prices.ok && prices.value) defaults = prices.value;
 
       await refresh();
     })();
@@ -253,6 +265,7 @@
       pinned,
       removed,
       needs,
+      cost_multipliers: multipliers,
       remove_axes: everyAxis.map((a: AxisRow) => a.name).filter((a: string) => !(a in weights))
     };
   }
@@ -315,6 +328,17 @@
       manual = models.map((row) => row.id);
     }
     mode = value;
+    touched();
+  }
+
+  function setMultiplier(prefix: string, raw: string): void {
+    const value = Number(raw);
+    const rest = Object.fromEntries(Object.entries(multipliers).filter(([key]) => key !== prefix));
+    // blank, or the default itself, means "no override": nothing to remember
+    multipliers =
+      raw.trim() === '' || !Number.isFinite(value) || value < 0 || value === defaults[prefix]
+        ? rest
+        : { ...rest, [prefix]: value };
     touched();
   }
 
@@ -856,6 +880,49 @@
           </section>
         {/if}
       {/if}
+
+      <!-- per-seat price multipliers -->
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Cost multipliers</h2>
+          <span class="sub">
+            this profile only · leave blank to use the default{COST_AXIS in weights || mode === 'manual'
+              ? ''
+              : ' · weigh Cost for these to matter'}
+          </span>
+        </div>
+        {#if prefixes.length}
+          <ul class="plain multipliers">
+            {#each prefixes as prefix (prefix)}
+              {@const own = prefix in multipliers}
+              <li class="multiplier" class:own>
+                <span class="mono prefix">{prefix}</span>
+                <span class="mono default" title="the default for every profile">×{defaults[prefix]}</span>
+                <input
+                  class="mono"
+                  type="number"
+                  min="0"
+                  step="0.05"
+                  placeholder={String(defaults[prefix])}
+                  aria-label={`Multiplier for ${prefix} on this profile`}
+                  value={own ? multipliers[prefix] : ''}
+                  onchange={(event) => setMultiplier(prefix, event.currentTarget.value)}
+                />
+                <button
+                  type="button"
+                  class="icon"
+                  aria-label={`Use the default for ${prefix}`}
+                  title="Use the default"
+                  disabled={!own}
+                  onclick={() => setMultiplier(prefix, '')}>↺</button
+                >
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="sub">no router prefixes are reachable yet</p>
+        {/if}
+      </section>
 
       <button
         type="button"
@@ -1668,6 +1735,52 @@
 
   .phone-ship {
     display: none;
+  }
+
+  /* -- multipliers ------------------------------------------------------- */
+
+  .multipliers {
+    margin-top: 8px;
+  }
+  .multiplier {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 5.5em auto;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid var(--rule);
+    font-size: 13px;
+  }
+  .multiplier:first-child {
+    border-top: none;
+  }
+  .prefix {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .default {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .multiplier.own .default {
+    text-decoration: line-through;
+  }
+  .multiplier.own .prefix {
+    color: var(--accent);
+  }
+  .multiplier input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--panel2);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    color: var(--ink);
+    font-size: 13px;
+    padding: 4px 6px;
+    text-align: right;
+  }
+  .multiplier.own input {
+    border-color: var(--accent);
   }
 
   /* -- the list ---------------------------------------------------------- */

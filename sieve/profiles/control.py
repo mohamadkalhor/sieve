@@ -207,8 +207,9 @@ def update_settings(
 ) -> tuple[ProfileSettings, list[str]]:
     """Merge a patch into one profile's settings, and say what it ignored.
 
-    The hand controls -- `manual`, `pinned`, `removed`, `needs` -- are lists
-    and replace what was there; a patch that does not name one leaves it alone.
+    The hand controls -- `manual`, `pinned`, `removed`, `needs`, and the
+    per-seat `cost_multipliers` -- replace what was there; a patch that does not
+    name one leaves it alone.
 
     Weights merge per axis rather than replacing the map, so a page that knows
     about one slider cannot wipe the other nine. Two spellings remove an axis
@@ -239,6 +240,16 @@ def update_settings(
         for axis in dropped:
             weights.pop(axis, None)
         cleaned["weights"] = weights
+
+    if "cost_multipliers" in cleaned:
+        wanted = {
+            str(prefix): float(value)
+            for prefix, value in (cleaned["cost_multipliers"] or {}).items()
+            if value is not None
+        }
+        if any(value < 0 for value in wanted.values()):
+            raise ValueError("multipliers must be non-negative")
+        cleaned["cost_multipliers"] = wanted
 
     return ProfileSettings.model_validate({**raw, **cleaned}), warnings
 

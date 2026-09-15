@@ -198,7 +198,16 @@ def test_the_settings_are_the_weights_and_how_many_to_ship(workspace: Config) ->
     headers = {"Authorization": "Bearer s3cret"}
     with TestClient(app) as client:
         settings = client.get("/v1/profiles/judge/settings").json()
-        assert set(settings) == {"ship", "weights", "mode", "manual", "pinned", "removed", "needs"}
+        assert set(settings) == {
+            "ship",
+            "weights",
+            "mode",
+            "manual",
+            "pinned",
+            "removed",
+            "needs",
+            "cost_multipliers",
+        }
         assert settings["ship"] >= 1 and settings["mode"] == "auto"
         assert all(isinstance(w, float) for w in settings["weights"].values())
 
@@ -312,6 +321,7 @@ def test_the_retired_profile_keys_are_accepted_and_named(workspace: Config) -> N
             "pinned",
             "removed",
             "needs",
+            "cost_multipliers",
         }
 
         response = client.put(

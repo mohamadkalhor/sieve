@@ -25,7 +25,7 @@ RETIRED_PROFILE_KEYS: frozenset[str] = frozenset(
 #: Settings keys that no longer mean anything. `list_length` is read once, as
 #: the old spelling of `ship`.
 RETIRED_SETTINGS_KEYS: frozenset[str] = frozenset(
-    {"floor_score", "price_sensitivity", "experience_weight", "auto_apply", "cost_multipliers"}
+    {"floor_score", "price_sensitivity", "experience_weight", "auto_apply"}
 )
 
 SHIP_MIN = 1

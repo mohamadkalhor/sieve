@@ -211,6 +211,7 @@ export interface Profile {
   pinned?: string[];
   removed?: string[];
   needs?: ("vision" | "reasoning" | "tools" | "structured_output")[];
+  cost_multipliers?: Record<string, number>;
 }
 
 

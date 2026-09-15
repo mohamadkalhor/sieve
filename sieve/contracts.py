@@ -312,6 +312,9 @@ class ProfileSettings(_Model):
     removed: list[str] = Field(default_factory=list)
     #: both modes: a model ships only if it is known to do each of these
     needs: list[Need] = Field(default_factory=list)
+    #: router prefix -> price multiplier, over the box's defaults, for this
+    #: seat only. A prefix not named here uses the default.
+    cost_multipliers: dict[str, float] = Field(default_factory=dict)
 
 
 class Outcome(_Model):
@@ -344,6 +347,7 @@ class Profile(_Model):
     pinned: list[str] = Field(default_factory=list)
     removed: list[str] = Field(default_factory=list)
     needs: list[Need] = Field(default_factory=list)
+    cost_multipliers: dict[str, float] = Field(default_factory=dict)
 
 
 class AxisScore(_Model):
