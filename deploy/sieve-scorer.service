@@ -1,0 +1,13 @@
+# Files the weekly card for the `scorer` Hermes profile, which researches the
+# models Sieve cannot score (docs/agents/scorer.md). This unit only files the
+# card; the idempotency key makes a second start in the same week a no-op.
+[Unit]
+Description=Sieve — file the weekly card to score unscored models
+After=sieve.service
+
+[Service]
+Type=oneshot
+Environment=HERMES_HOME=/root/.hermes2
+ExecStart=/bin/sh -c 'week=$(date +%%G-W%%V); /usr/local/bin/hermes kanban create "Sieve: score the unscored models ($week)" --assignee scorer --created-by sieve-scorer.timer --idempotency-key "sieve-scorer-$week" --body "Weekly pass. Read /srv/sieve/docs/agents/scorer.md and follow it."'
+User=root
+Nice=10

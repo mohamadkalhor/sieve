@@ -1,0 +1,11 @@
+[Unit]
+Description=Sieve — weekly card to score unscored models
+
+[Timer]
+OnCalendar=Mon 07:00
+# the box is shared; gate-audit also wakes on Monday morning
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

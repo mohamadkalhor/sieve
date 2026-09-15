@@ -77,6 +77,7 @@ def test_an_unknown_model_is_listed_scored_by_hand_and_then_ranks(
 
         again = next(r for r in client.get("/v1/unscored").json() if r["local_id"] == MYSTERY)
         assert again["reason"] == "no_scores" and again["hand"]["cost"] == 1.0
+        assert again["hand_by"] == ["ops"]
 
         cleared = client.put(
             "/v1/hand-scores",

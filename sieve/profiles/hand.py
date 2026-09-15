@@ -210,6 +210,14 @@ def unscored(store: Store, owner_id: str | None = None) -> list[dict[str, Any]]:
         by_model.setdefault(r["id"], []).append(r["modality"])
 
     hand_by_modality: dict[str, dict[str, dict[str, float]]] = {}
+    clause, args = mine(owner_id)
+    # who gave the scores: an agent re-scoring weekly must leave a person's alone
+    given_by: dict[tuple[str, str], list[str]] = {}
+    for r in store.db.execute(
+        f"SELECT DISTINCT model_id, modality, by FROM hand_scores WHERE axis != '' AND {clause}",
+        args,
+    ):
+        given_by.setdefault((r["model_id"], r["modality"]), []).append(r["by"])
 
     def hand_for(model_id: str, modality: str) -> dict[str, float]:
         if modality not in hand_by_modality:
@@ -230,6 +238,7 @@ def unscored(store: Store, owner_id: str | None = None) -> list[dict[str, Any]]:
                     "modality": None,
                     "reason": "no_match",
                     "hand": {},
+                    "hand_by": [],
                     "router": item.inventory,
                 }
             )
@@ -253,6 +262,7 @@ def unscored(store: Store, owner_id: str | None = None) -> list[dict[str, Any]]:
                     "modality": modality,
                     "reason": "no_scores",
                     "hand": hand_for(item.model_id, modality),
+                    "hand_by": sorted(given_by.get(key, [])),
                     "router": item.inventory,
                 }
             )

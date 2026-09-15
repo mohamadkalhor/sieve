@@ -78,7 +78,7 @@ one, with any hand scores already given:
 
 ```json
 [{"local_id": "ag/gemini-pro-agent", "model_id": null, "name": "gemini-pro-agent",
-  "modality": null, "reason": "no_match", "hand": {}, "router": "gateway"}]
+  "modality": null, "reason": "no_match", "hand": {}, "hand_by": [], "router": "gateway"}]
 ```
 
 `reason` is `no_match` (the id matched nothing in the catalogue) or `no_scores`
@@ -99,6 +99,18 @@ Each score is 0..1 on that axis, where 1 is as good as the best model, and it
 clears one. An unmatched id gets a catalogue entry `hand/<local_id>` so the
 scores have a model to belong to. Profiles rank on the scores from their next
 preview; the scheduled run ships them.
+
+`hand_by` names the tokens that gave the scores, so an agent can tell its own
+from a person's.
+
+To pin one that matched nothing, it needs a catalogue id first:
+`POST /v1/unscored/link {"local_id": ..., "modality": "llm"}` makes
+`hand/<local_id>` with no scores. The profile page does this for you.
+
+To score on the same scale as everything else, read what measured models get:
+`GET /v1/axis-values?modality=llm&models=a/x,b/y` returns each axis 0..1.
+
+A weekly agent does this for every unscored model: see `docs/agents/scorer.md`.
 
 ## Pagination and events
 
