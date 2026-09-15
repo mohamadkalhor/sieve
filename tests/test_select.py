@@ -123,3 +123,16 @@ def test_the_cached_rerank_applies_the_prefix_weights() -> None:
     boosted = rerank_cached(ranking, {"q": 1.0}, {"cc": 2.0})
     assert [r.model_id for r in boosted.ranks] == ["b", "a"]
     assert boosted.ranks[0].final == 1.2 and boosted.ranks[0].score == 0.6
+
+
+def test_a_profile_written_with_the_one_hour_cost_multipliers_still_reads() -> None:
+    from sieve.profiles.control import read_profile
+
+    document = {
+        "name": "p",
+        "modality": "llm",
+        "purpose": "x",
+        "weights": {"q": 1.0},
+        "cost_multipliers": {},
+    }
+    assert read_profile(document).prefix_weights == {}

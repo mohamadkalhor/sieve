@@ -19,7 +19,10 @@ from typing import Any
 #: Profile keys that no longer mean anything. `policy.chain` is read once, as
 #: the old spelling of `ship`, before the policy goes.
 RETIRED_PROFILE_KEYS: frozenset[str] = frozenset(
-    {"require", "shape", "policy", "targets", "prefer_effort"}
+    # `cost_multipliers` lived on a profile for one hour on 2026-09-14, as a
+    # per-seat price multiplier, before it became `prefix_weights`; documents
+    # written in that hour carry it.
+    {"require", "shape", "policy", "targets", "prefer_effort", "cost_multipliers"}
 )
 
 #: Settings keys that no longer mean anything. `list_length` is read once, as
