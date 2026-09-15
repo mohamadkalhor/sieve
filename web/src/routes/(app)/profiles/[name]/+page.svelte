@@ -624,6 +624,7 @@
             type="button"
             role="radio"
             aria-checked={mode === 'auto'}
+            aria-label="Auto: ranked by weights"
             class:on={mode === 'auto'}
             onclick={() => setMode('auto')}
           >
@@ -634,6 +635,7 @@
             type="button"
             role="radio"
             aria-checked={mode === 'manual'}
+            aria-label="Manual: picked by hand"
             class:on={mode === 'manual'}
             onclick={() => setMode('manual')}
           >
@@ -908,7 +910,12 @@
                 {@render tags(item.row)}
               </div>
             </div>
-            <span class="mono number">{item.row ? item.row.score.toFixed(2) : '—'}</span>
+            <div class="score-cell">
+              <div class="bar">
+                <div class="fill" style:width={barWidth(item.row?.score ?? 0)}></div>
+              </div>
+              <span class="mono number">{item.row ? item.row.score.toFixed(2) : '—'}</span>
+            </div>
             <div class="row-acts">
               <button type="button" class="icon" aria-label="Move up" disabled={index === 0} onclick={() => nudge(item.id, -1)}>↑</button>
               <button type="button" class="icon" aria-label="Move down" disabled={index === manual.length - 1} onclick={() => nudge(item.id, 1)}>↓</button>
