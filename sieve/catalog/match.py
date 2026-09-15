@@ -10,6 +10,7 @@ screen for a person to alias, never guessed at.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 #: confidence per rule, highest first. Anything below MIN_CONFIDENCE is no match.
@@ -18,6 +19,8 @@ ALIAS = 0.95
 NORMALISED_FULL = 0.9
 NORMALISED_SLUG = 0.85
 STRIPPED = 0.8
+#: a benchmarked twin found by `family_key` (see `Matcher.scored_twin`)
+FAMILY = 0.8
 MIN_CONFIDENCE = 0.8
 
 #: decorations a provider adds to the same underlying model.
@@ -74,6 +77,60 @@ def strip_decorations(model_id: str) -> str:
         text = _DATE.sub("", text)
         text = _SUFFIX.sub("", text)
     return text
+
+
+#: Words that describe a packaging of a model, not a different model. `-it` and
+#: `-instruct` are the tuned release every router serves; a benchmark lists the
+#: same model without them (`gemma-4-31b-it` is AA's `gemma-4-31b`).
+_FILLER = frozenset({"it", "instruct", "chat", "preview", "exp", "experimental", "latest"})
+#: A vendor's name repeated inside the slug: AA's `nvidia-nemotron-3-super`
+#: is a router's `nemotron-3-super`. Dropped only when other words remain.
+_VENDORS = frozenset({"nvidia", "google", "meta", "anthropic", "openai", "mistralai", "microsoft"})
+#: The reasoning switch. A second, weaker pass drops it, for the model a
+#: benchmark lists only once (`nemotron-3-nano-omni-30b-a3b`) while a router
+#: names its reasoning mode.
+_MODE = frozenset({"reasoning", "thinking"})
+#: A parameter count, total or active: `31b`, `a12b`, `1.1b`, `550b`.
+_SIZE = re.compile(r"^a?\d+(?:p\d+)?[bm]$")
+
+
+def family_key(model_id: str, *, drop_size: bool = False, drop_mode: bool = False) -> str:
+    """The words of a model's name with their order taken out.
+
+    `claude-haiku-4-5-20251001` and `claude-4-5-haiku`, or
+    `llama-3.2-1b-instruct` and `llama-3-2-instruct-1b`, are one model written
+    two ways, and no rule above can see it because each keeps the words in
+    order. This key keeps what tells two models apart -- every word, every
+    size, and the version numbers *in their order*, so `4-5` never meets `5-4`
+    -- and drops only order, packaging words and a repeated vendor name.
+    """
+    text = strip_decorations(slug_of(model_id))
+    # a size with a decimal point, `1.1b`, is one token: mark the point before
+    # the dots fold, or `1.1b` reads as version `1` and size `1b`
+    text = re.sub(r"(?<![\d.])(\d+)\.(\d+[bm])(?![a-z0-9])", r"\1p\2", text)
+    text = re.sub(r"[^a-z0-9-]", "", fold_separators(text))
+    words: list[str] = []
+    numbers: list[str] = []
+    sizes: list[str] = []
+    for token in (t for t in text.split("-") if t):
+        if token.isdigit():
+            numbers.append(token)
+        elif _SIZE.match(token):
+            sizes.append(token)
+        elif token in _FILLER or (drop_mode and token in _MODE):
+            continue
+        else:
+            words.append(token)
+    named = [w for w in words if w not in _VENDORS]
+    words = named or words
+    return "|".join(
+        (" ".join(sorted(words)), ".".join(numbers), "" if drop_size else " ".join(sorted(sizes)))
+    )
+
+
+def has_size(model_id: str) -> bool:
+    """True when the name states a parameter count."""
+    return family_key(model_id).rsplit("|", 1)[-1] != ""
 
 
 @dataclass(frozen=True)
@@ -168,6 +225,47 @@ class Matcher:
         """
         found = set(index.get(key) or ())
         return next(iter(found)) if len(found) == 1 else None
+
+
+class ScoredTwins:
+    """Finds the benchmarked record for a router id the catalogue holds unscored.
+
+    A catalogue fills from several sources, and they name one model differently:
+    OpenRouter lists `anthropic/claude-haiku-4.5` with a price and no scores,
+    Artificial Analysis lists `anthropic/claude-4-5-haiku` with scores and a
+    different word order. A router id matches the first exactly and the model
+    reads as unmeasured. This looks among the *scored* ids only, by
+    `family_key`, and answers only when exactly one fits.
+
+    Three passes, loosest last: the whole key; the key without a reasoning
+    word; and the key without a size, against scored names that state no size
+    at all -- AA's `mistral-small-3-1` is the one model a router calls
+    `mistral-small-3.1-24b-instruct`, but a scored `gemma-4-12b` is never
+    offered for a `gemma-4-31b`.
+    """
+
+    def __init__(self, scored_ids: Iterable[str]) -> None:
+        self._full: dict[str, list[str]] = {}
+        self._no_mode: dict[str, list[str]] = {}
+        self._sizeless: dict[str, list[str]] = {}
+        for scored in scored_ids:
+            self._full.setdefault(family_key(scored), []).append(scored)
+            self._no_mode.setdefault(family_key(scored, drop_mode=True), []).append(scored)
+            if not has_size(scored):
+                self._sizeless.setdefault(family_key(scored, drop_size=True), []).append(scored)
+
+    def find(self, local_id: str) -> Match:
+        for index, key, rule in (
+            (self._full, family_key(local_id), "family"),
+            (self._no_mode, family_key(local_id, drop_mode=True), "family-mode"),
+            (self._sizeless, family_key(local_id, drop_size=True), "family-size"),
+        ):
+            if key.startswith("|"):
+                continue  # no words at all: nothing to compare
+            hit = Matcher._unique(index, key)
+            if hit:
+                return Match(hit, FAMILY, rule)
+        return Match(None, 0.0, "none")
 
 
 def match(

@@ -39,7 +39,20 @@ def build_registry(cfg: Config, store: Store) -> Any:
     from sieve.catalog.aliases import load_aliases
     from sieve.catalog.registry import Registry
 
-    registry = Registry(load_aliases(cfg.aliases_file))
+    file_aliases = load_aliases(cfg.aliases_file)
+    # A router id that lands on a record nothing measured is moved to the
+    # scored record of the same model, when there is exactly one. Scored means
+    # a source measured it or a person scored it by hand; an id a person
+    # aliased stays where they put it.
+    scored = {r["model_id"] for r in store.db.execute("SELECT DISTINCT model_id FROM observations")}
+    scored |= {
+        r["model_id"]
+        for r in store.db.execute("SELECT DISTINCT model_id FROM hand_scores WHERE model_id != ''")
+    }
+    pinned = set(file_aliases) | {
+        r["alias"] for r in store.db.execute("SELECT alias FROM aliases WHERE origin='user'")
+    }
+    registry = Registry(file_aliases, scored=scored, pinned=pinned)
     registry.extend(store.models())
     return registry
 

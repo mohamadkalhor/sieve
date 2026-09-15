@@ -174,3 +174,110 @@ def test_alias_file_round_trips(tmp_path: Path) -> None:
     assert load_aliases(path) == ALIAS_FILE
     assert load_aliases(tmp_path / "absent.yaml") == {}
     assert "z-ai/glm-5.3:" in path.read_text(encoding="utf-8")
+
+
+#: The live catalogue's scored ids for the families on the 2026-09-15 Unscored
+#: page, so each pass meets the neighbours it must not confuse.
+SCORED = [
+    "anthropic/claude-4-5-haiku",
+    "anthropic/claude-4-5-haiku-reasoning",
+    "anthropic/claude-3-5-haiku",
+    "google/gemma-4-12b",
+    "google/gemma-4-31b",
+    "google/gemma-4-31b-non-reasoning",
+    "google/gemma-4-26b-a4b",
+    "google/gemini-3-flash",
+    "google/gemini-3-flash-reasoning",
+    "google/gemini-3-1-pro-preview-(low)",
+    "google/gemini-3-1-pro-preview-(high)",
+    "google/gemini-3-5-flash",
+    "google/gemini-3-5-flash-medium",
+    "meta/llama-3-2-instruct-1b",
+    "meta/llama-3-2-instruct-3b",
+    "meta/llama-3-2-instruct-11b-vision",
+    "mistral/mistral-small-3",
+    "mistral/mistral-small-3-1",
+    "mistral/mistral-small-3-2",
+    "nvidia/nvidia-nemotron-3-super-120b-a12b",
+    "nvidia/nvidia-nemotron-3-nano-30b-a3b",
+    "nvidia/nvidia-nemotron-3-nano-30b-a3b-reasoning",
+    "nvidia/nemotron-3-nano-omni-30b-a3b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-120b-low",
+    "thinking-machines/inkling",
+    "thinking-machines/inkling-small",
+    "meta/muse-spark-1-3",
+]
+
+#: (router id, the scored twin, or None when the right answer is "not scored")
+TWINS: list[tuple[str, str | None]] = [
+    ("cc/claude-haiku-4-5-20251001", "anthropic/claude-4-5-haiku"),
+    ("gemini/gemma-4-31b-it", "google/gemma-4-31b"),
+    ("openrouter/google/gemma-4-26b-a4b-it:free", "google/gemma-4-26b-a4b"),
+    ("gemini/gemini-3-flash-preview", "google/gemini-3-flash"),
+    ("ag/gemini-3.1-pro-low", "google/gemini-3-1-pro-preview-(low)"),
+    ("cf/@cf/meta/llama-3.2-1b-instruct", "meta/llama-3-2-instruct-1b"),
+    ("cf/@cf/meta/llama-3.2-3b-instruct", "meta/llama-3-2-instruct-3b"),
+    ("cf/@cf/mistralai/mistral-small-3.1-24b-instruct", "mistral/mistral-small-3-1"),
+    (
+        "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+        "nvidia/nvidia-nemotron-3-super-120b-a12b",
+    ),
+    (
+        "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        "nvidia/nemotron-3-nano-omni-30b-a3b",
+    ),
+    ("openrouter/thinkingmachines/inkling:free", "thinking-machines/inkling"),
+    ("openrouter/thinkingmachines/inkling-small:free", "thinking-machines/inkling-small"),
+    # an effort level nobody measured is not the default one
+    ("ag/gemini-3.5-flash-low", None),
+    ("ag/gpt-oss-120b-medium", None),
+    # a size nobody measured is not a neighbouring size
+    ("gemini/gemma-4-4b-it", None),
+    ("cf/@cf/meta/llama-3.2-90b-instruct", None),
+    # a derived build is not its base
+    ("oc-go/muse-spark-1.3-contributor", None),
+    ("oc-go/omen-alpha", None),
+]
+
+
+def test_a_router_id_finds_its_scored_twin_and_nothing_else() -> None:
+    from sieve.catalog.match import ScoredTwins
+
+    twins = ScoredTwins(SCORED)
+    wrong = [
+        (local_id, expected, twins.find(local_id).model_id)
+        for local_id, expected in TWINS
+        if twins.find(local_id).model_id != expected
+    ]
+    assert not wrong, wrong
+
+
+def test_a_version_next_to_a_size_stays_a_version() -> None:
+    """`3.2-1b` is version 3.2 at 1b, never a 21b; `1.1b` is one size."""
+    from sieve.catalog.match import family_key
+
+    assert family_key("llama-3.2-1b-instruct") == family_key("llama-3-2-instruct-1b")
+    assert family_key("mistral-small-3.1-24b") != family_key("mistral-small-3-124b")
+    assert family_key("parakeet-ctc-1.1b") == "ctc parakeet||1p1b"
+
+
+def test_attach_moves_an_unscored_match_to_its_scored_twin_unless_aliased() -> None:
+    registry = Registry(
+        {"cc/claude-haiku-4-5-20251001": "anthropic/claude-haiku-4.5"},
+        scored=["anthropic/claude-4-5-haiku", "google/gemma-4-31b"],
+        pinned=["cc/claude-haiku-4-5-20251001"],
+    )
+    registry.add(model_ref(creator="anthropic", slug="claude-haiku-4.5", modality="llm"))
+    registry.add(model_ref(creator="google", slug="gemma-4-31b-it", modality="llm"))
+    reachable = [
+        Reachable(inventory="gw", local_id="gemini/gemma-4-31b-it", seen_at=now()),
+        Reachable(inventory="gw", local_id="cc/claude-haiku-4-5-20251001", seen_at=now()),
+    ]
+    matched, unmatched = registry.attach(reachable, "llm")
+    assert not unmatched
+    by_local = {r.local_id: r.model_id for r in matched}
+    # matched OpenRouter's unscored record first, then moved to AA's scored one
+    assert by_local["gemini/gemma-4-31b-it"] == "google/gemma-4-31b"
+    # a person aliased this one: it stays where they put it
+    assert by_local["cc/claude-haiku-4-5-20251001"] == "anthropic/claude-haiku-4.5"

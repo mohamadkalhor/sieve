@@ -12,7 +12,7 @@ import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
-from sieve.catalog.match import MIN_CONFIDENCE, Match, Matcher, fold_separators
+from sieve.catalog.match import MIN_CONFIDENCE, Match, Matcher, ScoredTwins, fold_separators
 from sieve.contracts import Modality, ModelRef, PullResult, Reachable
 
 _SEPARATORS = re.compile(r"[\s_]+")
@@ -33,9 +33,22 @@ def canonical_id(creator: str, slug: str) -> str:
 class Registry:
     """An in-memory catalog for one run: upsert models, then resolve local ids."""
 
-    def __init__(self, aliases: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        aliases: dict[str, str] | None = None,
+        *,
+        scored: Iterable[str] | None = None,
+        pinned: Iterable[str] = (),
+    ) -> None:
+        """`scored` is every id something has measured (or a person scored by
+        hand). Given, `attach` moves a router id that lands on an unscored
+        record to its scored twin, if it has exactly one (`ScoredTwins`).
+        `pinned` are local ids a person aliased; those are never moved."""
         self.models: dict[tuple[str, str], ModelRef] = {}
         self.aliases = dict(aliases or {})
+        self.scored = set(scored) if scored is not None else None
+        self.twins = ScoredTwins(self.scored) if self.scored else None
+        self.pinned = set(pinned)
 
     # -- building ------------------------------------------------------- #
 
@@ -107,7 +120,20 @@ class Registry:
                 matched.append(item)
                 continue
             found = matcher.match(item.local_id)
-            if found.model_id and found.confidence >= min_confidence:
+            if not (found.model_id and found.confidence >= min_confidence):
+                found = Match(None, 0.0, "none")
+            if (
+                self.twins is not None
+                and self.scored is not None
+                and item.local_id not in self.pinned
+                and found.model_id not in self.scored
+            ):
+                # the id landed on a record nothing measured, or on nothing:
+                # the same model may be scored under another source's name
+                twin = self.twins.find(item.local_id)
+                if twin.model_id:
+                    found = twin
+            if found.model_id:
                 matched.append(item.model_copy(update={"model_id": found.model_id}))
             else:
                 unmatched.append(item)
