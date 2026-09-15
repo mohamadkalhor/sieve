@@ -118,6 +118,26 @@
     await loadAxes(which);
   }
 
+  /** what to type into a search engine for this model: no router, no tier tags */
+  function lookupName(row: UnscoredRow): string {
+    const slug = (row.model_id ?? row.local_id).split('/').pop() ?? row.local_id;
+    return slug.replace(/:(free|batch|beta|nitro)$/, '').replace(/-(fp8|awq|fast)(?=-|$)/g, '');
+  }
+
+  function lookups(row: UnscoredRow): { label: string; href: string }[] {
+    const q = encodeURIComponent(lookupName(row));
+    return [
+      { label: 'Benchmarks', href: `https://www.google.com/search?q=${q}+benchmark` },
+      {
+        label: 'Artificial Analysis',
+        href: `https://www.google.com/search?q=${q}+site%3Aartificialanalysis.ai`
+      },
+      { label: 'OpenRouter', href: `https://openrouter.ai/models?q=${q}` },
+      { label: 'Hugging Face', href: `https://huggingface.co/models?search=${q}` },
+      { label: 'LMArena', href: `https://www.google.com/search?q=${q}+site%3Almarena.ai` }
+    ];
+  }
+
   function prettify(slug: string): string {
     return slug
       .split(/[-_]/)
@@ -242,6 +262,12 @@
 
         {#if isOpen}
           <div class="editor">
+            <div class="lookup">
+              <span>Look it up</span>
+              {#each lookups(row) as link (link.label)}
+                <a href={link.href} target="_blank" rel="noopener noreferrer">{link.label} ↗</a>
+              {/each}
+            </div>
             <div class="meta">
               {#if row.reason === 'no_match'}
                 <label>
@@ -468,6 +494,25 @@
   .editor {
     padding: 4px 16px 16px;
     background: var(--panel2);
+  }
+  .lookup {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 10px 0 12px;
+    font-size: 13px;
+  }
+  .lookup span {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .lookup a {
+    color: var(--reach);
+    text-decoration: none;
+  }
+  .lookup a:hover {
+    text-decoration: underline;
   }
   .meta {
     display: flex;
