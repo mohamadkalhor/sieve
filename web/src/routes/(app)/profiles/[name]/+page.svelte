@@ -119,6 +119,11 @@
   let removedRows = $state<Listed[]>([]);
   let missing = $state<{ id: string; name: string }[]>([]);
   let pool = $state<Listed[]>([]);
+  /** router ids that matched nothing in the catalogue: pinnable once linked */
+  let unlinked = $state<{ local_id: string; name: string }[]>([]);
+  /** the search shows only models no source has scored */
+  let onlyUnscored = $state(false);
+  let linking = $state<string | null>(null);
   let pending = $state(false);
   let waitedMs = $state(0);
   let failed = $state<string | null>(null);
@@ -161,10 +166,21 @@
       NEEDS.map((need) => [need, pool.filter((row) => row.abilities?.[need] === true).length])
     ) as Record<Need, number>
   );
+  const unscoredCount = $derived(
+    pool.filter((row) => row.scored === false).length + unlinked.length
+  );
+  /** router ids with no catalogue entry, matching a search */
+  function unlinkedMatching(needle: string, anyway: boolean) {
+    if (!needle && !anyway) return [];
+    return unlinked
+      .filter((u) => !needle || u.local_id.toLowerCase().includes(needle))
+      .slice(0, 12);
+  }
   const picks = $derived.by(() => {
     const needle = search.trim().toLowerCase();
     return pool
       .filter((row) => !manual.includes(row.id))
+      .filter((row) => !onlyUnscored || row.scored === false)
       .filter((row) => needs.every((need) => row.abilities?.[need] === true))
       .filter(
         (row) =>
@@ -302,6 +318,7 @@
     removedRows = value?.removed ?? [];
     missing = value?.missing ?? [];
     pool = value?.pool ?? pool;
+    unlinked = value?.unlinked ?? unlinked;
   }
 
   function touched(): void {
@@ -348,17 +365,44 @@
   /** a search over every reachable model, with where each one stands */
   const found = $derived.by(() => {
     const needle = finding.trim().toLowerCase();
-    if (!needle) return [];
+    if (!needle && !onlyUnscored) return [];
     return pool
       .map((row, index) => ({ row, rank: index + 1 }))
+      .filter(({ row }) => !onlyUnscored || row.scored === false)
       .filter(
         ({ row }) =>
+          !needle ||
           row.name.toLowerCase().includes(needle) ||
           row.id.toLowerCase().includes(needle) ||
           row.local_ids.some((id) => id.toLowerCase().includes(needle))
       )
-      .slice(0, 12);
+      .slice(0, onlyUnscored ? 40 : 12);
   });
+  const foundUnlinked = $derived(unlinkedMatching(finding.trim().toLowerCase(), onlyUnscored));
+  const picksUnlinked = $derived(unlinkedMatching(search.trim().toLowerCase(), onlyUnscored));
+
+  /**
+   * A router id that matched nothing has no catalogue id, and a profile holds
+   * catalogue ids. Linking makes one (no scores), then the pin or add goes on.
+   */
+  async function linkThen(localId: string, then: (id: string) => void): Promise<void> {
+    if (!profile || linking) return;
+    linking = localId;
+    const result = await api.linkUnscored(
+      { local_id: localId, modality: profile.modality, name: localId.split('/').pop() },
+      options
+    );
+    linking = null;
+    if (!result.ok || !result.value) {
+      said = {
+        ok: false,
+        text: result.ok ? 'Could not link that model.' : explainError(result.error)
+      };
+      return;
+    }
+    unlinked = unlinked.filter((u) => u.local_id !== localId);
+    then(result.value.model_id);
+  }
 
   function standing(id: string): string {
     const at = (models ?? []).findIndex((row) => row.id === id);
@@ -574,13 +618,58 @@
 />
 
 {#snippet tags(row: Listed | null)}
-  {#if row?.abilities}
+  {#if row?.abilities || row?.scored === false}
     <span class="tags">
+      {#if row?.scored === false}<span
+          class="tag unscored"
+          title="No source has benchmarked it: it ranks on price alone">no score</span
+        >{/if}
       {#each NEEDS as need (need)}
-        {#if row.abilities[need] === true}<span class="tag">{NEED_TAG[need]}</span>{/if}
+        {#if row?.abilities?.[need] === true}<span class="tag">{NEED_TAG[need]}</span>{/if}
       {/each}
     </span>
   {/if}
+{/snippet}
+
+{#snippet unscoredFilter()}
+  <div class="filters">
+    <button
+      type="button"
+      class="chip"
+      class:on={onlyUnscored}
+      aria-pressed={onlyUnscored}
+      title="Models no source has benchmarked"
+      onclick={() => (onlyUnscored = !onlyUnscored)}>Unscored only · {unscoredCount}</button
+    >
+    {#if onlyUnscored}<a class="sub" href="/unscored">score them</a>{/if}
+  </div>
+{/snippet}
+
+{#snippet unlinkedRow(
+  u: { local_id: string; name: string },
+  label: string,
+  then: (id: string) => void
+)}
+  <li class="found">
+    <span class="mono found-rank">—</span>
+    <span class="pick-who">
+      <span class="pick-name">{u.name}</span>
+      <span class="found-meta">
+        <span class="mono">{u.local_id}</span>
+        <span class="tag unscored" title="The catalogue has no entry for this router id yet"
+          >unknown</span
+        >
+      </span>
+    </span>
+    <button
+      type="button"
+      class="link"
+      disabled={linking !== null}
+      title="Give it a catalogue entry with no scores, then {label.toLowerCase()} it"
+      onclick={() => linkThen(u.local_id, then)}
+      >{linking === u.local_id ? 'Linking…' : label}</button
+    >
+  </li>
 {/snippet}
 
 {#snippet pinIcon(on: boolean)}
@@ -736,6 +825,7 @@
             spellcheck="false"
             autocomplete="off"
           />
+          {@render unscoredFilter()}
           <ul class="picks">
             {#each picks as row (row.id)}
               <li>
@@ -749,9 +839,14 @@
                 </button>
               </li>
             {:else}
-              <li class="sub none">
-                {pool.length ? 'nothing else matches' : 'waiting for the list…'}
-              </li>
+              {#if !picksUnlinked.length}
+                <li class="sub none">
+                  {pool.length ? 'nothing else matches' : 'waiting for the list…'}
+                </li>
+              {/if}
+            {/each}
+            {#each picksUnlinked as u (u.local_id)}
+              {@render unlinkedRow(u, 'Add', addManual)}
             {/each}
           </ul>
         </section>
@@ -768,7 +863,8 @@
             spellcheck="false"
             autocomplete="off"
           />
-          {#if finding.trim()}
+          {@render unscoredFilter()}
+          {#if finding.trim() || onlyUnscored}
             <ul class="picks">
               {#each found as { row, rank } (row.id)}
                 {@const state = standing(row.id)}
@@ -778,6 +874,7 @@
                     <span class="pick-name">{row.name}</span>
                     <span class="found-meta">
                       <span class="mono">{row.score.toFixed(2)}</span>
+                      {#if row.scored === false}<span class="tag unscored">no score</span>{/if}
                       <span class:ships={state.includes('ships')} class:gone={state === 'removed'}>{state}</span>
                     </span>
                   </span>
@@ -805,7 +902,12 @@
                   {/if}
                 </li>
               {:else}
-                <li class="sub none">no reachable model matches</li>
+                {#if !foundUnlinked.length}
+                  <li class="sub none">no reachable model matches</li>
+                {/if}
+              {/each}
+              {#each foundUnlinked as u (u.local_id)}
+                {@render unlinkedRow(u, 'Pin', (id) => pin(id))}
               {/each}
             </ul>
           {/if}
@@ -1590,6 +1692,20 @@
   }
   .chip:hover:not(:disabled) {
     border-color: var(--accent);
+  }
+  .chip.on {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .filters {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0 2px;
+  }
+  .tag.unscored {
+    color: var(--warn);
+    border-color: currentColor;
   }
   .chip:disabled {
     opacity: 0.4;

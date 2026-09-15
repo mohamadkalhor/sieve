@@ -791,9 +791,26 @@ def preview(
     pinned = set(proposed.pinned) if proposed.mode == "auto" else set()
     reachable = [r for r in ranking.ranks if r.position > 0]
     by_id = {r.model_id: r for r in reachable}
+    # "scored" is what the Find a model search filters on: a reachable model no
+    # source measured still ranks (last), and a person may want to pin it
+    scored = hand.scored_ids(store, list(by_id), found.modality, owner_id)
 
     def row(rank: Any) -> dict[str, Any]:
-        return {**listed(rank, names, caps, needs), "pinned": rank.model_id in pinned}
+        return {
+            **listed(rank, names, caps, needs),
+            "pinned": rank.model_id in pinned,
+            "scored": rank.model_id in scored,
+        }
+
+    # router ids that matched nothing have no catalogue id, so they are in no
+    # pool; they are listed so the page can link one and pin it
+    unlinked = sorted(
+        {
+            item.local_id
+            for item in store.reachable()
+            if item.model_id is None and "/" in item.local_id
+        }
+    )
 
     # a listed or pinned model that a need keeps out is still the person's
     # choice, so it is shown in place and marked, not silently dropped
@@ -809,6 +826,7 @@ def preview(
         "missing": [{"id": m, "name": names.get(m) or m} for m in chosen.missing],
         "failed_needs": len({r.model_id for r in chosen.failed_needs}),
         "pool": [row(r) for r in reachable],
+        "unlinked": [{"local_id": i, "name": i.rsplit("/", 1)[-1]} for i in unlinked],
         "settings": proposed,
         "computed_at": ranking.computed_at,
         "warnings": warnings,
@@ -1547,6 +1565,87 @@ def get_unscored(request: Request, _: Read = None) -> list[dict[str, Any]]:
     from sieve.profiles import hand
 
     return hand.unscored(store_of(request), owner_of(request))
+
+
+@router.post("/unscored/link")
+def link_unscored(
+    request: Request,
+    body: Annotated[dict[str, Any], Body()],
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
+    """Give a router id that matched nothing a catalogue entry, so it can be pinned.
+
+    Body: `{"local_id": "oc-go/omen-alpha", "modality": "llm", "name": "Omen Alpha"}`.
+    Returns the catalogue id (`hand/<local_id>`, or the id it already had).
+    It carries no scores until someone gives some with `PUT /v1/hand-scores`.
+    """
+    from sieve.profiles import hand
+
+    store = store_of(request)
+    local_id = str(body.get("local_id") or "").strip()
+    modality = str(body.get("modality") or "llm")
+    if not local_id:
+        return error(400, "bad_request", "give `local_id`")
+    if modality not in MODALITIES:
+        return error(400, "bad_request", f"unknown modality {modality!r}")
+    try:
+        model_id = hand.link(
+            store,
+            local_id,
+            modality,
+            by=token.name,
+            name=body.get("name"),
+            owner_id=owner_of(request),
+        )
+    except LookupError as exc:
+        return error(404, "not_found", str(exc))
+    return {"local_id": local_id, "model_id": model_id, "modality": modality, "actor": token.name}
+
+
+@router.get("/axis-values")
+def get_axis_values(
+    request: Request,
+    modality: str = "llm",
+    models: str = "",
+    _: Read = None,
+) -> Any:
+    """Every axis value, 0..1, for the named models -- the scale a hand score is on.
+
+    `models` is a comma-separated list of catalogue ids. This is what someone
+    scoring an unmeasured model by hand compares against: find two or three
+    measured models it resembles, read their values here, and score it
+    alongside them. Ranks the modality once with every axis weighted evenly,
+    so it takes a few seconds and stores nothing.
+    """
+    cfg, store = config_of(request), store_of(request)
+    owner_id = owner_of(request)
+    if modality not in MODALITIES:
+        return error(400, "bad_request", f"unknown modality {modality!r}")
+    wanted = [m.strip() for m in models.split(",") if m.strip()]
+    if not wanted:
+        return error(400, "bad_request", "give `models`, a comma-separated list of ids")
+    base = next((p for p in control.profiles(store, owner_id) if p.modality == modality), None)
+    if base is None:
+        return error(404, "not_found", f"no profile of modality {modality!r} to rank with")
+    axis_control.seed(store, cfg.axes_dir)
+    names = [a.name for a in axis_control.axes(store, modality, owner_id)]
+    even = {n: 1.0 / len(names) for n in names}
+    ranking = rank_profile(
+        cfg,
+        store,
+        base.model_copy(update={"weights": even}),
+        deps=EngineDeps(),
+        snapshot=store.latest_snapshot() or "none",
+        owner_id=owner_id,
+    )
+    by_id = {r.model_id: r for r in ranking.ranks}
+    out: dict[str, Any] = {}
+    for model_id in wanted:
+        rank = by_id.get(model_id)
+        out[model_id] = (
+            None if rank is None else {a.axis: a.value for a in rank.axes if a.value is not None}
+        )
+    return {"modality": modality, "axes": names, "models": out}
 
 
 @router.put("/hand-scores")

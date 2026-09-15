@@ -247,7 +247,16 @@ def test_the_weights_move_the_list_and_the_preview_says_what_would_ship(
         body = preview.json()
         assert body["ship"] == 2 and len(body["models"]) <= 2
         first = body["models"][0]
-        assert set(first) == {"id", "name", "local_ids", "score", "abilities", "lacks", "pinned"}
+        assert set(first) == {
+            "id",
+            "name",
+            "local_ids",
+            "score",
+            "abilities",
+            "lacks",
+            "pinned",
+            "scored",
+        }
         assert first["local_ids"], "only a model this box can reach may ship"
         assert first["name"] and first["name"] != first["id"], "the page shows a name"
         assert len(body["next"]) <= 10

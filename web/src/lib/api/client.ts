@@ -380,6 +380,8 @@ export interface Listed {
   /** the profile's needs this model is not known to meet */
   lacks?: Need[];
   pinned?: boolean;
+  /** false when no source measured it and nobody scored it by hand */
+  scored?: boolean;
 }
 
 /**
@@ -402,6 +404,8 @@ export interface PreviewResult {
   failed_needs?: number;
   /** every reachable model of this modality, for picking by hand */
   pool?: Listed[];
+  /** router ids that matched nothing: link one to pin it */
+  unlinked?: { local_id: string; name: string }[];
   settings: ProfileSettings;
   computed_at: string;
   warnings: string[];
@@ -751,6 +755,16 @@ export const api = {
     }),
 
   unscored: (o?: RequestOptions) => request<UnscoredRow[]>('/v1/unscored', o),
+
+  linkUnscored: (
+    body: { local_id: string; modality: string; name?: string },
+    o?: RequestOptions
+  ) =>
+    request<{ model_id: string; local_id: string }>('/v1/unscored/link', {
+      ...o,
+      method: 'POST',
+      body
+    }),
 
   saveHandScores: (body: HandScoresBody, o?: RequestOptions) =>
     request<{ model_id: string; hand: Record<string, number> }>('/v1/hand-scores', {

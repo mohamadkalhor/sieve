@@ -131,18 +131,62 @@ def put(
                     " VALUES (?,?,?,?,?,?,?)",
                     (model_id, modality, axis, float(value), by, stamp, owner_id),
                 )
-        # the change stamp: a clear deletes rows, and a preview still has to
-        # know its cached ranking is older than the scores
-        db.execute(
-            f"DELETE FROM hand_scores WHERE modality=? AND axis='' AND {clause}",
-            (modality, *args),
-        )
-        db.execute(
-            "INSERT INTO hand_scores (model_id, modality, axis, value, by, at, owner_id)"
-            " VALUES ('', ?, '', 0, ?, ?, ?)",
-            (modality, by, stamp, owner_id),
-        )
+        _stamp(db, modality, by, stamp, owner_id)
     return model_id
+
+
+def _stamp(db: Any, modality: str, by: str, stamp: str, owner_id: str | None) -> None:
+    """Refresh the change stamp: a clear deletes rows, and a preview still has
+    to know its cached ranking is older than the scores."""
+    clause, args = mine(owner_id)
+    db.execute(
+        f"DELETE FROM hand_scores WHERE modality=? AND axis='' AND {clause}",
+        (modality, *args),
+    )
+    db.execute(
+        "INSERT INTO hand_scores (model_id, modality, axis, value, by, at, owner_id)"
+        " VALUES ('', ?, '', 0, ?, ?, ?)",
+        (modality, by, stamp, owner_id),
+    )
+
+
+def link(
+    store: Store,
+    local_id: str,
+    modality: str,
+    by: str,
+    name: str | None = None,
+    owner_id: str | None = None,
+) -> str:
+    """Give a router id that matched nothing a catalogue entry, with no scores.
+
+    This is what makes it pinnable: a profile holds catalogue ids, and a model
+    only has one once it is linked. The change stamp moves too, so the next
+    preview ranks again and the model is in its pool. Raises `LookupError` for
+    an id no router serves.
+    """
+    model_id = _resolve(store, local_id, modality, name)
+    with store.tx() as db:
+        _stamp(db, modality, by, _iso(datetime.now(UTC)), owner_id)
+    return model_id
+
+
+def scored_ids(
+    store: Store, model_ids: list[str], modality: str, owner_id: str | None = None
+) -> set[str]:
+    """Which of these ids a source measured or a person scored by hand."""
+    out: set[str] = set(scores(store, modality, owner_id)) & set(model_ids)
+    rest = [m for m in model_ids if m not in out]
+    for start in range(0, len(rest), 500):
+        chunk = rest[start : start + 500]
+        marks = ",".join("?" * len(chunk))
+        out |= {
+            row["model_id"]
+            for row in store.db.execute(
+                f"SELECT DISTINCT model_id FROM observations WHERE model_id IN ({marks})", chunk
+            )
+        }
+    return out
 
 
 def unscored(store: Store, owner_id: str | None = None) -> list[dict[str, Any]]:

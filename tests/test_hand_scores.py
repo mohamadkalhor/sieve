@@ -96,3 +96,41 @@ def test_a_router_combo_is_not_a_model(workspace: Config) -> None:  # noqa: F811
     store.close()
     with TestClient(create_app(workspace)) as client:
         assert all(r["local_id"] != "sieve-coder" for r in client.get("/v1/unscored").json())
+
+
+def test_an_unknown_model_can_be_linked_and_pinned_without_a_score(
+    workspace: Config,  # noqa: F811
+) -> None:
+    """Pinning needs a catalogue id; linking gives one and puts it in the pool."""
+    _serve_a_mystery(workspace)
+    with TestClient(create_app(workspace)) as client:
+        before = client.post("/v1/profiles/coder/preview", json={}).json()
+        assert any(u["local_id"] == MYSTERY for u in before["unlinked"])
+        assert all(isinstance(m["scored"], bool) for m in before["pool"])
+
+        assert client.post("/v1/unscored/link", json={"local_id": MYSTERY}).status_code == 401
+        missing = client.post("/v1/unscored/link", json={"local_id": "ag/nope"}, headers=AUTH)
+        assert missing.status_code == 404
+        linked = client.post(
+            "/v1/unscored/link", json={"local_id": MYSTERY, "name": "Mystery"}, headers=AUTH
+        )
+        assert linked.status_code == 200, linked.text
+        model_id = linked.json()["model_id"]
+        assert model_id == "hand/" + MYSTERY
+
+        after = client.post("/v1/profiles/coder/preview", json={"pinned": [model_id]}).json()
+        assert all(u["local_id"] != MYSTERY for u in after["unlinked"])
+        row = next(m for m in after["pool"] if m["id"] == model_id)
+        assert row["scored"] is False
+        assert after["models"][0]["id"] == model_id and after["models"][0]["pinned"]
+
+
+def test_axis_values_give_the_scale_a_hand_score_is_on(workspace: Config) -> None:  # noqa: F811
+    with TestClient(create_app(workspace)) as client:
+        pool = client.post("/v1/profiles/coder/preview", json={}).json()["pool"]
+        some = pool[0]["id"]
+        body = client.get(f"/v1/axis-values?modality=llm&models={some},no/such").json()
+        assert "cost" in body["axes"]
+        assert body["models"]["no/such"] is None
+        assert all(0.0 <= v <= 1.0 for v in body["models"][some].values())
+        assert client.get("/v1/axis-values?modality=llm").status_code == 400
