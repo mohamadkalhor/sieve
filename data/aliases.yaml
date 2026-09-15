@@ -25,8 +25,11 @@ anthropic/claude-opus-5:
 anthropic/claude-sonnet-5:
   - sonnet
   - sonnet-5
-anthropic/claude-haiku-4-5:
+# Haiku is aimed at Artificial Analysis's record, the one that carries the
+# scores; OpenRouter's `claude-haiku-4.5` has a price and nothing measured.
+anthropic/claude-4-5-haiku:
   - haiku
+  - cc/claude-haiku-4-5-20251001
 
 # --- a source's own slug where it diverges from the gateway's -------------
 # Artificial Analysis writes versions with dashes and OpenRouter with dots.
@@ -69,8 +72,6 @@ z-ai/glm-5-3-flash:
 # live gateway on 2026-09-13; each shares no shape with its canonical id
 # under any rule, which is what makes it belong here rather than a rename
 # the matcher would already catch.
-anthropic/claude-haiku-4.5:
-  - cc/claude-haiku-4-5-20251001
 openai/gpt-5-3-codex:
   - cx/gpt-5.3-codex-spark
   - cx/gpt-5.3-codex-spark-review
