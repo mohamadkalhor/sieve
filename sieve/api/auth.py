@@ -1,7 +1,7 @@
 """Who is calling: a scoped bearer token, or a gate sign-in.
 
 Two identity sources, one answer. A script sends `Authorization: Bearer ...`
-and is a `SIEVE_TOKENS` record; a person's browser sends the `gate_session`
+and is a `SIEVE_TOKENS` record; a person's browser carries gate's own session
 cookie and is whoever gate says they are, with their role mapped onto the same
 scopes. Nothing else in the API can tell the difference, which is the point:
 the token line keeps working exactly as it did.
@@ -14,7 +14,11 @@ to the first colon, the secret after the last colon, the comma-separated scope
 list in between. A secret must therefore not contain a colon.
 
 Reads are open unless `[server] read_token = true`; writes always need the
-scope named in the table of CONTRACTS section 6.
+scope named in the table of CONTRACTS section 6. Note that a request arriving
+through the nginx edge is gated a second, earlier time by
+`sieve.api.edge.EdgeAuthMiddleware`, which this module has no dependency on
+(that middleware calls back *into* `bearer`, `resolve_bearer` and
+`gate_identity`, not the other way round).
 """
 
 from __future__ import annotations
@@ -32,27 +36,47 @@ from fastapi import Header, HTTPException, Request
 
 ENV_VAR = "SIEVE_TOKENS"
 
-# --- gate, the sign-in service (CONTRACTS section 10) ------------------------
+# --- gate v2, the sign-in service (CONTRACTS section 10, AUTH-CONTRACT.md) --
 
-GATE_URL_ENV = "SIEVE_GATE_URL"  # e.g. http://127.0.0.1:8112 — unset: off
-GATE_TOKEN_ENV = "SIEVE_GATE_TOKEN"  # the service token gate knows us by
-GATE_COOKIE = "gate_session"
+#: e.g. `http://127.0.0.1:8112`. Unset means gate is off, on purpose: a box
+#: run for local development or in CI never heard of gate and behaves exactly
+#: as it always has. In production this is set in `/etc/default/sieve`; there
+#: is no hardcoded fallback, because "off unless told" is the only shape that
+#: keeps a bare `sieve serve` working with nothing configured.
+GATE_URL_ENV = "SIEVE_GATE_URL"
+
+#: This app's slug in gate's tenant registry (AUTH-CONTRACT.md section 1).
+#: Sent as `X-Gate-App` on every call to gate; gate's answer must echo it
+#: back in `app`, or the session is somebody else's app and does not count.
+GATE_APP = "sieve"
+
+#: gate v1 had a service token (`SIEVE_GATE_TOKEN`) and knew the cookie's own
+#: name (`gate_session`). v2 needs neither: there is no service token to send
+#: — the app proves nothing about itself, gate proves who the browser is —
+#: and the app forwards whatever `Cookie` header the browser sent, verbatim,
+#: rather than picking one cookie out of it by name. `SIEVE_GATE_TOKEN` is
+#: retired; an operator may leave it set in the environment and it is simply
+#: never read.
 
 #: A gate role, as the scopes this API already understands. Owner and member
-#: may write; a viewer may only read. Nothing here grants `telemetry`: that is
-#: for machines reporting outcomes, and a machine carries a token.
+#: may write and apply; a viewer may write their own rows (they own private
+#: copies of every profile, same as a member) but never ship a chain to a
+#: live gateway. Nothing here grants `telemetry`: that is for machines
+#: reporting outcomes, and a machine carries a token.
 ROLE_SCOPES: dict[str, frozenset[str]] = {
     "owner": frozenset({"read", "profiles:write", "apply"}),
     "member": frozenset({"read", "profiles:write", "apply"}),
-    "viewer": frozenset({"read"}),
+    "viewer": frozenset({"read", "profiles:write"}),
 }
 
 #: gate is one hop away on loopback, but a page can make a dozen calls and
-#: each would ask again. A minute of memory is the compromise: that is also
-#: the longest a revoked session keeps working here, which is short enough to
-#: be honest about in CONTRACTS.
-_GATE_TTL = 60.0
-_GATE_MISS_TTL = 10.0
+#: each would ask again. Thirty seconds of memory is AUTH-CONTRACT.md's own
+#: number for a positive answer; a miss is remembered for five, so a session
+#: that has just been created is not stuck looking anonymous for long. That
+#: is also the longest a revoked session or a demotion keeps working here,
+#: which is short enough to be honest about in CONTRACTS.
+_GATE_TTL = 30.0
+_GATE_MISS_TTL = 5.0
 _gate_cache: dict[str, tuple[float, Token | None]] = {}
 _gate_lock = threading.Lock()
 
@@ -72,13 +96,22 @@ def gate_identity(request: Request) -> Token | None:
 
     Silent when `SIEVE_GATE_URL` is unset, so a box without gate behaves
     exactly as it did before. gate being unreachable is never a yes.
+
+    The v2 protocol (AUTH-CONTRACT.md section 9, `GET /v1/session`): forward
+    the browser's whole `Cookie` header, verbatim, with `X-Gate-App: sieve`.
+    No service token — gate does not ask this app to prove itself, only the
+    browser — and no cookie-name knowledge: gate owns the cookie's name and
+    shape, and a v1-shaped assumption about either is exactly what a v2
+    migration is for. The cache key follows the same header, so a browser
+    carrying other cookies alongside gate's does not collide with one that
+    is not.
     """
     base = os.environ.get(GATE_URL_ENV, "").rstrip("/")
-    cookie = request.cookies.get(GATE_COOKIE)
-    if not base or not cookie:
+    cookie_header = request.headers.get("cookie")
+    if not base or not cookie_header:
         return None
 
-    key = hashlib.sha256(cookie.encode()).hexdigest()
+    key = hashlib.sha256(cookie_header.encode()).hexdigest()
     now = time.monotonic()
     with _gate_lock:
         hit = _gate_cache.get(key)
@@ -87,30 +120,32 @@ def gate_identity(request: Request) -> Token | None:
 
     token: Token | None = None
     try:
-        params = {}
-        service = os.environ.get(GATE_TOKEN_ENV, "")
-        if service:
-            params["token"] = service
         reply = httpx.get(
             f"{base}/v1/session",
-            params=params or None,
-            cookies={GATE_COOKIE: cookie},
+            headers={"Cookie": cookie_header, "X-Gate-App": GATE_APP},
             timeout=2.0,
         )
         if reply.status_code == 200:
             body = reply.json()
-            role = str(body.get("role", ""))
-            scopes = ROLE_SCOPES.get(role, frozenset())
-            email = str(body.get("email") or "")
-            if scopes:
-                token = Token(
-                    name=f"gate:{email or body.get('user_id')}",
-                    scopes=scopes,
-                    sha256=key,
-                    owner_id=_resolve_owner(request, email, role, str(body.get("user_id") or "")),
-                )
+            # Both must hold: the session has to be *this* app's, and it has
+            # to be a live, approved account. Anything else is no session —
+            # a pending signup and a session gate issued to another tenant
+            # read exactly the same way here, as "not signed in".
+            if str(body.get("app", "")) == GATE_APP and str(body.get("status", "")) == "active":
+                role = str(body.get("role", ""))
+                scopes = ROLE_SCOPES.get(role, frozenset())
+                email = str(body.get("email") or "")
+                user_id = str(body.get("user_id") or "")
+                if scopes:
+                    token = Token(
+                        name=f"gate:{email or user_id}",
+                        scopes=scopes,
+                        sha256=key,
+                        owner_id=_resolve_owner(request, email, role, user_id),
+                    )
     except Exception:
-        # A gate that is down, slow or confused is not a gate that said yes.
+        # A gate that is down, slow, or answers something that is not the
+        # session shape, is not a gate that said yes.
         token = None
 
     with _gate_lock:
@@ -122,6 +157,10 @@ def gate_identity(request: Request) -> Token | None:
 
 def _resolve_owner(request: Request, email: str, role: str, gate_id: str) -> str | None:
     """Turn what gate said into the local `users.id` that owns this call's rows.
+
+    `gate_id` is gate's own `user_id` for this session (a v2 field; v1 carried
+    the same idea under the same name). `owners.sign_in` keeps it on the local
+    row so a later rename on gate's side never has to be chased by hand.
 
     First sign-in is where the work happens: the configured owner adopts every
     unowned row, anybody else is given private copies of the seed profiles. Both
