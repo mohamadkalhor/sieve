@@ -264,16 +264,25 @@ def delete_connector(
 
 
 @router.post("/{connector_id}/test")
-def test_connector(request: Request, connector_id: str, _: Read = None) -> Any:
+def test_connector(
+    request: Request,
+    connector_id: str,
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
     """Reach the router now. Answers 200 with `ok: false` when it is down.
 
     A connector that cannot be reached is a fact about the world, not a server
     error, and a 500 would lose the sentence that says which one it is.
 
-    A read, not a write: it decides nothing about where traffic goes, and only
-    an `apply`-scoped caller could have put this URL here in the first place.
-    Behind `apply` the Connectors screen could not offer a Test button to the
-    same person who is allowed to read every ranking on the site.
+    Gated on `profiles:write` (gate v2, CONTRACTS section 10): this used to
+    carry no scope dependency at all, on the theory that testing a router
+    decides nothing about where traffic goes. That reasoning stood only while
+    every caller reached this box over loopback; behind nginx's edge a bare
+    read would have let anybody with a live gate session -- or nobody at all,
+    before gate existed -- make this box call out to an arbitrary connector's
+    `base_url` on demand. `profiles:write` rather than `apply`: it is the same
+    scope that already lets a caller *read* every connector's shape, and
+    reaching one to ask if it answers is not a stronger act than that.
     """
     store = connectors_of(request)
     connector = found(store, connector_id, owner_of(request))
@@ -289,11 +298,16 @@ def test_connector(request: Request, connector_id: str, _: Read = None) -> Any:
 
 
 @router.post("/{connector_id}/pull")
-def pull_connector(request: Request, connector_id: str, _: Read = None) -> Any:
+def pull_connector(
+    request: Request,
+    connector_id: str,
+    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+) -> Any:
     """Refresh this connector's inventory now, instead of waiting for the hour.
 
-    A read for the same reason `test` is: it learns what the router serves and
-    changes nothing about what is routed through it.
+    Gated on `profiles:write` for the same reason `test` now is: it reaches
+    an arbitrary connector's `base_url` on demand, and behind nginx's edge
+    that is not something an anonymous caller should be able to trigger.
     """
     cfg, store = config_of(request), connectors_of(request)
     connector = found(store, connector_id, owner_of(request))

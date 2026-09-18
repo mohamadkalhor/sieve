@@ -400,11 +400,16 @@ def test_the_api_adds_tests_pulls_and_forgets_a_connector(client: Any, router: s
     assert [c["name"] for c in listed.json()] == ["spare"]
     assert SECRET not in listed.text
 
-    # `test` and `pull` are reads: they decide nothing about what is routed.
-    tested = client.post(f"/v1/connectors/{connector_id}/test").json()
+    # `test` and `pull` decide nothing about what is routed, but they do reach
+    # an arbitrary connector's `base_url` on demand, so gate v2 gates them on
+    # `profiles:write` like every other connector write (CONTRACTS section 10).
+    denied = client.post(f"/v1/connectors/{connector_id}/test")
+    assert denied.status_code == 401
+
+    tested = client.post(f"/v1/connectors/{connector_id}/test", headers=AUTH).json()
     assert tested["ok"] is True and tested["models_count"] == len(CATALOGUE)
 
-    pulled = client.post(f"/v1/connectors/{connector_id}/pull").json()
+    pulled = client.post(f"/v1/connectors/{connector_id}/pull", headers=AUTH).json()
     assert pulled["found"] == len(CATALOGUE)
 
     models = client.get(f"/v1/connectors/{connector_id}/models").json()
