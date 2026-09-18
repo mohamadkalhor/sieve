@@ -250,8 +250,12 @@ def sign_in(
         adopt_orphans(store, made.id)
         return made
     made = create(store, email, role if role in ROLES else "member", gate_id)
-    if made.role != "viewer":
-        seed_profiles_for(store, made, directory)
+    # gate v2's viewer role may now write their own rows (AUTH-CONTRACT.md
+    # section 7, CONTRACTS section 10): a viewer with nothing of their own to
+    # edit could only ever read, so they get the same private seed copies a
+    # member does. Nobody without at least a private profile of their own can
+    # be said to be writing "their own rows".
+    seed_profiles_for(store, made, directory)
     return made
 
 
