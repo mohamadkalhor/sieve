@@ -12,7 +12,7 @@ EnvironmentFile=-/etc/default/sieve
 WorkingDirectory=/opt/sieve
 # `--no-server-header`: the version of the server we run is nobody's business
 # but ours, and gate's unit already starts this way.
-ExecStart=/opt/sieve/.venv/bin/uvicorn sieve.api.app:app --host 127.0.0.1 --port 8110 --no-server-header
+ExecStart=/opt/sieve/.venv/bin/uvicorn sieve.api.app:app --host 127.0.0.1 --port 8111 --no-server-header
 Restart=on-failure
 RestartSec=5
 

@@ -135,7 +135,7 @@ carries it, so you can see the headroom without waiting to be cut off.
 | `apply` | a chain was written to a target |
 
 ```bash
-curl -N http://localhost:8110/v1/events
+curl -N http://localhost:8111/v1/events
 ```
 
 An agent can hold that open and react to a switch the moment it is decided,

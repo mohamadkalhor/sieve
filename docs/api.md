@@ -40,7 +40,7 @@ return once the module behind it lands.
 ## The one endpoint a gateway needs
 
 ```bash
-curl 'http://127.0.0.1:8110/v1/recommend?profile=coder&n=3'
+curl 'http://127.0.0.1:8111/v1/recommend?profile=coder&n=3'
 ```
 
 ```json
@@ -61,7 +61,7 @@ the spot rather than answering 404.
 ## Moving a weight from outside
 
 ```bash
-curl -X PATCH http://127.0.0.1:8110/v1/profiles/coder/weights \
+curl -X PATCH http://127.0.0.1:8111/v1/profiles/coder/weights \
   -H 'authorization: Bearer <secret>' -H 'content-type: application/json' \
   -d '{"agentic_coding": 0.5, "cost": 0.3, "reasoning": 0.2}'
 ```
