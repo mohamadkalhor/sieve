@@ -160,7 +160,10 @@ curl -sX POST http://127.0.0.1:8110/v1/connectors \
 
 Then ask it whether it works. `POST /v1/connectors/{id}/test` is one of the two
 calls that leave the box — every `GET` is answered from the store, because a
-list of routers should not be as slow as the slowest one:
+list of routers should not be as slow as the slowest one. Both `test` and
+`pull` need the `profiles:write` scope: they reach an arbitrary connector's
+`base_url` on demand, which is not something an anonymous caller should be
+able to trigger:
 
 ```json
 {"ok": true, "models_count": 162, "error": null}
@@ -218,6 +221,20 @@ list in one call:
 
 Tools: `list_profiles`, `get_profile`, `set_weights`, `set_policy`, `evaluate`,
 `recommend`, `get_ranking`, `explain`, `report_outcome`, `apply`.
+
+## Signing in
+
+A person can also sign in, through [gate](https://github.com/mohamadkalhor/gate)
+— sieve's own tenant of a small per-app auth service, at its own hostname and
+its own login pages under `/auth/*`. Set `SIEVE_GATE_URL` and every screen
+writes as whoever is signed in and asks for no token at all; leave it unset
+(the default, and every local dev checkout) and the whole mechanism is inert.
+A signed-in role maps onto the scopes above: `owner`/`member` get all three,
+`viewer` gets `read` and `profiles:write` on her own rows only, never `apply`.
+Behind a reverse proxy that adds `X-Gate-Edge` to a proxied request, every
+route — reads included — needs a live session or a bearer; without that
+header (an agent or a script on the box, talking to the API over loopback)
+nothing here changes. CONTRACTS.md section 10 has the whole contract.
 
 ## The web app
 

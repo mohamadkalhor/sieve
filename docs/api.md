@@ -5,6 +5,9 @@ OpenAPI is at `/docs` when the server is running.
 
 ## Authentication
 
+Two ways in, and the rest of the API cannot tell them apart (CONTRACTS
+section 10 has the full story):
+
 ```bash
 export SIEVE_TOKENS="ops:read,profiles:write,apply,telemetry:<secret>;agent:read,telemetry:<secret>"
 ```
@@ -17,14 +20,26 @@ colon.
 | scope | lets a caller |
 |---|---|
 | `read` | read, when `[server] read_token = true` closes reads |
-| `profiles:write` | change a profile's weights or policy, and set aliases |
-| `apply` | write chains to targets, and trigger a pull |
+| `profiles:write` | change a profile's weights or policy, set aliases, and (new in gate v2) reach a connector's `test`/`pull` |
+| `apply` | write chains to targets, ship a connector, and trigger a pull |
 | `telemetry` | report outcomes |
 
-Reads are open by default, because the server usually listens on `127.0.0.1`.
-Writes always need the scope: no token is `401`, the wrong scope is `403`.
+The other way in is signing in through gate, sieve's own tenant of the
+per-app auth service at `http://127.0.0.1:8122` on the box (`SIEVE_GATE_URL`;
+unset means gate is off, which is every local dev checkout). A signed-in
+browser's role maps onto the same scopes — `owner`/`member` get all three,
+`viewer` gets `read` and `profiles:write` on her own rows, never `apply`.
 
-Every write is a decision row with the token's name as the actor.
+Reads over loopback are open by default, because the server usually listens
+on `127.0.0.1` there. A request that instead reached this box through the
+nginx edge (carrying `X-Gate-Edge`) needs a resolved identity for *every*
+route, reads included — a bearer that does not resolve is `401` and never
+falls back to being anonymous, and no bearer means a live gate session or
+`401`. Writes always need the scope regardless of how the call arrived: no
+identity is `401`, the wrong scope is `403`.
+
+Every write is a decision row with the caller's name as the actor —
+`gate:<email>` for a signed-in person, the token's own name for a bearer.
 
 ## Errors
 

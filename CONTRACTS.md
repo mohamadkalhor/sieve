@@ -307,7 +307,10 @@ Tokens: env `SIEVE_TOKENS="ops:read,profiles:write,apply,telemetry:<secret>;agen
 Every list endpoint paginates (`?limit=&cursor=`). Errors are
 `{"error": {"code": "...", "message": "..."}}`. Writes require `Authorization:
 Bearer <secret>` and the scope in the table; reads are open unless
-`[server] read_token = true`.
+`[server] read_token = true`. That is the whole rule for a call that
+reaches this box over loopback. A call that reaches it through the nginx
+edge is gated a second, earlier way — see section 10 — where even an open
+read needs a live gate session or a bearer.
 
 | method & path | scope | returns |
 |---|---|---|
@@ -342,8 +345,8 @@ Bearer <secret>` and the scope in the table; reads are open unless
 | GET /v1/guide | – | text/markdown: OPERATING.md, rendered on /guide |
 | GET /v1/connectors · GET /v1/connectors/{id} | – | Connector[] + token_present; never a token |
 | POST /v1/connectors · PUT /v1/connectors/{id} · DELETE /v1/connectors/{id} | apply | Connector |
-| POST /v1/connectors/{id}/test | – | ConnectorTest — 200 with `ok:false` when the router is down |
-| POST /v1/connectors/{id}/pull | – | {connector, found, matched, unmatched} — refresh its inventory now |
+| POST /v1/connectors/{id}/test | profiles:write | ConnectorTest — 200 with `ok:false` when the router is down |
+| POST /v1/connectors/{id}/pull | profiles:write | {connector, found, matched, unmatched} — refresh its inventory now |
 | GET /v1/connectors/{id}/models | – | what it was last seen serving, from the store |
 | GET /v1/events | – | SSE: `pull`, `ranking`, `decision`, `apply`, `connector` |
 | GET /v1/schedules · PUT /v1/schedules/{step} | – · profiles:write | cadence per step (+ `full`) with `next_fire` |
@@ -402,7 +405,7 @@ editor uses `web/src/lib/rank/weigh.ts`, which must produce the same numbers
 as `sieve/scoring/weigh.py` on the shared fixture `tests/fixtures/rank_case.json`
 — a vitest and a pytest both assert it.
 
-## 10. Identity (gate)
+## 10. Identity (gate v2)
 
 Sieve has two ways of knowing who is calling, and the rest of the API cannot
 tell them apart.
@@ -410,31 +413,94 @@ tell them apart.
 1. **`SIEVE_TOKENS`**, section 5, unchanged. Scripts, the MCP server and
    anything headless carry `Authorization: Bearer <secret>`. Nothing about
    this changed and nothing about it will.
-2. **gate**, the sign-in service at `https://gate.mkalhor.xyz`
-   (`http://127.0.0.1:8112` on the box, `gate.service`). A browser carries a
-   `gate_session` cookie, set on `.mkalhor.xyz`, so it reaches Sieve without
-   anything forwarding it by hand. Sieve asks gate `GET /v1/session` and maps
-   the role it gets back:
+2. **gate**, sieve's own tenant of the per-app auth service (see
+   `gate/AUTH-CONTRACT.md` and `gate/APP-INTEGRATION.md` in the wider
+   workspace — not part of this repo). Cloudflare Access is gone; nginx is
+   the wall now, and each app — Slate, Sieve, bars, brain, Cairn — gets its
+   own hostname, its own login pages under `/auth/*`, its own host-only
+   session cookie, and its own gate *instance*: sieve's runs at
+   `http://127.0.0.1:8122` on the box, entirely separate from Slate's,
+   bars's, brain's or Cairn's. Nothing about a session is shared between
+   two apps except the code that checks a password.
+
+   A browser's session cookie never reaches this API directly by name —
+   Sieve does not know or care what gate calls it. `sieve.api.auth.gate_identity`
+   forwards the request's whole `Cookie` header, verbatim, to gate's
+   `GET /v1/session` with `X-Gate-App: sieve` and no service token (v1 sent
+   one; v2 has nothing for this app to prove — gate is vouching for the
+   browser, not for Sieve). The reply must say `app == "sieve"` and
+   `status == "active"` or it does not count as a session at all — a
+   pending signup and a session gate issued to a different app both read as
+   "not signed in" here. The role that comes back maps to scopes:
 
    | gate role | scopes here |
    |---|---|
    | `owner` | `read`, `profiles:write`, `apply` |
    | `member` | `read`, `profiles:write`, `apply` |
-   | `viewer` | `read` |
+   | `viewer` | `read`, `profiles:write` |
 
+   A viewer could only read before this; gate v2's viewer may now write
+   their **own** rows — `sieve.owners`' existing ownership model already
+   confines every `profiles:write` write to the caller's `owner_id` (a
+   profile, an axis, a cost multiplier, a script token), so a viewer gets
+   the same private seed copies of the shipped profiles a member gets, and
+   can tune and rename her own copies same as anyone else. She can never
+   `apply` — ship a chain to a live gateway — nor manage a connector: both
+   of those stay `member`/`owner` only. (`data/aliases.yaml`, the shared
+   catalogue of ids, is the one thing `profiles:write` still reaches that is
+   not owner-scoped; that was already true of `member` before this change
+   and is not new here — see the risk noted in the app-side handoff.)
    `telemetry` is deliberately not in that table: reporting an outcome is a
    machine's job, and a machine carries a token.
 
-Configured by two lines in `/etc/default/sieve`: `SIEVE_GATE_URL` and
-`SIEVE_GATE_TOKEN`. **With `SIEVE_GATE_URL` unset the whole mechanism is
-inert** — a box without gate behaves exactly as it did before.
+Configured by one line in `/etc/default/sieve`: `SIEVE_GATE_URL`
+(`http://127.0.0.1:8122` in production). **With it unset the whole
+mechanism is inert** — a box without gate, including every local dev
+checkout, behaves exactly as it did before. `SIEVE_GATE_TOKEN` is retired:
+v2 has no service token, and the variable is simply never read if something
+still sets it.
 
-An answer from gate is cached for 60 seconds per cookie, so that is the
-longest a revoked session or a demotion can keep working here. gate being
-unreachable is never treated as a yes.
+A positive answer from gate is cached 30 seconds, a negative one 5, keyed on
+a hash of the `Cookie` header rather than any one cookie's value — that is
+also the longest a revoked session or a demotion can keep working here.
+gate being unreachable, slow, or answering something that is not the
+session shape is never treated as a yes.
 
-Unauthenticated pages link to `https://gate.mkalhor.xyz/login?next=<url>`.
-gate only redirects back to hosts on its own allow-list.
+### The nginx edge
+
+nginx now refuses every request with no live session for the app it names —
+deny by default — and lets `/v1/*` through when a request carries *either*
+a live gate session *or* any `Authorization: Bearer` header, leaving the
+bearer's validity for the app itself to check. Every proxied request carries
+`X-Gate-Edge` (nginx sets it and strips whatever a client sent under that
+name), which is Sieve's signal that this call came from the internet rather
+than over loopback from another process on the box:
+
+- **With `X-Gate-Edge`**, every route — every read, `GET /v1/events`,
+  `GET /v1/me`, `GET /v1/status`, preview/evaluate, connector test/pull —
+  needs a resolved identity: a bearer that fails to resolve is `401` and
+  never falls back to being treated as anonymous, and a request with no
+  bearer needs a live gate session or it is `401` too. A cookie-authenticated
+  state-changing call (`POST`/`PUT`/`PATCH`/`DELETE`) is refused with `403`
+  when `Sec-Fetch-Site: cross-site` or `Origin` names a host other than the
+  one in `Host` — a bearer is exempt, since it already proved something a
+  cross-site page cannot forge.
+- **Without it**, a request reached this box straight over loopback — an
+  agent, a timer, the in-process MCP bridge, a test — and keeps exactly the
+  rule it always had, open reads included.
+
+This is enforced once, centrally, by `sieve.api.edge.EdgeAuthMiddleware`, a
+bare ASGI middleware rather than a per-route dependency (which would
+eventually miss a route — `POST /v1/connectors/{id}/test` and `/pull`
+carried none at all before gate v2) or a `BaseHTTPMiddleware` (which would
+have to buffer the whole SSE stream to inspect it first). The same module's
+`SecurityHeadersMiddleware` adds `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: strict-origin-when-cross-origin` and
+`X-Frame-Options: SAMEORIGIN` to every response.
+
+Sieve's own front end no longer links to a shared `gate.mkalhor.xyz`: the
+sign-in link is `/auth/login?next=<path>`, same-origin, on Sieve's own
+hostname, and gate's own `safe_next` only ever redirects back to that host.
 
 ## 9. File ownership (phase 1)
 
