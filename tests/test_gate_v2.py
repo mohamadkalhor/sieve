@@ -108,8 +108,28 @@ def test_no_gate_url_is_silent_and_reads_stay_open(
     monkeypatch.setenv("SIEVE_TOKENS", TOKENS)
     cfg = Config(root=tmp_path, store=StoreConfig(path=str(tmp_path / "sieve.db")))
     with TestClient(create_app(cfg)) as client:
+        # No X-Gate-Edge: exactly today's rule, on every route this checklist
+        # names, models included.
         assert client.get("/v1/profiles").status_code == 200
+        assert client.get("/v1/models").status_code == 200
+
+        # X-Gate-Edge with no session and no bearer: 401 everywhere, `/v1/models`
+        # (an open read) included -- this is the one a bare "reads are open"
+        # implementation would get wrong.
         assert client.get("/v1/profiles", headers=EDGE).status_code == 401
+        assert client.get("/v1/models", headers=EDGE).status_code == 401
+
+        # A junk bearer behind the edge is 401, never downgraded to the
+        # anonymous open-read answer `/v1/models` gives with no token at all.
+        junk = client.get(
+            "/v1/models", headers={**EDGE, "Authorization": "Bearer sv_not-a-real-token"}
+        )
+        assert junk.status_code == 401
+        assert junk.json()["error"]["code"] == "unauthenticated"
+
+        # A real bearer behind the edge reaches the route normally.
+        real = client.get("/v1/models", headers={**EDGE, "Authorization": "Bearer s3cret"})
+        assert real.status_code == 200
 
 
 def test_gate_forwards_the_whole_cookie_header_and_the_app_slug(
