@@ -14,7 +14,6 @@
    * beside a 390px page leaves no page.
    */
   import { page } from '$app/stores';
-  import { session } from '$lib/session.svelte';
   import { person } from '$lib/who';
 
   interface Props {
@@ -22,6 +21,65 @@
     unreachable?: boolean;
   }
   let { unreachable = false }: Props = $props();
+
+  /**
+   * gate v2's own answer to "who is this", same-origin (AUTH-CONTRACT.md
+   * section 4/7): `{user_id,email,name,role,status,app,csrf}` or 401. This is
+   * a different question from Sieve's own `/v1/me` (which `session` already
+   * asks, for API scopes) -- the chip, the Admin link and the csrf a sign-out
+   * needs all come from gate, because gate is who actually knows the person.
+   *
+   * A box with no nginx in front of it (every local dev checkout) has no
+   * `/auth/*` at all, so a failed fetch reads exactly like "not signed in":
+   * there is nothing here to fall back to, and gate off is a normal state.
+   */
+  interface GateMe {
+    user_id: number | string;
+    email: string;
+    name: string;
+    role: 'owner' | 'member' | 'viewer';
+    status: string;
+    csrf: string;
+  }
+  let gate = $state<GateMe | null>(null);
+  let gateChecked = $state(false);
+
+  $effect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const reply = await fetch('/auth/me', { credentials: 'same-origin' });
+        const body = reply.ok ? ((await reply.json()) as GateMe) : null;
+        if (alive) gate = body;
+      } catch {
+        if (alive) gate = null;
+      } finally {
+        if (alive) gateChecked = true;
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  });
+
+  async function signOut(event: Event): Promise<void> {
+    event.preventDefault();
+    if (gate?.csrf) {
+      try {
+        await fetch('/auth/logout', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: `csrf_token=${encodeURIComponent(gate.csrf)}`
+        });
+      } catch {
+        // Falling through to the redirect either way: a sign-out that could
+        // not reach gate should still land the person on the login page
+        // rather than leaving them looking signed in.
+      }
+    }
+    window.location.href = '/auth/login';
+  }
 
   /**
    * The sections, in this order, everywhere. Sources and Pulse are still
@@ -42,16 +100,18 @@
   const isActive = (href: string) =>
     current === href || current.startsWith(`${href}/`) || (href === '/field' && current === '/');
 
-  /** gate sends the browser back here afterwards; it only accepts hosts on
-   * its own allow-list, so a link from anywhere else is refused. */
+  /**
+   * Same-origin now (gate v2, AUTH-CONTRACT.md section 4): sieve's own gate
+   * instance serves `/auth/*` on sieve's own hostname, so there is no other
+   * host to allow-list and no cross-origin link to build.
+   */
   const signInHref = $derived(
-    `https://gate.mkalhor.xyz/login?next=${encodeURIComponent($page.url.href)}`
+    `/auth/login?next=${encodeURIComponent($page.url.pathname + $page.url.search + $page.url.hash)}`
   );
-  const signOutHref = 'https://gate.mkalhor.xyz/logout';
 
-  /** `gate:me@example.com` is a record, not a name: show the person. */
-  const who = $derived(person(session.user?.name));
-  const role = $derived(session.user?.role ?? (session.user ? 'signed in' : ''));
+  /** A record like `gate:me@example.com` or a bare email: show the person. */
+  const who = $derived(person(gate?.name || gate?.email));
+  const role = $derived(gate?.role ?? '');
 
   let open = $state(false);
   $effect(() => {
@@ -94,12 +154,18 @@
     </ul>
 
     <div class="who" class:down={unreachable}>
-      {#if session.user}
-        <p class="name" title={session.user.name}>{who}</p>
+      {#if gate}
+        <p class="name" title={gate.email}>{who}</p>
         <p class="role">{role}</p>
-        <a class="out" href={signOutHref} rel="nofollow">Sign out</a>
-      {:else if session.checked}
-        <a class="in" href={signInHref} rel="nofollow">Sign in</a>
+        <p class="links">
+          <a href="/auth/account" rel="external">Account</a>
+          {#if gate.role === 'owner'}
+            &middot; <a href="/auth/admin" rel="external">Admin</a>
+          {/if}
+        </p>
+        <a class="out" href="/auth/logout" onclick={signOut} rel="external nofollow">Sign out</a>
+      {:else if gateChecked}
+        <a class="in" href={signInHref} rel="external nofollow">Sign in</a>
       {:else}
         <p class="role">checking…</p>
       {/if}
@@ -221,11 +287,24 @@
   .role.warn {
     color: var(--warn);
   }
+  .links {
+    margin: 0.25rem 0 0;
+    color: var(--muted);
+  }
+  .links a {
+    color: var(--muted);
+    padding: 0;
+  }
+  .links a:hover {
+    color: var(--accent);
+    background: none;
+  }
   .out,
   .in {
     display: inline-block;
     margin-top: 0.25rem;
     color: var(--muted);
+    cursor: pointer;
   }
   .out:hover,
   .in:hover {

@@ -41,11 +41,16 @@ export function fail<T>(error: ApiError): Result<T> {
   return { ok: false, error };
 }
 
-/** A short sentence a screen can put in an empty state. */
+/**
+ * A short sentence a screen can put in an empty state. A 401/403 without a
+ * pasted token bounces the browser to gate before this is ever read (see
+ * `redirectToLogin`/`redirectToPending` in `request`); these strings are
+ * mainly what a pasted, wrong bearer token sees, since that case is exempt.
+ */
 export function explainError(error: ApiError): string {
   if (error.code === 'not_built') return error.message;
-  if (error.status === 401) return 'This needs a token. Set one in SIEVE_TOKENS and reload.';
-  if (error.status === 403) return 'Your token does not carry the scope this needs.';
+  if (error.status === 401) return 'This needs a token, or a signed-in session. Sign in, or set one below and reload.';
+  if (error.status === 403) return 'Your token or your role does not carry the scope this needs.';
   if (error.status === 404) return error.message;
   if (error.status === 0) return `Cannot reach the API at ${API_BASE || 'this origin'}.`;
   return error.message;
@@ -67,6 +72,25 @@ export interface RequestOptions {
   responseType?: 'json' | 'text';
 }
 
+/**
+ * gate v2 (AUTH-CONTRACT.md section 7): a 401 whose body says
+ * `error.code == "unauthenticated"` is gate's own wall speaking -- either
+ * nginx's edge or this app's own `EdgeAuthMiddleware` -- and the app's own
+ * "no bearer token" 401 means the same thing for a browser that has no
+ * pasted token either. Either way the browser has no working session and
+ * belongs on the login page, `next` pointing back at where it was.
+ */
+function redirectToLogin(): void {
+  if (typeof window === 'undefined') return;
+  const { pathname, search, hash } = window.location;
+  window.location.href = `/auth/login?next=${encodeURIComponent(pathname + search + hash)}`;
+}
+
+function redirectToPending(): void {
+  if (typeof window === 'undefined') return;
+  window.location.href = '/auth/pending';
+}
+
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<Result<T>> {
   const run = options.fetch ?? globalThis.fetch;
   const headers: Record<string, string> = {};
@@ -78,10 +102,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     response = await run(`${API_BASE}${path}`, {
       method: options.method ?? 'GET',
       headers,
-      // gate signs a person in with a cookie, and a cookie that is not sent is
-      // the same as not being signed in: every write asked for a pasted token
-      // while the browser was holding a perfectly good session.
-      credentials: 'include',
+      // gate v2's session cookie is host-only (AUTH-CONTRACT.md section 3):
+      // it is never meant for another origin, so `same-origin` is the
+      // correct mode now, not a weaker stand-in for `include`.
+      credentials: 'same-origin',
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       signal: options.signal
     });
@@ -104,6 +128,13 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   if (!response.ok) {
     const body = payload as { error?: { code?: string; message?: string }; shape?: unknown } | null;
+    // A call carrying a pasted bearer token is a person testing *that*
+    // token: a 401/403 there is telling them the token is wrong, not that
+    // their browser has no session, so it must never bounce them to gate.
+    if (!options.token) {
+      if (response.status === 401) redirectToLogin();
+      else if (response.status === 403 && body?.error?.code === 'pending') redirectToPending();
+    }
     return fail({
       code: body?.error?.code ?? `http_${response.status}`,
       message: body?.error?.message ?? response.statusText,
@@ -543,7 +574,7 @@ export const api = {
     const run = o?.fetch ?? globalThis.fetch;
     try {
       const reply = await run(`${API_BASE}/v1/runs/${encodeURIComponent(id)}/log`, {
-        credentials: 'include',
+        credentials: 'same-origin',
         headers: o?.token ? { authorization: `Bearer ${o.token}` } : {}
       });
       const text = await reply.text();
@@ -812,13 +843,35 @@ export const api = {
     })
 };
 
-/** `/v1/events` as a callback, unsubscribed by the returned function. */
+/**
+ * `/v1/events` as a callback, unsubscribed by the returned function.
+ *
+ * `EventSource` carries the browser's cookies on its own and cannot be given
+ * a bearer header, so gate v2's edge rule applies to it exactly as it does
+ * to any other read: no session behind the edge closes the stream with a
+ * 401. `EventSource` gives no way to read that status code off an `error`
+ * event, though, so the only way to tell "gate says no" apart from "the
+ * network hiccuped" is to ask gate directly (AUTH-CONTRACT.md section 7).
+ */
 export function subscribe(
   onEvent: (kind: string, data: unknown) => void,
   kinds: string[] = ['pull', 'ranking', 'decision', 'apply']
 ): () => void {
   if (typeof EventSource === 'undefined') return () => {};
   const source = new EventSource(`${API_BASE}/v1/events`);
+  const onError = (): void => {
+    void (async () => {
+      try {
+        const reply = await fetch('/auth/me', { credentials: 'same-origin' });
+        if (reply.status === 401) redirectToLogin();
+      } catch {
+        // Off, or unreachable, or there is no gate in front of this box at
+        // all (every local dev checkout) -- none of those is "gate said no",
+        // so the stream is left to `EventSource`'s own retry.
+      }
+    })();
+  };
+  source.addEventListener('error', onError);
   const listeners = kinds.map((kind) => {
     const handler = (event: MessageEvent) => {
       try {
@@ -831,6 +884,7 @@ export function subscribe(
     return [kind, handler] as const;
   });
   return () => {
+    source.removeEventListener('error', onError);
     for (const [kind, handler] of listeners) {
       source.removeEventListener(kind, handler as EventListener);
     }

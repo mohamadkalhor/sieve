@@ -63,10 +63,12 @@
 <section>
   <h2>Signing in</h2>
   <p>
-    Sieve asks <a href="https://gate.mkalhor.xyz" rel="external">gate</a> who you are. When you are
-    signed in, every screen writes as you and no token is asked for. A script uses a bearer token
-    instead, with the scope the call needs — reads are open, changing a seat needs
-    <code>profiles:write</code>, shipping needs <code>apply</code>.
+    Sieve asks <a href="/auth/login" rel="external">gate</a> who you are — sieve's own instance of it, on this
+    same hostname, not a shared login somewhere else. When you are signed in, every screen writes
+    as you and no token is asked for: an owner or a member can change any seat and ship it, a
+    viewer can change her own private copies but never ship one. A script uses a bearer token
+    instead, with the scope the call needs — reads are open over the API's own connection, changing
+    a seat needs <code>profiles:write</code>, shipping needs <code>apply</code>.
   </p>
 </section>
 
