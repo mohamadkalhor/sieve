@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from sieve import __version__, owners
+from sieve.api.edge import EdgeAuthMiddleware, SecurityHeadersMiddleware
 from sieve.api.routes.config import router as config_router
 from sieve.api.routes.connectors import router as connectors_router
 from sieve.api.routes.identity import router as identity_router
@@ -90,6 +91,13 @@ def create_app(config: Config | None = None) -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    # The nginx edge (gate v2): added last, so it ends up outermost -- every
+    # response, including a 401 the edge check itself produced, gets the
+    # security headers, and the edge check runs before any route (see
+    # `sieve.api.edge` for why this cannot be an ordinary dependency).
+    app.add_middleware(EdgeAuthMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
