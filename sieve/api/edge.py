@@ -39,6 +39,8 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlsplit
 
+import anyio.to_thread
+
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -102,7 +104,9 @@ class EdgeAuthMiddleware:
                 await _unauthenticated("that bearer token is not known here")(scope, receive, send)
                 return
         else:
-            if auth.gate_identity(request) is None:
+            # gate is asked over a blocking socket; off the event loop, so a slow
+            # answer stalls this one request and not every open /v1/events stream.
+            if await anyio.to_thread.run_sync(auth.gate_identity, request) is None:
                 await _unauthenticated("no bearer token and no gate session")(scope, receive, send)
                 return
             if request.method in _STATE_CHANGING:
