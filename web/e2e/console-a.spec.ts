@@ -93,3 +93,22 @@ test('/seats opens a seat on a desktop and is the list in a narrow window', asyn
   await expect(page).toHaveURL(/\/seats$/);
   await expect(page.getByRole('heading', { name: 'Seats' })).toBeVisible();
 });
+
+test('the console asks no other host for anything', async ({ page, baseURL }) => {
+  // The fonts are the reason this exists: `--display` was Fraunces, which came
+  // from a CDN by link tag, and CONSOLE.md section 3.2 puts both faces in the
+  // bundle instead. A test that only looks for `fonts.gstatic.com` would pass
+  // while some other asset quietly left; this one says nothing may.
+  const home = new URL(baseURL ?? page.url()).host;
+  const foreign: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.protocol.startsWith('http') && url.host !== home) foreign.push(request.url());
+  });
+
+  await page.goto('/seats');
+  await page.goto('/field');
+  await expect(page.locator('.topbar')).toBeVisible();
+
+  expect(foreign).toEqual([]);
+});

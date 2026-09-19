@@ -1169,6 +1169,21 @@ Still open, deliberately:
 
 ## Package A · The shell
 
+- **Landed:** the shell and the console's skin — token sheet, self-hosted IBM
+  Plex, `lib/console/ui/*`, `lib/console/shell/*`, the seats routes and the
+  redirects, the client additions §4 names, the Scatter height fix.
+- **Stubbed:** `contracts.ts` (the seam B–G compile against), the seats store in
+  `shell/stores.svelte.ts`, and the three pane bodies in
+  `routes/(app)/seats/[name]/+page.svelte` (`data-slot="seats" | "seat" |
+  "inspector"`); F, D1, D2 and E fill those without moving the frame.
+- **Audit (§3.1):** done, listed below — no contrast edit was needed, and one
+  alias (`--line`) fixes borders that were never drawn.
+- **Checks:** `pnpm check`, `pnpm lint`, `pnpm test`, `pnpm build` green;
+  `e2e/console-a.spec.ts` 17/17; the three Field specs 10/11 with one
+  pre-existing failure (below).
+- **Commit:** `0a99775` carries the package; the Scatter fix, the host-request
+  test and this note are the commit on top of it.
+
 Landed. The rail is gone; the sections are in the top bar, the console opens on
 `/seats`, and one seat is one page at `/seats/<name>` with the three panes the
 brief draws: list, seat, inspector.
@@ -1217,10 +1232,48 @@ Checks, all green on the commit that carries this: `pnpm check` (0 errors, 0
 warnings), `pnpm lint`, `pnpm test` (63 tests, 13 of them new under
 `tests/console/`: the redirects read directly, every `var(--token)` resolved
 against `tokens.css`, the icon union against the drawings), `pnpm build`, and
-`pnpm test:e2e e2e/console-a.spec.ts` — 16 tests in chromium against the seeded
+`pnpm test:e2e e2e/console-a.spec.ts` — 17 tests in chromium against the seeded
 server: nine screens drawing inside the shell with no uncaught error, the old
 addresses landing on the new ones, the palette taking the keyboard and giving it
-back, and `/seats` opening a seat at 1280px and staying the list at 820px.
+back, `/seats` opening a seat at 1280px and staying the list at 820px, and no
+request leaving for another host.
+
+The contrast audit §3.1 asks for, done by grep over every file A does not own:
+
+- **`var(--accent)` as a background with text on it** — two sites, both the same
+  `.primary` button: `routes/(app)/unscored/+page.svelte:593` and
+  `routes/(app)/profiles/[name]/+page.svelte:1374`. Both already write
+  `color: var(--bg)`, which is `#0d0f12`: on the new lime `#b6e35c` that is
+  12.9:1 (it was 8.9:1 on the old amber), so nothing had to change.
+- **Every other `background: var(--accent)`** is a bar, a swatch, a range track
+  or the logo square — no text sits on any of them.
+- **`--accent` as text on the dark panels** (`guide`, `connectors`, `runs`,
+  `StatusBox`, `profiles/[name]`) — 12.9:1 on `--c-bg`, 11.0:1 on `--c-panel2`;
+  the old amber was 7.6:1 on the panel. The swap made these brighter.
+- **`--muted`** went from `#7c8290` (5.0:1 on the old `--bg`) to `#98a0ad`
+  (7.3:1), so no untouched page lost legibility.
+- **`.display` sizes** — `profiles/[name]/.display` and `Rail.svelte/.word` are
+  the only rules that set `font-family: var(--display)`, both at weight 500,
+  which §3.2 loads. Nothing shrinks: IBM Plex Sans has a larger x-height than
+  Fraunces at the same size, and the sizes are headings, not labels.
+
+The Scatter height fix (§6.8) is in `lib/components/Scatter.svelte`: `fit()`
+now measures inside the element that actually scrolls — the shell's stage —
+using that box's own coordinates and `clientHeight`, instead of measuring from
+the document, where the stage's scroll offset would be counted twice. Outside
+the shell (the old pages, where the window scrolls) it falls back to the window
+measurement and takes `--h-status` off, as the brief says. A `ResizeObserver` on
+that scroller re-measures when the stage changes size without the window doing
+so.
+
+**One Field spec failure, and it is not this package's.** Of the three Field
+specs, `field-media` and `field-hover` pass, `field-search` passes 10 of 11; the
+failure is `field-search.spec.ts:219` ("a profile view costs that profile task,
+and the shape decides the answer"), which measures the cost spread on the canvas
+and gets `cheap_bulk 2.33x` where it wants more than 3. I checked it against
+`10784b6` — the commit before any of this — by rebuilding that tree and running
+the same spec: same assertion, same `2.33x`. It is a pre-existing, data-shape
+dependent failure, not a palette or shell effect.
 
 One thing for whoever runs the suite next: **`pnpm build` first.** `e2e/
 seed-and-serve.mjs` serves `web/build` and does not rebuild it, so a spec run

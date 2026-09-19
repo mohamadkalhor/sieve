@@ -81,12 +81,38 @@
   let room = $state(420);
   const height = $derived(fixedHeight ?? room);
 
+  /** the element that scrolls, if any: inside the shell that is the stage, and
+   * on the pages that came before it the window does the scrolling */
+  function scroller(from: HTMLElement): HTMLElement | null {
+    for (let node = from.parentElement; node; node = node.parentElement) {
+      const overflow = getComputedStyle(node).overflowY;
+      if (overflow === 'auto' || overflow === 'scroll') return node;
+    }
+    return null;
+  }
+
   function fit() {
     if (!host) return;
-    const top = host.getBoundingClientRect().top + globalThis.scrollY;
     const parent = host.parentElement;
     const below = parent ? parseFloat(getComputedStyle(parent).paddingBottom) || 0 : 0;
-    const free = (globalThis.innerHeight || 860) - top - below;
+    const box = scroller(host);
+    let free: number;
+    if (box) {
+      // CONSOLE.md section 6.1: in the shell the window never scrolls, the
+      // stage does, and 28px of status bar sits under it -- which the stage's
+      // own `clientHeight` already leaves out. Measuring the chart's top from
+      // the document instead would count the stage's scroll offset twice and
+      // shrink the chart by however far down the stage has been scrolled.
+      const top =
+        host.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+      free = box.clientHeight - top - below;
+    } else {
+      const top = host.getBoundingClientRect().top + globalThis.scrollY;
+      const status = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--h-status')
+      ) || 0;
+      free = (globalThis.innerHeight || 860) - top - below - status;
+    }
     room = Math.round(Math.min(CEILING, Math.max(FLOOR, free)));
   }
 
@@ -97,7 +123,15 @@
     const run = () => requestAnimationFrame(fit);
     run();
     globalThis.addEventListener('resize', run);
-    return () => globalThis.removeEventListener('resize', run);
+    // the stage is what changes size when the window does not: a pane opening,
+    // the status bar arriving, a phone turning over
+    const box = host ? scroller(host) : null;
+    const watch = box ? new ResizeObserver(run) : null;
+    watch?.observe(box as HTMLElement);
+    return () => {
+      globalThis.removeEventListener('resize', run);
+      watch?.disconnect();
+    };
   });
 
   let host: HTMLElement | undefined = $state();
