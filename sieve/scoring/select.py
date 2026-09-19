@@ -39,6 +39,32 @@ def prefix_factor(local_ids: Iterable[str], weights: Mapping[str, float] | None)
     return max(factors) if factors else 1.0
 
 
+def changes(live: Iterable[str], lineup: Iterable[str]) -> int:
+    """How far apart two lineups are: added + removed + moved, by id.
+
+    The same arithmetic the seats list needs and the browser repeats
+    (`web/src/lib/console/logic/diff.ts`), so both assert against one fixture,
+    `tests/fixtures/lineup_diff.json`. A lineup is a list of catalogue ids
+    with no repeats -- `select` never seats one twice and a chain holds the
+    ids it shipped once -- so "where it sits" has one answer per id.
+
+    `in_step` is the stricter question and is not this: two lineups that hold
+    the same ids in the same order are `live == lineup`, and anything else
+    this counts. The two are kept apart because "no badge" and "0 changes" are
+    different statements about a seat.
+    """
+    live_list, lineup_list = list(live), list(lineup)
+    live_set, lineup_set = set(live_list), set(lineup_list)
+    added_or_removed = len(live_set ^ lineup_set)
+    lineup_at = {model_id: index for index, model_id in enumerate(lineup_list)}
+    moved = sum(
+        1
+        for index, model_id in enumerate(live_list)
+        if model_id in lineup_set and lineup_at[model_id] != index
+    )
+    return added_or_removed + moved
+
+
 def has(capability: Capability | None, need: str) -> bool | None:
     """Whether a model does `need`: True, False, or None when nobody said."""
     if capability is None:

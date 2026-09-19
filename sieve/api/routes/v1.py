@@ -24,8 +24,10 @@ from sieve.axes import control as axis_control
 from sieve.config import Config
 from sieve.contracts import (
     MODALITIES,
+    NEEDS,
     Axis,
     BoardRow,
+    Capability,
     Chain,
     Decision,
     HealthRow,
@@ -394,6 +396,103 @@ def get_model(request: Request, model_id: str, _: Read = None) -> Any:
     }
 
 
+def _served_by(store: Store, model_id: str, owner_id: str | None) -> list[dict[str, Any]]:
+    """Where this model is served, from the caller's own routers.
+
+    `store.reachable()` carries the inventory name but not the connector, so
+    this joins it -- and it keeps stale rows, because a router that stopped
+    listing a model last night is still worth knowing about and the row says
+    which it is.
+
+    The scoping is `store.local_ids(owner_id)`'s join, one notch tighter: an
+    anonymous request is scoped too, to the unowned routers. A local id is a
+    routing instruction and `GET /v1/models` hands it to anybody; an inventory
+    label says what somebody runs, and that is theirs to see.
+    """
+    clause, args = control.mine(owner_id, "c.owner_id")
+    return [
+        {
+            "local_id": r["local_id"],
+            "prefix": r["local_id"].split("/", 1)[0],
+            "inventory": r["inventory"] or "",
+            "stale": bool(r["stale"]),
+            "capability": Capability.model_validate_json(r["capability"] or "{}"),
+        }
+        for r in store.db.execute(
+            "SELECT r.local_id, r.inventory, r.stale, r.capability FROM reachable r"
+            " LEFT JOIN connectors c ON c.id = r.connector_id"
+            f" WHERE r.model_id = ? AND {clause}"
+            " ORDER BY r.local_id",
+            (model_id, *args),
+        )
+    ]
+
+
+@router.get("/model-card")
+def get_model_card(request: Request, id: str, modality: Modality, _: Read = None) -> Any:
+    """One model: what it can do and who says so, its posted price, where it is served.
+
+    A query route rather than a path one, because `/v1/models/{model_id:path}`
+    already swallows every suffix.
+
+    `abilities[need].answer` is the same answer the list gives -- it comes from
+    `control.capability_map`, the one merge -- and `yes`/`no` are the witnesses
+    behind it, so the card can never disagree with the row that opened it. They
+    are gathered from two places and kept apart: what the `capabilities` table
+    says (`aa_llm`, `openrouter`, ...) and what a router's own model list says
+    (`inventory:<name>`). A witness that contradicts the others is kept, not
+    dropped: two sources disagreeing is exactly what a person needs to see, and
+    the merge resolves it by precedence, not by vote.
+    """
+    store = store_of(request)
+    owner_id = owner_of(request)
+    model = store.model(id, modality)
+    if model is None:
+        return error(404, "not_found", f"no model {id!r}")
+    from sieve.profiles import hand
+    from sieve.scoring.select import has
+
+    merged = control.capability_map(store, modality).get(id)
+    served = _served_by(store, id, owner_id)
+    witnesses: list[tuple[str, Capability]] = [
+        *store.capabilities_by_source(id, modality),
+        *(
+            (f"inventory:{row['inventory']}", row["capability"])
+            for row in served
+            if not row["stale"]
+        ),
+    ]
+    price = store.latest_prices(modality, only=[id]).get(id)
+    return {
+        **model.model_dump(mode="json"),
+        "price": (
+            {
+                "unit": price.unit,
+                "input": price.input,
+                "output": price.output,
+                "per_unit": price.per_unit,
+                "source": price.source,
+                "observed_at": price.observed_at,
+            }
+            if price is not None
+            else None
+        ),
+        "abilities": {
+            need: {
+                "answer": has(merged, need),
+                "yes": [who for who, said in witnesses if has(said, need) is True],
+                "no": [who for who, said in witnesses if has(said, need) is False],
+            }
+            for need in NEEDS
+        },
+        "context_window": merged.context_window if merged is not None else None,
+        "served_by": [
+            {k: row[k] for k in ("local_id", "prefix", "inventory", "stale")} for row in served
+        ],
+        "scored": id in hand.scored_ids(store, [id], modality, owner_id),
+    }
+
+
 # --------------------------------------------------------------------------- #
 # profiles
 # --------------------------------------------------------------------------- #
@@ -407,6 +506,94 @@ def get_profiles(request: Request, modality: Modality | None = None, _: Read = N
     control.seed(store, cfg.profiles_dir, owner_id)
     profiles = control.profiles(store, owner_id)
     return [p for p in profiles if modality is None or p.modality == modality]
+
+
+@router.get("/seats")
+def get_seats(request: Request, _: Read = None) -> list[dict[str, Any]]:
+    """Every seat as the left pane lists it, in one request.
+
+    It replaces the 1 + 2N the pane used to make -- profiles, then a chain and a
+    ranking per row -- so opening the console is one round trip instead of
+    twenty-one.
+
+    Two lineups per seat, and they answer different questions:
+
+    - `live` is the **last stored chain**: what Sieve last applied to the
+      gateway, not a verified read of it. Nothing here talks to a router, so a
+      chain that was edited underneath the box still shows as stored.
+    - `lineup` is what the *saved* settings would ship now, from the stored
+      ranking. This route never calls `rank_profile`: the pane is on every page
+      and a fresh ranking costs seconds. When hand scores changed after the
+      stored ranking was computed the snapshot cannot answer the question, so
+      `lineup`, `in_step` and `changes` come back `null` rather than stale --
+      the same rule `preview` applies, minus the rebuild it can afford.
+
+    Scoping follows `GET /v1/profiles` exactly, `control.seed` included -- so
+    the gate owner, whose `readable()` is `1=1`, gets a row for each member's
+    copy of a seat as well as his own, and a pane keyed by name has to expect
+    the same names twice, exactly as it does from `/v1/profiles`.
+    """
+    cfg, store = config_of(request), store_of(request)
+    owner_id = owner_of(request)
+    control.seed(store, cfg.profiles_dir, owner_id)
+    from sieve.profiles import hand
+    from sieve.scoring.select import changes as changes_between
+    from sieve.scoring.select import select
+
+    seats = control.profiles(store, owner_id)
+    # One capability map and one name table per modality, not per seat: both are
+    # whole-modality reads, and twenty seats share a modality in the common case.
+    caps: dict[Modality, dict[str, Any]] = {}
+    names: dict[Modality, dict[str, str]] = {}
+    touched: dict[Modality, datetime | None] = {}
+    rows: list[dict[str, Any]] = []
+    for seat in seats:
+        modality = seat.modality
+        if modality not in caps:
+            caps[modality] = control.capability_map(store, modality)
+            names[modality] = store.model_names(modality)
+            touched[modality] = hand.changed_at(store, modality, owner_id)
+        chain = store.chain(seat.name, owner_id)
+        live: list[dict[str, str]] | None = None
+        if chain is not None:
+            live = [
+                {"id": model_id, "name": names[modality].get(model_id) or model_id}
+                for model_id in [chain.primary, *chain.fallbacks]
+            ]
+        lineup: list[dict[str, str]] | None = None
+        ranking = store.ranking(seat.name, None, owner_id)
+        stale_at = touched[modality]
+        if ranking is not None and stale_at is not None and ranking.computed_at < stale_at:
+            ranking = None
+        if ranking is not None:
+            saved = control.settings_of(seat)
+            ranked = control.rerank_cached(ranking, saved.weights, saved.prefix_weights)
+            lineup = [
+                {"id": r.model_id, "name": names[modality].get(r.model_id) or r.model_id}
+                for r in select(ranked.ranks, saved, caps[modality]).rows
+            ]
+        in_step: bool | None = None
+        changed: int | None = None
+        if live is not None and lineup is not None:
+            live_ids = [m["id"] for m in live]
+            lineup_ids = [m["id"] for m in lineup]
+            in_step = live_ids == lineup_ids
+            changed = changes_between(live_ids, lineup_ids)
+        rows.append(
+            {
+                "name": seat.name,
+                "modality": seat.modality,
+                "purpose": seat.purpose,
+                "mode": seat.mode,
+                "ship": seat.ship,
+                "live": live,
+                "lineup": lineup,
+                "in_step": in_step,
+                "changes": changed,
+                "shipped_at": chain.computed_at if chain is not None else None,
+            }
+        )
+    return rows
 
 
 @router.get("/profiles/{name}")
@@ -721,13 +908,45 @@ NEXT_UP = 10
 def listed(
     rank: Any,
     names: dict[str, str],
-    caps: dict[str, Any] | None = None,
-    needs: list[str] | None = None,
+    caps: dict[str, Any] | None,
+    needs: list[str] | None,
+    proposed: Any,
 ) -> dict[str, Any]:
-    """One row of a list, as a page draws it: who, how it scores, what it can do."""
-    from sieve.scoring.select import abilities, lacks
+    """One row of a list, as a page draws it: who, how it scores, what it can do.
+
+    `proposed` is the settings this preview is asking about, and it is what the
+    axis block is ordered and filtered by (CONSOLE.md section 4.2): one entry
+    per axis those weights name, in their order, with `value: null` and zero
+    coverage for one the stored ranking holds no cached value for. Reading
+    `rank.axes` instead would silently drop an axis somebody just added, and
+    the row would then carry a score its own bars do not add up to.
+
+    `raw` is the score before health and trim, `score` the final number, and
+    `factor` what the profile's prefix weights multiplied it by, so the
+    inspector can show the equation rather than the answer alone.
+    """
+    from sieve.scoring.select import abilities, lacks, prefix_factor
 
     capability = (caps or {}).get(rank.model_id)
+    cached = {axis.axis: axis for axis in rank.axes}
+    axes: list[dict[str, Any]] = []
+    total = 0.0
+    # The same loop, in the same order, as `control.rerank_cached` sums it, so
+    # these contributions add up to `raw` to the last bit rather than to
+    # within a tolerance that a page would then have to round.
+    for axis, weight in proposed.weights.items():
+        found = cached.get(axis)
+        value = found.value if found is not None else None
+        contribution = weight * (value if value is not None else 0.0)
+        total += contribution
+        axes.append(
+            {
+                "axis": axis,
+                "value": value,
+                "coverage": found.coverage if found is not None else 0.0,
+                "contribution": contribution,
+            }
+        )
     return {
         "id": rank.model_id,
         "name": names.get(rank.model_id) or rank.model_id,
@@ -735,6 +954,13 @@ def listed(
         "score": rank.final,
         "abilities": abilities(capability),
         "lacks": lacks(capability, needs or []),
+        "axes": axes,
+        "raw": rank.score if rank.score else total,
+        "health": rank.health,
+        "factor": prefix_factor(rank.local_ids, proposed.prefix_weights),
+        "confidence": rank.confidence,
+        "cost_per_task": rank.cost_per_task,
+        "cost_from": rank.cost_from,
     }
 
 
@@ -797,7 +1023,7 @@ def preview(
 
     def row(rank: Any) -> dict[str, Any]:
         return {
-            **listed(rank, names, caps, needs),
+            **listed(rank, names, caps, needs, proposed),
             "pinned": rank.model_id in pinned,
             "scored": rank.model_id in scored,
         }
@@ -1370,6 +1596,26 @@ def get_status(request: Request, _: Read = None) -> dict[str, Any]:
     from sieve.api.auth import gate_identity
 
     schedules = runs_module.schedules_block(store)
+    # The status bar's two counts. Both are asked for on every poll, so neither
+    # builds a row: `reachable` is a distinct count over the fresh inventory and
+    # `unscored` is `hand.unscored`'s arithmetic done in SQL -- unmatched fresh
+    # router ids that look like models, plus distinct matched model/modality
+    # pairs no source has measured, deduplicated across inventories exactly as
+    # that function deduplicates them. A count that drifted from the list it
+    # counts would be worse than no count, so the two are asserted equal.
+    counted = store.db.execute(
+        "SELECT"
+        " (SELECT COUNT(DISTINCT model_id) FROM reachable"
+        "   WHERE model_id IS NOT NULL AND stale=0) AS reachable,"
+        " (SELECT COUNT(*) FROM reachable"
+        "   WHERE model_id IS NULL AND stale=0 AND local_id LIKE '%/%')"
+        " + (SELECT COUNT(*) FROM ("
+        "     SELECT DISTINCT r.model_id AS mid, m.modality AS mod"
+        "     FROM reachable r JOIN models m ON m.id = r.model_id"
+        "     WHERE r.stale=0 AND NOT EXISTS ("
+        "       SELECT 1 FROM observations o"
+        "       WHERE o.model_id = r.model_id AND o.modality = m.modality))) AS unscored"
+    ).fetchone()
     # Who gate says is in front of this request, or None. The web pages ask
     # here so they can stop showing a token box to somebody already signed in;
     # `/v1/me` (AMS-28) will answer the same question in more detail.
@@ -1382,6 +1628,8 @@ def get_status(request: Request, _: Read = None) -> dict[str, Any]:
         "schedules": schedules,
         "sources_enabled": sum(1 for s in cfg.sources.values() if s.enabled),
         "telemetry_calls": calls["n"],
+        "reachable": counted["reachable"],
+        "unscored": counted["unscored"],
         "telemetry_at": calls["last"],
         "user": (
             {

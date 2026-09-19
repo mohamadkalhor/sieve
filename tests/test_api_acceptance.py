@@ -256,9 +256,28 @@ def test_the_weights_move_the_list_and_the_preview_says_what_would_ship(
             "lacks",
             "pinned",
             "scored",
+            "axes",
+            "raw",
+            "health",
+            "factor",
+            "confidence",
+            "cost_per_task",
+            "cost_from",
         }
         assert first["local_ids"], "only a model this box can reach may ship"
         assert first["name"] and first["name"] != first["id"], "the page shows a name"
+        # one bar per axis the proposed weights name, and the two sums that hold
+        weights = client.get("/v1/profiles/judge").json()["weights"]
+        for row in [
+            *body["models"],
+            *body["next"],
+            *body["blocked"],
+            *body["removed"],
+            *body["pool"],
+        ]:
+            assert [bar["axis"] for bar in row["axes"]] == list(weights)
+            assert abs(sum(bar["contribution"] for bar in row["axes"]) - row["raw"]) < 1e-9
+            assert abs(row["raw"] * row["health"] * row["factor"] - row["score"]) < 1e-9
         assert len(body["next"]) <= 10
         scores = [row["score"] for row in body["models"] + body["next"]]
         assert scores == sorted(scores, reverse=True), "one list, in score order"

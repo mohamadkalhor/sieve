@@ -564,6 +564,27 @@ class Store:
             out[r["model_id"]] = found if held is None else _merge_capability(held, found)
         return out
 
+    def capabilities_by_source(
+        self, model_id: str, modality: Modality
+    ) -> list[tuple[str, Capability]]:
+        """What each source says about one model, one row per source, in name order.
+
+        `capabilities()` answers "what can this model do" by merging the
+        statements and losing who made them. A model card has to show the claim
+        *and its author*, so this keeps them apart: the caller applies
+        `sieve.scoring.select.has()` to each observation and lists the sources
+        that said yes and the ones that said no. The order is by source name so
+        a screen draws the same card twice the same way.
+        """
+        return [
+            (r["source"], Capability.model_validate_json(r["capability"]))
+            for r in self.db.execute(
+                "SELECT source, capability FROM capabilities"
+                " WHERE model_id=? AND modality=? ORDER BY source",
+                (model_id, modality),
+            )
+        ]
+
     # ------------------------------------------------------------------ #
     # inventory
     # ------------------------------------------------------------------ #

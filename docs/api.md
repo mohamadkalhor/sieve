@@ -127,6 +127,44 @@ To score on the same scale as everything else, read what measured models get:
 
 A weekly agent does this for every unscored model: see `docs/agents/scorer.md`.
 
+## What the console reads
+
+Three shapes, all reads over rows the box already has: the seats list, which
+draws on every page, and the detail the two panels need.
+
+`GET /v1/seats` answers every profile in one request -- what is shipped, what
+the saved settings would ship now, and how far apart those two lists are:
+
+```json
+[{"name": "coder", "modality": "llm", "purpose": "agentic coding inside a repository",
+  "mode": "auto", "ship": 5, "shipped_at": "2026-09-07T18:44:25Z", "in_step": false,
+  "live": [{"id": "anthropic/claude-opus-5", "name": "Claude Opus 5"}],
+  "lineup": [{"id": "anthropic/claude-opus-5", "name": "Claude Opus 5"}]}]
+```
+
+`live` is the chain that was applied, `lineup` the ranking the saved settings
+would ship. `changes` counts added + removed + moved ids, so `0` means the two
+lists are one list in one order; `in_step` is that question as a boolean. Both
+are `null` -- never `0` -- when `live` or `lineup` is `null`: nothing applied
+yet, nothing stored to read, or a stored ranking older than the hand scores
+under it. The route reads and never ranks, so the pane never waits on one.
+
+The preview's rows gained the inspector's arithmetic: one entry per axis in
+`settings.weights`, in that order, with the value, its coverage and its
+contribution, plus `raw`, `health`, `factor`, `confidence`, `cost_per_task` and
+`cost_from`. For every row, `sum(contribution) == raw` and
+`raw * health * factor == score`.
+
+`GET /v1/model-card?id=<catalogue id>&modality=<modality>` is one model: what
+it can do and who said so (`yes`/`no` name the sources), its posted price, and
+where this box serves it. `served_by` lists the caller's own routers and
+nobody else's -- another owner's local id is not a thing this box will tell you
+-- and an entry stays after a pull stops listing it, with `"stale": true`.
+
+`GET /v1/status` carries two counts for the status bar: `reachable`, the
+distinct models fresh inventory can reach, and `unscored`, the router ids with
+no scores yet.
+
 ## Pagination and events
 
 List endpoints take `?limit=&cursor=` and return

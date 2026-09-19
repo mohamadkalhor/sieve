@@ -1,0 +1,84 @@
+{
+  "about": "The shared ground for 'how far apart are these two lineups', CONSOLE.md section 4.1. The server computes it in sieve/scoring/select.py:changes(), the browser repeats it in web/src/lib/console/logic/diff.ts, and both suites assert against this file rather than against each other. 'cases' holds the eight arithmetic cases. 'null_cases' holds the rule that a side nobody stored is null, not empty: in_step and changes are null whenever either side is, and 'no lineup' is never drawn as 'nothing ships'. Ids are catalogue ids and no list repeats one.",
+  "cases": [
+    {
+      "name": "identical",
+      "live": ["openai/gpt-5", "anthropic/claude-5", "google/gemini-3"],
+      "lineup": ["openai/gpt-5", "anthropic/claude-5", "google/gemini-3"],
+      "changes": 0,
+      "in_step": true
+    },
+    {
+      "name": "both empty",
+      "live": [],
+      "lineup": [],
+      "changes": 0,
+      "in_step": true
+    },
+    {
+      "name": "one added at the end",
+      "live": ["openai/gpt-5", "anthropic/claude-5"],
+      "lineup": ["openai/gpt-5", "anthropic/claude-5", "google/gemini-3"],
+      "changes": 1,
+      "in_step": false
+    },
+    {
+      "name": "one removed",
+      "live": ["openai/gpt-5", "anthropic/claude-5", "google/gemini-3"],
+      "lineup": ["openai/gpt-5", "anthropic/claude-5"],
+      "changes": 1,
+      "in_step": false
+    },
+    {
+      "name": "two adjacent ids swapped",
+      "live": ["openai/gpt-5", "anthropic/claude-5", "google/gemini-3"],
+      "lineup": ["anthropic/claude-5", "openai/gpt-5", "google/gemini-3"],
+      "changes": 2,
+      "in_step": false
+    },
+    {
+      "name": "reversed, so the middle one never moved",
+      "live": ["openai/gpt-5", "anthropic/claude-5", "google/gemini-3"],
+      "lineup": ["google/gemini-3", "anthropic/claude-5", "openai/gpt-5"],
+      "changes": 2,
+      "in_step": false
+    },
+    {
+      "name": "no id in common",
+      "live": ["openai/gpt-5", "anthropic/claude-5"],
+      "lineup": ["google/gemini-3", "meta/muse-2"],
+      "changes": 4,
+      "in_step": false
+    },
+    {
+      "name": "one leaves and two swap",
+      "live": ["openai/gpt-5", "anthropic/claude-5", "google/gemini-3", "meta/muse-2"],
+      "lineup": ["anthropic/claude-5", "openai/gpt-5", "google/gemini-3"],
+      "changes": 3,
+      "in_step": false
+    }
+  ],
+  "null_cases": [
+    {
+      "name": "no chain was ever stored",
+      "live": null,
+      "lineup": ["openai/gpt-5"],
+      "changes": null,
+      "in_step": null
+    },
+    {
+      "name": "no ranking was ever stored",
+      "live": ["openai/gpt-5"],
+      "lineup": null,
+      "changes": null,
+      "in_step": null
+    },
+    {
+      "name": "neither side is known",
+      "live": null,
+      "lineup": null,
+      "changes": null,
+      "in_step": null
+    }
+  ]
+}
