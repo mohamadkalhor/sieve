@@ -378,13 +378,12 @@ describe('editing', () => {
 
   it('a lock on an axis this profile no longer has is dropped on open', async () => {
     const { session } = harness();
-    session.edit; // nothing yet: the seat has no settings to edit
     await session.open();
     expect(session.settings?.locked).toEqual([]);
   });
 
   it('remembered locks come back with the seat', async () => {
-    const { session, fake, clock, deps, store } = harness();
+    const { deps, store } = harness();
     store.set('sieve:locks:fast', JSON.stringify(['cost', 'gone']));
     const reopened = new SeatSession('fast', deps);
     await reopened.open();

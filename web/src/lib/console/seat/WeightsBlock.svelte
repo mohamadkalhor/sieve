@@ -9,10 +9,9 @@
    * drawn as a lie and the numbers are never out of reach.
    */
   import { COST_AXIS, PRESETS, type Preset } from '$lib/profile/tune';
-  import { dropAxis, preset, setExact, toggleLock, type Settings } from '$lib/console/logic/settings';
-  import { fits, layout, trackAxes } from '$lib/console/logic/split';
+  import { dropAxis, preset, setExact, toggleLock } from '$lib/console/logic/settings';
+  import { fits, trackAxes } from '$lib/console/logic/split';
   import type { SeatSession } from '$lib/console/state/seat.svelte';
-  import Button from '$lib/console/ui/Button.svelte';
   import Icon from '$lib/console/ui/Icon.svelte';
   import IconButton from '$lib/console/ui/IconButton.svelte';
   import SplitBar from './SplitBar.svelte';
@@ -47,7 +46,6 @@
   const settings = $derived(session.settings);
   const weights = $derived(settings?.weights ?? {});
   const order = $derived(settings?.order ?? []);
-  const axes = $derived(trackAxes(weights, order));
   const barPx = $derived(rowPx > 0 ? rowPx - (session.spare.length ? ADD_PX : 0) : 0);
   const room = $derived(barPx > 0 && fits(weights, order, barPx));
   const held = $derived(settings?.locked ?? []);
@@ -232,5 +230,14 @@
     font-family: var(--f-mono);
     font-size: 12px;
     text-align: right;
+  }
+
+  /* The exact controls stand in for the bar on a phone, so they carry the
+     touch targets the bar's dividers cannot. */
+  @media (pointer: coarse) {
+    .chip,
+    .num {
+      height: 44px;
+    }
   }
 </style>

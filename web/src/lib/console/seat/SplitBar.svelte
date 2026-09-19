@@ -72,6 +72,8 @@
 
   const segments = $derived(layout(settings.weights, settings.order, barPx));
   const room = $derived(fits(settings.weights, settings.order, barPx));
+  /** One divider per boundary: the gap before segment `index`, for `index` >= 1. */
+  const dividers = $derived(segments.map((_before, index) => index).slice(1));
 
   let openAxis = $state<{ axis: string; element: HTMLElement } | null>(null);
   let addOpen = $state(false);
@@ -210,8 +212,10 @@
       </button>
     {/each}
 
-    {#each segments as _segment, index (index)}
+    {#each dividers as index (index)}
       {@const pair = parties(segments, settings.locked, index)}
+      {@const leftShare = segments[index - 1]?.weight ?? 0}
+      {@const pairShare = leftShare + (segments[index]?.weight ?? 0)}
       {#if pair}
         <button
           type="button"
@@ -219,11 +223,11 @@
           role="slider"
           aria-orientation="vertical"
           aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round((segments[index - 1].weight ?? 0) * 100)}
+          aria-valuemax={Math.round(pairShare * 100)}
+          aria-valuenow={Math.round(leftShare * 100)}
           aria-label={`Between ${labels[pair[0]]} and ${labels[pair[1]]}`}
-          aria-valuetext={`${labels[pair[0]]} ${Math.round(
-            (segments[index - 1].weight ?? 0) * 100
+          aria-valuetext={`${labels[pair[0]]} ${Math.round(leftShare * 100)} of ${Math.round(
+            pairShare * 100
           )} percent`}
           style="left: {centre(index)}px"
           onpointerdown={(event) => down(event, index)}
@@ -348,6 +352,15 @@
     outline: none;
     box-shadow: 0 0 0 2px var(--c-accent);
     border-radius: 2px;
+  }
+
+  /* A thumb needs a target it can find; the divider itself is invisible, so the
+     wide hit area costs the picture nothing. */
+  @media (pointer: coarse) {
+    .divider {
+      width: 44px;
+      margin-left: -22px;
+    }
   }
 
   .add {

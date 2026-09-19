@@ -43,7 +43,6 @@ import {
   listState,
   shipState,
   same,
-  type ListState,
   type ShipState
 } from '$lib/profile/tune';
 import type { SeatSessionLike } from '../contracts';
