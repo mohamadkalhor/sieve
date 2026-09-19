@@ -91,6 +91,9 @@ function check(settings: Settings): void {
   for (const key of keys) expect(settings.order).toContain(key);
   for (const axis of settings.locked) expect(keys).toContain(axis);
   for (const id of settings.pinned) expect(settings.removed).not.toContain(id);
+  for (const need of settings.needs) expect(NEEDS).toContain(need);
+  expect(settings.needs.length).toBe(new Set(settings.needs).size);
+  expect(settings.manual.length).toBe(new Set(settings.manual).size);
   expect(settings.ship).toBeGreaterThanOrEqual(1);
 }
 
@@ -130,23 +133,29 @@ function oneEdit(rng: () => number, settings: Settings): Settings {
       return restore(settings, id);
     case 14:
       return addManual(settings, id);
+    case 15:
+      return dropManual(settings, id);
     default:
       return nudgeManual(settings, id, Math.floor(rng() * 5) - 2);
   }
 }
 
 describe('the settings as a whole', () => {
-  it('keeps its invariants over a seeded random walk', () => {
-    for (let seed = 1; seed <= 40; seed += 1) {
-      const rng = rngFrom(seed);
-      let settings = fromServer(profile(), null, []);
-      check(settings);
-      for (let step = 0; step < 60; step += 1) {
-        settings = oneEdit(rng, settings);
+  it(
+    'keeps its invariants over a seeded random walk',
+    () => {
+      for (let seed = 1; seed <= 200; seed += 1) {
+        const rng = rngFrom(seed);
+        let settings = fromServer(profile(), null, []);
         check(settings);
+        for (let step = 0; step < 60; step += 1) {
+          settings = oneEdit(rng, settings);
+          check(settings);
+        }
       }
-    }
-  });
+    },
+    60_000
+  );
 
   it('survives a reset in the middle of the walk', () => {
     for (let seed = 1; seed <= 10; seed += 1) {
