@@ -27,6 +27,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from starlette.applications import Starlette
@@ -34,7 +35,6 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
 
-from sieve import owners
 from sieve.api import auth
 from sieve.api.app import create_app
 from sieve.api.edge import EdgeAuthMiddleware, SecurityHeadersMiddleware
@@ -56,17 +56,25 @@ class FakeReply:
         return self._body
 
 
-def stub_gate(*, status_code: int = 200, **body: Any):
+class GateStub:
     """A monkeypatch target for `httpx.get` that answers like gate's
-    `GET /v1/session` would, without a socket."""
-    calls: list[dict[str, str]] = []
+    `GET /v1/session` would, without a socket. Every call's headers land in
+    `calls`, so a test can assert what the app sent out to gate."""
 
-    def fake_get(url: str, *, headers: dict[str, str] | None = None, timeout: float = 0.0) -> FakeReply:
-        calls.append(dict(headers or {}))
-        return FakeReply(status_code, dict(body))
+    def __init__(self, status_code: int, body: dict[str, Any]) -> None:
+        self._status_code = status_code
+        self._body = body
+        self.calls: list[dict[str, str]] = []
 
-    fake_get.calls = calls  # type: ignore[attr-defined]
-    return fake_get
+    def __call__(
+        self, url: str, *, headers: dict[str, str] | None = None, timeout: float = 0.0
+    ) -> FakeReply:
+        self.calls.append(dict(headers or {}))
+        return FakeReply(self._status_code, dict(self._body))
+
+
+def stub_gate(*, status_code: int = 200, **body: Any) -> GateStub:
+    return GateStub(status_code, body)
 
 
 @pytest.fixture(autouse=True)
@@ -139,7 +147,7 @@ def test_gate_forwards_the_whole_cookie_header_and_the_app_slug(
         user_id=17, email="ada@example.test", name="Ada", role="member",
         status="active", app="sieve",
     )
-    monkeypatch.setattr(auth.httpx, "get", fake)
+    monkeypatch.setattr(httpx, "get", fake)
     with TestClient(create_app(box)) as client:
         client.cookies.set("gate_session", "opaque-blob")
         client.cookies.set("something_else", "also-sent")
@@ -148,7 +156,7 @@ def test_gate_forwards_the_whole_cookie_header_and_the_app_slug(
         assert got.json()["email"] == "ada@example.test"
     # gate got the raw Cookie header (both cookies) and the app slug, not a
     # cookie picked out by name.
-    sent = fake.calls[-1]  # type: ignore[attr-defined]
+    sent = fake.calls[-1]
     assert sent["X-Gate-App"] == "sieve"
     assert "gate_session=opaque-blob" in sent["Cookie"]
     assert "something_else=also-sent" in sent["Cookie"]
@@ -164,10 +172,10 @@ def test_gate_forwards_the_whole_cookie_header_and_the_app_slug(
     ],
 )
 def test_only_our_app_and_active_status_count_as_a_session(
-    box: Config, monkeypatch: pytest.MonkeyPatch, body: dict[str, str]
+    box: Config, monkeypatch: pytest.MonkeyPatch, body: dict[str, Any]
 ) -> None:
     fake = stub_gate(user_id=1, email="x@example.test", role="owner", **body)
-    monkeypatch.setattr(auth.httpx, "get", fake)
+    monkeypatch.setattr(httpx, "get", fake)
     with TestClient(create_app(box)) as client:
         client.cookies.set("gate_session", "blob")
         # No session, so the edge rule refuses it -- whatever `/v1/me`'s own
@@ -182,7 +190,7 @@ def test_gate_unreachable_is_no_session_not_a_yes(
     def boom(*a: Any, **k: Any) -> Any:
         raise TimeoutError("gate did not answer")
 
-    monkeypatch.setattr(auth.httpx, "get", boom)
+    monkeypatch.setattr(httpx, "get", boom)
     with TestClient(create_app(box)) as client:
         client.cookies.set("gate_session", "blob")
         assert client.get("/v1/profiles", headers=EDGE).status_code == 401
@@ -197,7 +205,7 @@ def test_a_bad_json_reply_from_gate_is_no_session(
         def json(self) -> Any:
             raise ValueError("not json")
 
-    monkeypatch.setattr(auth.httpx, "get", lambda *a, **k: Weird())
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: Weird())
     with TestClient(create_app(box)) as client:
         client.cookies.set("gate_session", "blob")
         assert client.get("/v1/profiles", headers=EDGE).status_code == 401
@@ -219,7 +227,7 @@ def test_role_mapping_and_viewer_gets_a_private_seed(
     copies of the seed profiles to write to (CONTRACTS section 10)."""
     email = f"{role}@example.test"
     fake = stub_gate(user_id=42, email=email, role=role, status="active", app="sieve")
-    monkeypatch.setattr(auth.httpx, "get", fake)
+    monkeypatch.setattr(httpx, "get", fake)
     with TestClient(create_app(box)) as client:
         client.cookies.set("gate_session", "blob")
         me = client.get("/v1/me").json()
@@ -248,14 +256,14 @@ def test_positive_and_negative_answers_are_cached_by_the_cookie_header(
     box: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = stub_gate(user_id=1, email=OWNER_EMAIL, role="owner", status="active", app="sieve")
-    monkeypatch.setattr(auth.httpx, "get", fake)
+    monkeypatch.setattr(httpx, "get", fake)
     with TestClient(create_app(box)) as client:
         client.cookies.set("gate_session", "blob")
         client.get("/v1/me")
         client.get("/v1/me")
         client.get("/v1/me")
     # Three calls into the app, one call out to gate.
-    assert len(fake.calls) == 1  # type: ignore[attr-defined]
+    assert len(fake.calls) == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -267,7 +275,9 @@ async def _ping(request: Request) -> Response:
     return Response(status_code=204)
 
 
-def _edge_app(monkeypatch: pytest.MonkeyPatch, *, session: bool, bearer_ok: bool | None) -> Starlette:
+def _edge_app(
+    monkeypatch: pytest.MonkeyPatch, *, session: bool, bearer_ok: bool | None
+) -> Starlette:
     """A stand-in for the real app: same middleware, a `/v1/ping` route
     instead of the real router, and `auth.gate_identity` / `auth.resolve_bearer`
     monkeypatched so no store or network is involved."""
@@ -318,7 +328,9 @@ def test_edge_with_valid_session_passes_through(monkeypatch: pytest.MonkeyPatch)
         assert client.get("/v1/ping", headers=EDGE).status_code == 204
 
 
-def test_spoofed_gate_headers_without_a_real_session_are_401(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_spoofed_gate_headers_without_a_real_session_are_401(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`X-Gate-Email` etc. are informational, set by nginx after a real
     check; this app never trusts them on their own, only `/v1/session`."""
     app = _edge_app(monkeypatch, session=False, bearer_ok=None)

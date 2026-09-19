@@ -36,14 +36,12 @@ exempt -- it already proved something a cross-site page cannot forge.
 
 from __future__ import annotations
 
-from typing import Any
 from urllib.parse import urlsplit
 
 import anyio.to_thread
-
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from sieve.api import auth
 
@@ -55,11 +53,17 @@ def _unauthenticated(message: str) -> JSONResponse:
     # `unauthenticated` is gate's own wall's code (AUTH-CONTRACT.md section
     # 9) so a front-end fetch wrapper written against that contract reacts to
     # this the same way it reacts to gate's `/auth/wall`.
-    return JSONResponse(status_code=401, content={"error": {"code": "unauthenticated", "message": message}})
+    return JSONResponse(
+        status_code=401,
+        content={"error": {"code": "unauthenticated", "message": message}},
+    )
 
 
 def _cross_site(message: str) -> JSONResponse:
-    return JSONResponse(status_code=403, content={"error": {"code": "cross_site", "message": message}})
+    return JSONResponse(
+        status_code=403,
+        content={"error": {"code": "cross_site", "message": message}},
+    )
 
 
 def _csrf_refusal(request: Request) -> JSONResponse | None:
@@ -140,7 +144,7 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
 
-        async def send_with_headers(message: dict[str, Any]) -> None:
+        async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
                 headers.extend(self._HEADERS)

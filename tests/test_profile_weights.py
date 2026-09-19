@@ -6,12 +6,12 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from test_api_acceptance import TOKENS
-from test_api_acceptance import workspace as workspace
 
 from sieve.api.app import create_app
 from sieve.config import Config
 from sieve.profiles import control
+from tests.test_api_acceptance import TOKENS
+from tests.test_api_acceptance import workspace as workspace
 
 
 @pytest.mark.parametrize("door", ["post", "put", "patch", "settings"])
