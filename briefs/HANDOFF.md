@@ -1286,3 +1286,36 @@ seed-and-serve.mjs` serves `web/build` and does not rebuild it, so a spec run
 against a stale build tests the previous commit. And on this VPS `SIEVE_E2E_PORT`
 has to move — 8110 is Slate's, and 8121–8126 are taken too; `SIEVE_E2E_PORT=8955`
 worked.
+
+## Package C · The logic modules
+
+**Landed.** Eight modules under `web/src/lib/console/logic/` — `settings.ts`
+(the settings and every edit to them, §5.2), `split.ts` (the weight bar's
+geometry: proportional pixels, gap, minimum-width stubs), `diff.ts` (two
+lineups side by side), `money.ts` (a price, a per-task cost, and the three
+absences behind one dash), `abilities.ts` (yes, no, and nobody said — plus the
+count beside a need, which counts yeses and never counts silence),
+`seats.ts` (the modality order the list groups by, and its badges),
+`commands.ts` (prefix, then word start, then scattered letters) and
+`explain.ts` (raw score kept apart from the score the multipliers leave —
+finding 11). One test file per module under `web/tests/console/c-*.test.ts`.
+
+**Nothing stubbed.** The old page's `move`/`exact`/`preset`/`drop`/`pin`
+behaviour is the one that shipped: its guards, its clamping, its
+proportional renormalisation. D1/D2 and E can import from `logic/*` and delete
+the copies.
+
+**Audit, and the bugs it found.** The seeded random walk over the settings
+(200 sequences × 60 edits, fifth invariant "the weights sum to 1") caught a
+transfer onto the same axis writing both keys and leaving the vector short;
+`toPatch`'s `remove_axes` and `who()`'s "source not reported" were wrong in the
+same way — claiming something the data did not say. Both fixed, both tested.
+One deliberate choice: the modality labels in `seats.ts` are mine — the brief
+names the groups nowhere — so if E or the operator prefers shorter words
+("Image edit" over "Image editing"), that table is the only place to change.
+
+**Checks.** `npx vitest run` 190 passed / 16 files; `npx tsc --noEmit` clean;
+`npx eslint src/lib/console/logic tests/console` clean; `npm run check` 0 errors,
+0 warnings; `npm run build` green.
+
+**Commit.** `c325477` on the `console` branch.
