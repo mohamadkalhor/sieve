@@ -1320,3 +1320,40 @@ names the groups nowhere — so if E or the operator prefers shorter words
 **Commits.** `c325477` (the eight modules and their eight test files), `eeefc25`
 (the settings walk at the plan's 200 sequences, plus the manual and needs lists
 in its invariants), and the commit this entry arrives in.
+
+## Package D1 · The seat session and its pane
+
+**Landed.** `state/seat.svelte.ts` — one `SeatSession` per seat: a generation
+bumped on open/close/retarget, a revision per edit, one write queue so an older
+PUT cannot finish last, a preview that may only patch the sidebar at the revision
+it answered, `restoreOpened` (full settings, finding 12), and a `ship` that
+clears the debounce, drains the queue, and refuses to apply when the save failed
+or when no preview matches the revision it saved (finding 6).
+`state/selection.svelte.ts` — `?model=` as URL state through two injected moves,
+plus `adopt`, so a model that left the lineup is not left selected. Twelve
+components under `console/seat/`: SeatPane, SeatHeader, SeatMenu, AskBar,
+WeightsBlock, SplitBar, AxisPopover, AddAxisPopover, NeedChips, ShipStepper,
+TrimRow, HistoryDrawer, composed by `routes/(app)/seats/[name]/+page.svelte`,
+which creates the session, lends the selection its URL moves, and hands both to
+the panes through context. Every number in the bar is `logic/split.ts`'s: the
+drag freezes parties, weights, segments and the px scale at pointerdown and moves
+by total displacement; the keyboard steps go through `settings.transferWeight`.
+Tests: `web/tests/console/d-seat.test.ts` (35) and `d-selection.test.ts` (10).
+
+**Stubbed.** The table area: SeatPane prints the lineup as a numbered list of ids
+(`data-slot="lineup"`) for the table package to replace. The inspector column
+prints one line and HistoryDrawer takes its place when the menu opens it; E fills
+the rest. The seats list in the left column is still A's placeholder (F's).
+
+**The review.** 6 and 12 are the session above. 7 and 8 live in `logic/split.ts`
+and `logic/settings.ts`, which this package only calls. 13: the divider is now a
+slider over its own pair (min 0, max left+right, value the left share), and a
+coarse pointer gets a 44px hit area plus 44px exact controls. 10's display-row
+union is the table package's — D1's table is a placeholder.
+
+**Checks.** `pnpm check` 0 errors / 0 warnings; `pnpm lint` clean; `pnpm test` 235
+passed / 18 files; `pnpm build` green.
+
+**Commits.** `57060df` (the session and the selection, with their tests),
+`fc44039` (the pane, the twelve components, the route), and the commit this entry
+arrives in.
