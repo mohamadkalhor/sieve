@@ -1166,3 +1166,64 @@ Still open, deliberately:
   models one catalogue carries and the other does not. The two recordings are
   trimmed independently, so their overlap is small by construction — not a
   matching failure. `data/aliases.yaml` records the pass and its date.
+
+## Package A · The shell
+
+Landed. The rail is gone; the sections are in the top bar, the console opens on
+`/seats`, and one seat is one page at `/seats/<name>` with the three panes the
+brief draws: list, seat, inspector.
+
+What is here and finished: the token sheet (`lib/tokens/tokens.css`, dark only,
+`--c-* --f-* --h-* --w-* --r-*`), `app.css` and `app.html` (self-hosted IBM Plex
+from `@fontsource`, no font CDN request — a test pins that), the UI primitives
+under `lib/console/ui/` (Icon, IconButton, Button, Segmented, Pill, Bar, Kbd,
+Popover, Skeleton, Toast), the shell (`lib/console/shell/`: Shell, TopBar,
+NavLinks, UserMenu, StatusBar, CommandPalette), the redirects, and the client
+additions the brief names: `api.seats()`, `api.modelCard()`, `api.setPurpose()`,
+`SeatRow`/`SeatsResult`/`ModelCard`, `StatusRow.reachable`/`.unscored`, and the
+`Listed` extras (`axes`, `raw`, `health`, `factor`, `confidence`,
+`cost_per_task`, `cost_from`).
+
+`api.seats()` carries the section 4.1 fallback itself: on a 404 it asks
+`/v1/profiles` and then one chain per seat, returns the rows with `lineup`,
+`in_step` and `changes` null, and marks the envelope `degraded`. The seat pane
+draws no badge for a null — "not reported" and "zero" are different things and
+the brief is explicit about it.
+
+What is a placeholder, and whose: `lib/console/contracts.ts` is the seam between
+packages (the shapes B–G compile against, so no package has to wait for
+another's file to exist). `lib/console/shell/stores.svelte.ts` is the shell's
+stores as factories — the seats store there fetches the list and can patch one
+row, which is all `/seats` needs to answer "which seat?", and F replaces it with
+the real one (filters, sort, pinning, locks, optimistic ship). `context.ts` holds
+the four context keys the layout provides once. The three panes in
+`routes/(app)/seats/[name]/+page.svelte` are labelled regions with placeholder
+bodies (`data-slot="seats" | "seat" | "inspector"`) — D1, D2, E and F fill them
+and should not need to move the frame.
+
+Two deviations from the file map, both deliberate:
+
+- **`/profiles/<name>` redirects from a `+layout.ts`, not a `+page.ts`.** The old
+  page is still in the tree and still reads `data.name`; replacing its load with
+  a redirect changes that route's `PageData` and breaks `svelte-check` before
+  package G deletes the file. The layout redirects, the page still compiles, and
+  G can collapse the two into one `+page.ts` on the way out.
+- **`--line` is aliased in `tokens.css`.** `Leaderboard.svelte` reads it in three
+  borders and nothing ever defined it — the old palette called that `--rule`, so
+  those borders have been invalid and invisible for as long as the file has
+  existed. The alias is one line in a file A owns; the page is untouched.
+
+Checks, all green on the commit that carries this: `pnpm check` (0 errors, 0
+warnings), `pnpm lint`, `pnpm test` (63 tests, 13 of them new under
+`tests/console/`: the redirects read directly, every `var(--token)` resolved
+against `tokens.css`, the icon union against the drawings), `pnpm build`, and
+`pnpm test:e2e e2e/console-a.spec.ts` — 16 tests in chromium against the seeded
+server: nine screens drawing inside the shell with no uncaught error, the old
+addresses landing on the new ones, the palette taking the keyboard and giving it
+back, and `/seats` opening a seat at 1280px and staying the list at 820px.
+
+One thing for whoever runs the suite next: **`pnpm build` first.** `e2e/
+seed-and-serve.mjs` serves `web/build` and does not rebuild it, so a spec run
+against a stale build tests the previous commit. And on this VPS `SIEVE_E2E_PORT`
+has to move — 8110 is Slate's, and 8121–8126 are taken too; `SIEVE_E2E_PORT=8955`
+worked.

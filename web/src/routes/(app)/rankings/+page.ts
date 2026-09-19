@@ -3,9 +3,9 @@
 // places to look and two of them stale.
 //
 // The URLs stay, because they are in people's bookmarks and in the decision
-// log. They land on the list.
+// log. They land on the seats list.
 import { redirect } from '@sveltejs/kit';
 
 export const load = () => {
-  redirect(307, '/profiles');
+  redirect(307, '/seats');
 };

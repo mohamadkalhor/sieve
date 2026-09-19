@@ -17,7 +17,8 @@ import type {
   Leaderboard,
   Reachable,
   TargetDiff,
-  TargetResult
+  TargetResult,
+  Unit
 } from '$lib/types';
 
 export const API_BASE =
@@ -243,6 +244,14 @@ export interface StatusRow {
   /** every call telemetry holds (pruned to thirty days), and the newest one */
   telemetry_calls: number;
   telemetry_at: string | null;
+  /**
+   * `reachable` and `unscored` (CONSOLE.md section 4.4): the two numbers the
+   * status bar has to say without opening a screen. Absent on an older server,
+   * and then the bar omits those two items rather than showing a zero it does
+   * not know.
+   */
+  reachable?: number;
+  unscored?: number;
   /** what is going now and what finished last; absent on an older server */
   runs?: {
     running: RunRow | null;
@@ -413,6 +422,21 @@ export interface Listed {
   pinned?: boolean;
   /** false when no source measured it and nobody scored it by hand */
   scored?: boolean;
+  /**
+   * What each axis gave this model, in the order the proposed weights name
+   * them (CONSOLE.md section 4.2). Absent on a server that does not say how a
+   * score is made up -- and then the inspector says so in words, rather than
+   * drawing empty bars.
+   */
+  axes?: { axis: string; value: number | null; coverage: number; contribution: number }[];
+  /** the score before health and trim; `score` stays the final number */
+  raw?: number;
+  health?: number;
+  /** what trim multiplied by; 1 when no prefix_weights apply */
+  factor?: number;
+  confidence?: number;
+  cost_per_task?: number | null;
+  cost_from?: 'shape' | 'telemetry' | null;
 }
 
 /**
@@ -525,6 +549,73 @@ export interface HandScoresBody {
   name?: string;
 }
 
+/**
+ * One seat, as the seats list and the seat header need it (CONSOLE.md
+ * section 4.1).
+ *
+ * Everything a row shows comes in one request, `live` and `lineup` are the two
+ * orders a seat can have -- what the gateway holds now, and what the saved
+ * settings would ship right now -- and both are `null` when nobody has stored
+ * one. `in_step` is the comparison, and it is `null` whenever either side is,
+ * because "the same" and "no idea" are different answers.
+ */
+export interface SeatRow {
+  name: string;
+  modality: Modality;
+  purpose: string;
+  mode: 'auto' | 'manual';
+  ship: number;
+  /** what the gateway holds now, in order; null when no chain was ever stored */
+  live: { id: string; name: string }[] | null;
+  /** what the SAVED settings would ship now, in order; null when there is no stored ranking */
+  lineup: { id: string; name: string }[] | null;
+  /** lineup ids == live ids, in order. null whenever either side is null */
+  in_step: boolean | null;
+  /** how many ids differ (added + removed + moved); null with in_step */
+  changes: number | null;
+  shipped_at: string | null;
+}
+
+/** The seats list, and whether it came from the one request that answers it. */
+export interface SeatsResult {
+  rows: SeatRow[];
+  /**
+   * true when this is the fallback path (section 4.1's 404): rows from
+   * `/v1/profiles` and one chain call per seat, with no lineup, so no seat
+   * carries a badge and the list says so at the top.
+   */
+  degraded: boolean;
+}
+
+/**
+ * What one model can do and who says so, its posted price, and where it is
+ * served (CONSOLE.md section 4.3).
+ *
+ * `abilities` always carries all four needs; `yes` and `no` name the sources
+ * that said so, so the inspector can show a claim and its author together.
+ */
+export interface ModelCard {
+  id: string;
+  name: string;
+  creator: string;
+  modality: Modality;
+  effort: string | null;
+  family: string | null;
+  price: {
+    unit: Unit;
+    input: number | null;
+    output: number | null;
+    per_unit: number | null;
+    source: string;
+    observed_at: string;
+  } | null;
+  /** one entry per need, always all four */
+  abilities: Record<Need, { answer: boolean | null; yes: string[]; no: string[] }>;
+  context_window: number | null;
+  served_by: { local_id: string; prefix: string; inventory: string; stale: boolean }[];
+  scored: boolean;
+}
+
 const q = (params: Record<string, string | number | boolean | undefined>): string => {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -627,6 +718,58 @@ export const api = {
 
   chain: (profile: string, o?: RequestOptions) =>
     request<Chain>(`/v1/chains/${encodeURIComponent(profile)}`, o),
+
+  /**
+   * Every seat in one request (CONSOLE.md section 4.1), replacing the two calls
+   * per seat the list used to make.
+   *
+   * On an older server (404) it falls back to that older pair, and says so: the
+   * rows then have no lineup, so no seat carries an "n changes" badge and the
+   * list says at the top that it is provisional. The chain holds ids, not
+   * names, so on that path the id stands in for the name rather than the client
+   * inventing one from a prefix.
+   */
+  seats: async (o?: RequestOptions): Promise<Result<SeatsResult>> => {
+    const direct = await request<SeatRow[]>('/v1/seats', o);
+    if (direct.ok) return ok({ rows: direct.value, degraded: false });
+    if (direct.error.status !== 404) return fail(direct.error);
+
+    const profiles = await request<Profile[]>('/v1/profiles', o);
+    if (!profiles.ok) return fail(profiles.error);
+
+    const rows: SeatRow[] = [];
+    for (const profile of profiles.value) {
+      const chain = await request<Chain>(`/v1/chains/${encodeURIComponent(profile.name)}`, o);
+      const live = chain.ok
+        ? [chain.value.primary, ...(chain.value.fallbacks ?? [])].map((id) => ({ id, name: id }))
+        : null;
+      rows.push({
+        name: profile.name,
+        modality: profile.modality,
+        purpose: profile.purpose,
+        mode: profile.mode ?? 'auto',
+        ship: profile.ship ?? 0,
+        live,
+        lineup: null,
+        in_step: null,
+        changes: null,
+        shipped_at: chain.ok ? chain.value.computed_at : null
+      });
+    }
+    return ok({ rows, degraded: true });
+  },
+
+  /** One model's card: what it can do, who says so, its price, where it is served (§4.3). */
+  modelCard: (id: string, modality: Modality, o?: RequestOptions) =>
+    request<ModelCard>(`/v1/model-card${q({ id, modality })}`, o),
+
+  /** The one word a seat's purpose is: the whole sentence, replaced. */
+  setPurpose: (name: string, purpose: string, o?: RequestOptions) =>
+    request<Profile>(`/v1/profiles/${encodeURIComponent(name)}`, {
+      ...o,
+      method: 'PATCH',
+      body: { purpose }
+    }),
 
   recommend: (profile: string, n = 3, o?: RequestOptions) =>
     request<Recommendation>(`/v1/recommend${q({ profile, n })}`, o),

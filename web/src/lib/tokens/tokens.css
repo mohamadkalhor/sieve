@@ -1,38 +1,117 @@
-/* PLAN section 8. Dark by design: one palette, no light variant to keep in step. */
+/*
+ * PLAN section 8 -> CONSOLE section 3.1. Dark by design: one palette, no light
+ * variant to keep in step.
+ *
+ * The new names (`--c-*`, `--f-*`, `--h-*`, `--w-*`, `--r-*`) are what the
+ * console draws with. The old names at the bottom are ALIASES, and they stay:
+ * eight pages that this work does not otherwise touch still read `--bg`,
+ * `--panel`, `--accent`, `--display` and the rest. Deleting them later would
+ * break those pages silently -- a missing CSS variable fails without a word --
+ * so the aliases and this comment are load-bearing. See CONSOLE.md risk 5.
+ */
 :root {
-  --bg: #0b0c10;
-  --panel: #13151b;
-  --panel2: #1a1d25;
-  --rule: #242833;
-  --ink: #ece8e1;
-  --muted: #7c8290;
-  --accent: #e9a23b; /* the decision */
-  --reach: #7fa6ff;  /* you can use this */
-  --good: #5dbb8a;
-  --warn: #e0704a;
-  --bad: #e05a5a;
+  /* surfaces */
+  --c-bg: #0d0f12; /* app ground */
+  --c-pane: #101317; /* inspector, side surfaces */
+  --c-panel: #15181d; /* inputs, segmented track, popovers */
+  --c-raised: #1c2027; /* selected row, active nav, bar tracks */
+  --c-row-sel: #161a20; /* selected table row */
+  /* lines */
+  --c-rule: #23272e; /* pane borders */
+  --c-rule-soft: #1a1d23; /* table row separators */
+  --c-rule-strong: #2c313a; /* input borders, idle pills */
+  --c-rule-hover: #3a404b; /* outline buttons */
+  /* text */
+  --c-ink: #e6e8eb;
+  --c-ink-2: #c3c8d0; /* secondary numbers, labels in the inspector */
+  --c-muted: #98a0ad; /* 6.4:1 on --c-bg; do not go lighter-weight than this */
+  --c-dim: #5b6472; /* bar fills below the line; NEVER text */
+  /* signal */
+  --c-accent: #b6e35c; /* the decision: ships, selected, primary button */
+  --c-accent-ink: #0d0f12; /* text on accent */
+  --c-warn: #e0a15a; /* unknown, blocked, busy */
+  --c-bad: #f08c8c; /* failed, delete */
+  /* axis palette, by position in the seat's axis order (index mod 8) */
+  --c-axis-0: #b6e35c;
+  --c-axis-1: #5cc8e3;
+  --c-axis-2: #e3b65c;
+  --c-axis-3: #c9a0f0;
+  --c-axis-4: #f0a0a0;
+  --c-axis-5: #aeb6c2;
+  --c-axis-6: #7fd6b0;
+  --c-axis-7: #f0c08c;
+  /* type */
+  --f-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --f-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  /* measures */
+  --h-top: 52px;
+  --h-status: 28px;
+  --w-seats: 260px;
+  --w-inspect: 340px;
+  --r-1: 3px;
+  --r-2: 4px;
+  --r-3: 6px;
+  --r-pill: 14px;
+  /* text sizes: 11 caps-label, 12 meta, 13 body, 15 mono-figure, 20 inspector
+     title, 22 seat name */
 
-  --display: 'Fraunces', Georgia, serif;
-  --ui: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-
-  --rail: 168px;
-  --radius: 10px;
+  /* aliases for the untouched pages */
+  --bg: var(--c-bg);
+  --panel: var(--c-panel);
+  --panel2: var(--c-raised);
+  --rule: var(--c-rule);
+  /* `Leaderboard.svelte` reads `--line` in three borders, and nothing ever
+     defined it -- the old palette called this `--rule`, so those borders have
+     been invalid and invisible for as long as the file has existed. The alias
+     gives them the colour they were asking for; the page keeps its own file. */
+  --line: var(--c-rule);
+  --ink: var(--c-ink);
+  --muted: var(--c-muted);
+  --accent: var(--c-accent);
+  --reach: #5cc8e3;
+  --good: var(--c-accent);
+  --warn: var(--c-warn);
+  --bad: var(--c-bad);
+  --display: var(--f-ui);
+  --ui: var(--f-ui);
+  --mono: var(--f-mono);
+  --rail: 0px;
+  --radius: 6px;
 }
 
 @theme {
-  --color-bg: #0b0c10;
-  --color-panel: #13151b;
-  --color-panel2: #1a1d25;
-  --color-rule: #242833;
-  --color-ink: #ece8e1;
-  --color-muted: #7c8290;
-  --color-accent: #e9a23b;
-  --color-reach: #7fa6ff;
-  --color-good: #5dbb8a;
-  --color-warn: #e0704a;
-  --color-bad: #e05a5a;
-  --font-display: 'Fraunces', Georgia, serif;
-  --font-ui: 'Hanken Grotesk', system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --color-bg: #0d0f12;
+  --color-pane: #101317;
+  --color-panel: #15181d;
+  --color-raised: #1c2027;
+  --color-row-sel: #161a20;
+  --color-rule: #23272e;
+  --color-rule-soft: #1a1d23;
+  --color-rule-strong: #2c313a;
+  --color-rule-hover: #3a404b;
+  --color-ink: #e6e8eb;
+  --color-ink-2: #c3c8d0;
+  --color-muted: #98a0ad;
+  --color-dim: #5b6472;
+  --color-accent: #b6e35c;
+  --color-accent-ink: #0d0f12;
+  --color-warn: #e0a15a;
+  --color-bad: #f08c8c;
+  --color-axis-0: #b6e35c;
+  --color-axis-1: #5cc8e3;
+  --color-axis-2: #e3b65c;
+  --color-axis-3: #c9a0f0;
+  --color-axis-4: #f0a0a0;
+  --color-axis-5: #aeb6c2;
+  --color-axis-6: #7fd6b0;
+  --color-axis-7: #f0c08c;
+
+  /* the old names, still mirrored for the untouched pages */
+  --color-panel2: #1c2027;
+  --color-reach: #5cc8e3;
+  --color-good: #b6e35c;
+
+  --font-display: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }
