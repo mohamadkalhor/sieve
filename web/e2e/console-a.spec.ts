@@ -68,6 +68,21 @@ for (const path of ['/', '/profiles', '/chains', '/rankings']) {
 test('an old profile URL lands on the seat of that name', async ({ page }) => {
   await page.goto(`/profiles/${A_SEAT}`);
   await expect(page).toHaveURL(new RegExp(`/seats/${A_SEAT}$`));
+
+  // and the form the old links used, with the panel named in the query
+  await page.goto(`/profiles?open=${A_SEAT}`);
+  await expect(page).toHaveURL(new RegExp(`/seats/${A_SEAT}$`));
+});
+
+test('/seats reopens the seat this browser last worked in', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`/seats/${A_SEAT}`);
+  await expect(page).toHaveURL(new RegExp(`/seats/${A_SEAT}$`));
+
+  // somewhere else first, so the assertion cannot pass by accident
+  await page.goto('/field');
+  await page.goto('/seats');
+  await expect(page).toHaveURL(new RegExp(`/seats/${A_SEAT}$`));
 });
 
 test('the palette takes the keyboard and gives it back', async ({ page }) => {

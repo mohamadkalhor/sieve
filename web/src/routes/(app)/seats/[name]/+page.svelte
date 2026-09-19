@@ -13,6 +13,7 @@
    * that say so, so the routing, the widths and the scrolling are settled
    * before the panes land in them.
    */
+  import { browser } from '$app/environment';
   import { page } from '$app/stores';
   import type { PageData } from './$types';
   import { explainError } from '$lib/api/client';
@@ -25,6 +26,12 @@
 
   $effect(() => {
     if (!store.rows) void store.load();
+  });
+
+  $effect(() => {
+    // §1.3: opening a seat is what makes `/seats` open it again next time, so
+    // the key is written here rather than when the list is drawn.
+    if (browser) window.localStorage.setItem('sieve:last-seat', here);
   });
 </script>
 

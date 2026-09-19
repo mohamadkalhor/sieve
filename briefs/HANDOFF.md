@@ -1216,8 +1216,13 @@ the four context keys the layout provides once. The three panes in
 bodies (`data-slot="seats" | "seat" | "inspector"`) — D1, D2, E and F fill them
 and should not need to move the frame.
 
-Two deviations from the file map, both deliberate:
+Three deviations from the file map, all deliberate:
 
+- **`/profiles` is not prerendered.** Its redirect reads `?open=<seat>` (the old
+  links' form, §1.3), and SvelteKit refuses `url.searchParams` while
+  prerendering — the build fails with `500 /profiles`. `prerender = false` makes
+  it resolve on the client like every other dynamic route, and keeps the name in
+  the URL.
 - **`/profiles/<name>` redirects from a `+layout.ts`, not a `+page.ts`.** The old
   page is still in the tree and still reads `data.name`; replacing its load with
   a redirect changes that route's `PageData` and breaks `svelte-check` before
@@ -1229,13 +1234,14 @@ Two deviations from the file map, both deliberate:
   existed. The alias is one line in a file A owns; the page is untouched.
 
 Checks, all green on the commit that carries this: `pnpm check` (0 errors, 0
-warnings), `pnpm lint`, `pnpm test` (63 tests, 13 of them new under
+warnings), `pnpm lint`, `pnpm test` (64 tests, 14 of them new under
 `tests/console/`: the redirects read directly, every `var(--token)` resolved
 against `tokens.css`, the icon union against the drawings), `pnpm build`, and
-`pnpm test:e2e e2e/console-a.spec.ts` — 17 tests in chromium against the seeded
+`pnpm test:e2e e2e/console-a.spec.ts` — 18 tests in chromium against the seeded
 server: nine screens drawing inside the shell with no uncaught error, the old
-addresses landing on the new ones, the palette taking the keyboard and giving it
-back, `/seats` opening a seat at 1280px and staying the list at 820px, and no
+addresses landing on the new ones (including `?open=`), the palette taking the
+keyboard and giving it back, `/seats` opening a seat at 1280px and staying the
+list at 820px, `/seats` reopening the seat this browser last worked in, and no
 request leaving for another host.
 
 The contrast audit §3.1 asks for, done by grep over every file A does not own:

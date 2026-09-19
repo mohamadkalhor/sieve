@@ -41,7 +41,16 @@ describe('the addresses the console moved', () => {
   });
 
   it('sends the old profiles list to the seats list', () => {
-    expect(redirectOf(() => profiles())).toEqual({ status: MOVED, location: '/seats' });
+    expect(redirectOf(() => profiles({ url: new URL('http://localhost/profiles') } as never))).toEqual({
+      status: MOVED,
+      location: '/seats'
+    });
+  });
+
+  it('sends `?open=` to the seat it named, which is what the old links meant', () => {
+    expect(
+      redirectOf(() => profiles({ url: new URL('http://localhost/profiles?open=heathcote') } as never))
+    ).toEqual({ status: MOVED, location: '/seats/heathcote' });
   });
 
   it('sends an old profile URL to the seat of that name', () => {

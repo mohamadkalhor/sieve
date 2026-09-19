@@ -19,8 +19,9 @@
   import { seats } from '$lib/console/context';
   import Icon from '$lib/console/ui/Icon.svelte';
 
-  /** the seat this browser last worked in, so a return visit opens on it */
-  const LAST_SEAT = 'sieve.seat.last';
+  /** §1.3's key: the seat page writes it, this page reads it, so a return
+   * visit opens where you left off rather than asking again */
+  const LAST_SEAT = 'sieve:last-seat';
 
   const store = seats();
 
