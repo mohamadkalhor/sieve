@@ -1,23 +1,31 @@
 <script lang="ts">
   /**
-   * One seat, as three panes (CONSOLE.md sections 6.2, 6.3, 6.4): the list on
+   * One seat, as three panes (CONSOLE.md sections 5.2-5.4, 6.2-6.5): the list on
    * the left, the seat in the middle, the inspector on the right.
    *
-   * The frame is this package's. Each pane scrolls itself, so a long axis list
-   * never moves the column beside it, and below 900px there is one column and
-   * the seat is it -- the list is `/seats`, one tap away.
+   * The frame is this package's, and so is the session behind the middle pane.
+   * The route owns it -- it creates it for the seat the URL names, hands it to
+   * the pane, the inspector and the history drawer through context, and is the
+   * only place that knows the seat can be left behind: `retarget` moves the one
+   * session rather than replacing it, so the inspector keeps reading the same
+   * object across a seat change.
    *
-   * The bodies arrive with the packages that own them: the seat pane (its
-   * header, its axes, the preview, the ship) with D, the inspector with E, and
-   * both through F's stores. What is here now is the frame and the two rows
-   * that say so, so the routing, the widths and the scrolling are settled
-   * before the panes land in them.
+   * Each pane scrolls itself, so a long axis list never moves the column beside
+   * it, and below 900px there is one column and the seat is it -- the list is
+   * `/seats`, one tap away. The seats list (F) and the inspector (E) are still
+   * the rows that say so; the seat pane and the history drawer are here.
    */
   import { browser } from '$app/environment';
+  import { goto } from '$app/navigation';
+  import { onDestroy, untrack } from 'svelte';
   import { page } from '$app/stores';
-  import type { PageData } from './$types';
   import { explainError } from '$lib/api/client';
-  import { seats } from '$lib/console/context';
+  import { seats, provideSeatSession, provideSelection } from '$lib/console/context';
+  import { browserDeps, SeatSession } from '$lib/console/state/seat.svelte';
+  import { Selection } from '$lib/console/state/selection.svelte';
+  import HistoryDrawer from '$lib/console/seat/HistoryDrawer.svelte';
+  import SeatPane from '$lib/console/seat/SeatPane.svelte';
+  import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
 
@@ -33,6 +41,47 @@
     // the key is written here rather than when the list is drawn.
     if (browser) window.localStorage.setItem('sieve:last-seat', here);
   });
+
+  // The selection is URL state, not component state: `?model=` survives a
+  // reload, and the palette opens a model in the inspector by writing it.
+  const picked = new Selection({
+    read: () => $page.url.searchParams.get('model'),
+    replace: (id) => {
+      const url = new URL($page.url);
+      if (id) url.searchParams.set('model', id);
+      else url.searchParams.delete('model');
+      void goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+    }
+  });
+  provideSelection(picked);
+
+  // One session for the whole visit. A seat change moves it (see `retarget`)
+  // instead of replacing it, which is what lets the inspector read one object.
+  const session = new SeatSession(
+    // read once: the effect below is what follows the URL, and a session that
+    // rebuilt itself on every `here` would drop the answers it is waiting for
+    untrack(() => here),
+    browserDeps({
+      patch: (name, part) => store.patch(name, part)
+    })
+  );
+  provideSeatSession(session);
+
+  // The single effect that opens a seat and closes the one before it.
+  $effect(() => {
+    const name = here;
+    void session.retarget(name);
+    // A selection was made in the seat it was made in.
+    return () => picked.select(null);
+  });
+
+  // Once the seat has answered, the selection is checked against the pool that
+  // answer names -- and it moves when the model it named has left the lineup.
+  $effect(() => {
+    if (session.preview) picked.adopt(session);
+  });
+
+  onDestroy(() => session.close());
 </script>
 
 <div class="work">
@@ -63,20 +112,18 @@
     </div>
   </aside>
 
-  <section class="seat" data-slot="seat" aria-label={`Seat ${here}`}>
-    <div class="scroll">
-      <h1 class="mono">{here}</h1>
-      <p class="quiet">
-        The seat pane — what it is for, every axis, what would change if you shipped it, and the
-        button — arrives with the seat package.
-      </p>
-    </div>
+  <section class="seat" data-slot="seat" aria-label={`Seat ${session.name}`}>
+    <SeatPane {session} />
   </section>
 
   <aside class="inspect" data-slot="inspector" aria-label="Inspector">
-    <div class="scroll">
-      <p class="quiet">The inspector arrives with the inspector package. Select a model to open it.</p>
-    </div>
+    {#if session.historyOpen}
+      <HistoryDrawer {session} />
+    {:else}
+      <div class="scroll">
+        <p class="quiet">The inspector arrives with the inspector package. Select a model to open it.</p>
+      </div>
+    {/if}
   </aside>
 </div>
 
@@ -92,6 +139,7 @@
   .seat,
   .inspect {
     min-width: 0;
+    min-height: 0;
   }
 
   .list {
@@ -111,13 +159,6 @@
 
   .list .scroll {
     padding: 10px 8px;
-  }
-
-  h1 {
-    margin: 0 0 10px;
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--c-ink);
   }
 
   .rows {

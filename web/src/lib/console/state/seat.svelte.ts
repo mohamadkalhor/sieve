@@ -148,7 +148,8 @@ function samePatch(left: SettingsPatch, right: SettingsPatch): boolean {
 }
 
 export class SeatSession implements SeatSessionLike {
-  readonly name: string;
+  /** the seat's id: `retarget` moves it, everything else only reads it */
+  name: string;
 
   /** bumped on open and close: an answer under an old generation is dropped */
   private gen = 0;
@@ -243,6 +244,28 @@ export class SeatSession implements SeatSessionLike {
   /* ---------------------------------------------------------------------- */
   /* reading                                                                 */
   /* ---------------------------------------------------------------------- */
+
+  /**
+   * Open another seat in this session.
+   *
+   * The URL changes without the route remounting, so the same session is moved
+   * rather than replaced -- which is what lets the inspector keep reading one
+   * object. Nothing of the old seat survives: `open` bumps the generation (so a
+   * reply for the old seat cannot land on the new one) and everything the pane
+   * draws is reset below.
+   */
+  async retarget(name: string): Promise<void> {
+    if (name === this.name) return this.open();
+    this.name = name;
+    this.profile = null;
+    this.chain = null;
+    this.everyAxis = [];
+    this.prefixes = [];
+    this.settings = null;
+    this.loaded = {};
+    this.opened = null;
+    return this.open();
+  }
 
   async open(): Promise<void> {
     const gen = ++this.gen;
