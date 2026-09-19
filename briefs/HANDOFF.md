@@ -1314,8 +1314,9 @@ One deliberate choice: the modality labels in `seats.ts` are mine — the brief
 names the groups nowhere — so if E or the operator prefers shorter words
 ("Image edit" over "Image editing"), that table is the only place to change.
 
-**Checks.** `npx vitest run` 190 passed / 16 files; `npx tsc --noEmit` clean;
-`npx eslint src/lib/console/logic tests/console` clean; `npm run check` 0 errors,
-0 warnings; `npm run build` green.
+**Checks.** `pnpm check` 0 errors, 0 warnings; `pnpm lint` clean; `pnpm test`
+190 passed / 16 files. `npx tsc --noEmit` and `npm run build` green as well.
 
-**Commit.** `c325477` on the `console` branch.
+**Commits.** `c325477` (the eight modules and their eight test files), `eeefc25`
+(the settings walk at the plan's 200 sequences, plus the manual and needs lists
+in its invariants), and the commit this entry arrives in.
