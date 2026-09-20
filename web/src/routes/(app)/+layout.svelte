@@ -13,7 +13,6 @@
    * `$effect` would be too late for every child that reads it.
    */
   import type { Snippet } from 'svelte';
-  import { api } from '$lib/api/client';
   import { session } from '$lib/session.svelte';
   import Shell from '$lib/console/shell/Shell.svelte';
   import { shellStores } from '$lib/console/shell/stores.svelte';
@@ -30,16 +29,11 @@
     void session.refresh();
   });
 
-  $effect(() => {
-    let alive = true;
-    void (async () => {
-      const result = await api.status();
-      if (alive && result.ok) session.adopt(result.value);
-    })();
-    return () => {
-      alive = false;
-    };
-  });
+  // The status bar's data has to keep arriving, so the store polls -- and this
+  // is the effect that says for how long, since the store works outside a
+  // component on purpose. Its answers are also what signs a person in on a
+  // server whose `/v1/me` never landed (see `StatusStore`).
+  $effect(() => stores.status.start());
 </script>
 
 <Shell>{@render children?.()}</Shell>
