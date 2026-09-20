@@ -13,6 +13,7 @@
    * model together.
    */
   import type { SeatSession } from '$lib/console/state/seat.svelte';
+  import { reducedMotion } from '$lib/motion/reduced';
   import { selection } from '../context';
   import { pin, remove, restore } from '../logic/settings';
   import ListStateView from './ListStateView.svelte';
@@ -26,6 +27,30 @@
   }
 
   let { session }: Props = $props();
+
+  /**
+   * Section 6.9: when an answer reorders the list, a row slides to its new place
+   * instead of appearing there -- 160ms, long enough to follow the row you were
+   * reading and short enough not to be in the way of the next keystroke.
+   * Nothing moves when motion is not wanted.
+   *
+   * Svelte's `animate:flip` is the documented spelling of this, but it attaches
+   * to an element and these each blocks render a component (`component_invalid_
+   * directive`). The arithmetic is the same one FLIP names -- read every row's
+   * top before the DOM changes, read them again after, and translate the
+   * difference away -- done here, on the rows themselves.
+   */
+  const glideMs = $derived($reducedMotion ? 0 : 160);
+
+  function tops(root: HTMLElement | null): Map<string, number> {
+    const out = new Map<string, number>();
+    if (!root) return out;
+    for (const row of root.querySelectorAll<HTMLElement>('[data-row]')) {
+      const id = row.dataset.row;
+      if (id) out.set(id, row.getBoundingClientRect().top);
+    }
+    return out;
+  }
 
   const pick = selection();
   const settings = $derived(session.settings);
@@ -52,6 +77,35 @@
   let stop = $state<string | null>(null);
   /** The tab stop is the focused row, and until one is focused the selection. */
   const active = $derived(tabStop(ids, stop, pick.id));
+
+  // Where every row sat before the list changed, read before the DOM is patched
+  // and again after it, and the two readings are the whole of FLIP.
+  let seated = new Map<string, number>();
+
+  $effect.pre(() => {
+    void drawn.length;
+    seated = tops(list);
+  });
+
+  $effect(() => {
+    void drawn.length;
+    if (!list) return;
+    const moved = tops(list);
+    const ms = glideMs;
+    if (ms > 0 && seated.size > 0) {
+      for (const [id, top] of moved) {
+        const was = seated.get(id);
+        if (was === undefined || Math.abs(was - top) < 1) continue;
+        list
+          .querySelector<HTMLElement>(`[data-row="${CSS.escape(id)}"]`)
+          ?.animate(
+            [{ transform: `translateY(${Math.round(was - top)}px)` }, { transform: 'none' }],
+            { duration: ms, easing: 'ease' }
+          );
+      }
+    }
+    seated = moved;
+  });
 
   function draw(id: string): void {
     stop = id;
@@ -229,10 +283,18 @@
     background: var(--c-panel);
   }
 
-  /* §6.8: at 900px the per-task, can-do and via columns move into the sheet. */
+  /* §6.8: at 900px the per-task, can-do and via columns move into the sheet.
+     The header and the rows both lose those three cells -- a grid that keeps
+     them puts them on a second line, one under the other. */
   @media (max-width: 899px) {
     .table {
-      --cols: 24px minmax(0, 1fr) minmax(60px, 1fr);
+      --cols: 22px minmax(0, 1fr) 62px 40px;
+    }
+
+    .head .task,
+    .head .can,
+    .head .via {
+      display: none;
     }
   }
 </style>

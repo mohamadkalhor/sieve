@@ -10,7 +10,7 @@
   interface Props extends HTMLButtonAttributes {
     label: string;
     pressed?: boolean | undefined;
-    size?: 28 | 30;
+    size?: 28 | 30 | 44;
     class?: string;
     children?: Snippet;
   }
@@ -58,5 +58,14 @@
   }
   .ib[aria-pressed='true'] {
     color: var(--c-accent);
+  }
+
+  /* §6.8: below 900px an icon button is a 44px target. A minimum rather than a
+     width, so a button that was asked for a bigger size keeps it. */
+  @media (max-width: 899px) {
+    .ib {
+      min-width: 44px;
+      min-height: 44px;
+    }
   }
 </style>

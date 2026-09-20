@@ -13,7 +13,12 @@ import { expect, test } from '@playwright/test';
 test('with no telemetry it says so, rather than showing perfect health', async ({ page }) => {
   await page.goto('/pulse');
   await expect(page.getByRole('heading', { name: 'Pulse', level: 1 })).toBeVisible();
-  await expect(page.getByText('Nothing has reported a call yet')).toBeVisible();
+  // Two empty states, and which one is true depends on the store: a fresh one
+  // has nothing at all, the seed has calls older than the window, and the page
+  // says the older-calls sentence first (`called.length === 0 && lastCall`).
+  await expect(
+    page.getByText(/Nothing has reported a call yet|No calls to a reachable model in the last/)
+  ).toBeVisible();
 });
 
 test('posted calls appear with their rate-limited share and latencies', async ({ page, request }) => {

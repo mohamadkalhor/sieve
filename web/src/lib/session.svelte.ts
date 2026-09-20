@@ -11,7 +11,7 @@
  * This is Sieve's own `/v1/me`/`/v1/status`, about API scopes; it is a
  * different question from gate's own same-origin `/auth/me`, which the rail
  * asks separately for the sign-in chip, the Admin link and a sign-out's csrf
- * token (see `Rail.svelte`).
+ * token (see `console/shell/UserMenu.svelte`).
  *
  * `/v1/me` is AMS-28's route. Until it lands `/v1/status` carries the same
  * answer under `user`, so this works either way and needs no flag.

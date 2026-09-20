@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * Who you are (CONSOLE.md section 6.1) -- the gate fetch and the sign-out
-   * moved here from `Rail.svelte`, and the pasted-token field came with them:
+   * moved here from the old rail, which is gone, and the pasted-token field came with them:
    * a token is how you change something in a browser gate does not know, and
    * it is one for the whole app (`session.token`).
    *

@@ -16,6 +16,7 @@
    * nobody's here (finding 13).
    */
   import type { Need } from '$lib/api/client';
+  import { viewport } from '$lib/console/layout/viewport.svelte';
   import { NEED_TAG } from '../logic/abilities';
   import type { RowMove } from '../logic/diff';
   import { perTask } from '../logic/money';
@@ -61,6 +62,13 @@
   const pinned = $derived(listed?.pinned === true);
   const noScore = $derived(listed?.scored === false);
   const measured = $derived(listed?.cost_from === 'telemetry');
+
+  /**
+   * §6.8: on the one-column screen a phone is holding, the row's buttons are
+   * what a thumb aims at, so they grow to the 44px the section asks for.
+   */
+  const frame = viewport();
+  const hit = $derived<28 | 30 | 44>(frame.shape === 'single' ? 44 : 30);
 
   /** What a need keeps this model out of, when the row is a blocked one. */
   const fails = $derived(
@@ -184,7 +192,7 @@
         label={actionLabel(action, row.name, action === 'pin' && pinned)}
         title={actionLabel(action, row.name, action === 'pin' && pinned)}
         pressed={action === 'pin' ? pinned : undefined}
-        size={30}
+        size={hit}
         onclick={() => onaction(action, row.id)}
       >
         <Icon name={ACTION_ICON[action]} />
@@ -208,6 +216,41 @@
 
   .row[data-tone='ship'] {
     min-height: 44px;
+  }
+
+  /* §6.8: below 900px the row is the rank, the model and the score -- per-task,
+     can-do and via are things the sheet beside the model already says -- and
+     the move and the tags sit under the name instead of beside it, because
+     there is no longer a column's worth of room to put them in. */
+  @media (max-width: 899px) {
+    .row {
+      align-items: start;
+      padding: 6px 12px;
+    }
+
+    .cell.task,
+    .cell.can,
+    .cell.via {
+      display: none;
+    }
+
+    .cell.model {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+    }
+
+    .cell.rank,
+    .cell.acts {
+      align-items: center;
+      align-self: center;
+    }
+  }
+
+  @media (pointer: coarse) {
+    .row {
+      min-height: 48px;
+    }
   }
 
   .row[data-dim='true'] {

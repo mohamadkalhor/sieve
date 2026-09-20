@@ -23,5 +23,5 @@ test('sources disables off-source pulls and saves and removes an alias', async (
   await expect(saved).toBeVisible();
   await saved.getByRole('button', { name: 'Remove' }).click();
   await expect(saved).toHaveCount(0);
-  await expect(page.locator('.unmatched li').filter({ has: page.locator('form') }).filter({ hasText: alias! })).toBeVisible();
+  await expect(page.locator('.unmatched li').filter({ has: page.locator('form') }).filter({ has: page.locator('.mono', { hasText: new RegExp(`^${alias!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }) })).toBeVisible();
 });

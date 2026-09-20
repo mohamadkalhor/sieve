@@ -71,4 +71,11 @@
     background: var(--c-rule-strong);
     color: var(--c-ink);
   }
+
+  /* §6.8: below 900px the two halves are 44px targets. */
+  @media (max-width: 899px) {
+    button {
+      height: 44px;
+    }
+  }
 </style>

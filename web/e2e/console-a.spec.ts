@@ -78,6 +78,10 @@ test('/seats reopens the seat this browser last worked in', async ({ page }) => 
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`/seats/${A_SEAT}`);
   await expect(page).toHaveURL(new RegExp(`/seats/${A_SEAT}$`));
+  // The key is written by an effect when the seat page renders, which is a beat
+  // after the address bar changes: wait for the seat to be on screen before
+  // leaving it, or the navigation wins the race.
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(A_SEAT);
 
   // somewhere else first, so the assertion cannot pass by accident
   await page.goto('/field');

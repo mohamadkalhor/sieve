@@ -28,18 +28,37 @@ export class Selection implements SelectionLike {
   /** the inspected model id, mirrored to `?model=` */
   id = $state<string | null>(null);
 
+  /**
+   * Whether somebody asked for this model, as opposed to the seat answering
+   * with one. Below 1280px the inspector is an overlay (section 6.8) and an
+   * overlay that opens itself the moment a seat's preview lands would cover the
+   * seat on every load, so the panel follows this flag: `select` raises it,
+   * `adopt` never does, and `close` lowers it without forgetting the id.
+   */
+  wanted = $state(false);
+
   private deps: SelectionDeps;
 
   constructor(deps: SelectionDeps) {
     this.deps = deps;
     this.id = deps.read();
+    // A `?model=` in the URL was put there by somebody: the link that carried
+    // it, or the select that wrote it. Only `adopt` picks a model nobody asked
+    // for, and it leaves this alone.
+    this.wanted = this.id !== null;
   }
 
   /** Pick a model, or none. Writing is what makes it survive a reload. */
   select(id: string | null): void {
+    this.wanted = id !== null;
     if (id === this.id) return;
     this.id = id;
     this.deps.replace(id);
+  }
+
+  /** Close the inspector without forgetting which model it was about. */
+  close(): void {
+    this.wanted = false;
   }
 
   /** Keep the selection honest against the pool the seat just answered with. */
@@ -55,6 +74,11 @@ export class Selection implements SelectionLike {
     const lineup = preview.models.map((row) => row.id);
     const { moves } = diffLineup(session.live, lineup);
     const moved = lineup.find((id) => moves[id] && moves[id].kind !== 'same');
-    this.select(moved ?? lineup[0] ?? null);
+    // The seat's own choice, not a person's: no URL write and no `wanted`. A
+    // click is the only thing that puts `?model=` in the address bar, so a deep
+    // link, a share and a reload all keep meaning what they meant, and an
+    // overlay (section 6.8) does not open itself on every load.
+    const chosen = moved ?? lineup[0] ?? null;
+    this.id = chosen;
   }
 }

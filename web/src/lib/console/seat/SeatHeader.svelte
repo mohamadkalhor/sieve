@@ -5,9 +5,20 @@
    *
    * The purpose is click-to-edit: it is a sentence, not a form field, and it
    * saves on its own because it is not part of the settings patch.
+   *
+   * Section 6.8: from 1024px down the seats pane is not drawn at all, so this
+   * header is where a seat is changed -- the name becomes a button that opens
+   * the same list in a popover. Both readings of the name are in the markup,
+   * because which one is drawn is a media query here rather than a measurement;
+   * a `display: none` button cannot be tabbed to, so only one of them is ever
+   * reachable.
    */
   import type { SeatSession } from '$lib/console/state/seat.svelte';
+  import { viewport } from '$lib/console/layout/viewport.svelte';
+  import SeatsPane from '$lib/console/seats/SeatsPane.svelte';
   import Button from '$lib/console/ui/Button.svelte';
+  import Icon from '$lib/console/ui/Icon.svelte';
+  import Popover from '$lib/console/ui/Popover.svelte';
   import Segmented from '$lib/console/ui/Segmented.svelte';
   import Toast from '$lib/console/ui/Toast.svelte';
   import AskBar from './AskBar.svelte';
@@ -21,9 +32,18 @@
 
   let editing = $state(false);
   let typed = $state('');
+  let swapping = $state(false);
+  let anchor = $state<HTMLElement | null>(null);
 
   const profile = $derived(session.profile);
   const mode = $derived(session.settings?.mode ?? profile?.mode ?? 'auto');
+
+  const frame = viewport();
+  // A popover whose button has just been hidden by a resize is a dialog with no
+  // anchor: close it rather than leave it floating over nothing.
+  $effect(() => {
+    if (frame.shape === 'three' || frame.shape === 'drawer') swapping = false;
+  });
 
   function begin(): void {
     typed = profile?.purpose ?? '';
@@ -39,7 +59,20 @@
 
 <header class="head">
   <div class="who">
-    <h1 class="name">{session.name}</h1>
+    <h1 class="name">
+      <span class="plain">{session.name}</span>
+      <button
+        class="switcher"
+        type="button"
+        bind:this={anchor}
+        aria-haspopup="dialog"
+        aria-expanded={swapping}
+        onclick={() => (swapping = !swapping)}
+      >
+        {session.name}
+        <Icon name="chevron" size={14} />
+      </button>
+    </h1>
     {#if editing}
       <input
         class="purpose-edit"
@@ -81,6 +114,10 @@
   </div>
 </header>
 
+<Popover open={swapping} {anchor} label="Seats" width={300} onclose={() => (swapping = false)}>
+  <SeatsPane />
+</Popover>
+
 <AskBar {session} />
 
 {#if session.said}
@@ -109,6 +146,46 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* section 6.8: while the seats pane is drawn the name is only a title; below
+     1024 it is the way to change seats. Both are in the markup and exactly one
+     is drawn -- a name that is a button only where a button is wanted cannot
+     offer a click that does nothing. */
+  .switcher {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition: color 120ms ease;
+  }
+
+  .switcher:hover {
+    color: var(--c-accent);
+  }
+
+  @media (max-width: 1023px) {
+    .plain {
+      display: none;
+    }
+
+    .switcher {
+      display: inline-flex;
+    }
+  }
+
+  @media (pointer: coarse) {
+    /* the seat's name is the only way to another seat down here */
+    .switcher {
+      min-height: 44px;
+    }
   }
 
   .purpose,

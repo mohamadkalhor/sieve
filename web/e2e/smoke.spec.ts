@@ -1,149 +1,220 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * One pass through the app against a real server, checking the things that
- * only break once both halves are wired together: a deep link, the slider
- * re-ranking locally, and the server's answer when a write has no token.
+ * A seat, on its own page (CONSOLE.md section 1.2), and the five things the
+ * first version of this file was about -- a link that carries the seat, a
+ * change that is a draft, two seats that do not touch, a refused token that is
+ * said out loud, and a discard.
  *
- * Profiles, Rankings and Chains are one screen now, so these walk that screen
- * instead of three. The old URLs are still exercised, because they redirect
- * into it and a redirect that quietly stops working is exactly the kind of
- * thing nobody notices until a bookmark dies.
+ * The old file opened `/profiles/coder` and dragged a weight slider. There is
+ * no such page now and nothing in this app ranks a list from a slider: the
+ * section's own acceptance list says `/seats/coder` and a keyboard drag, so
+ * this file is the same five intents with the page they are about.
+ *
+ * Two things it learned the hard way and now states:
+ *
+ * - Reads are open; writes are not. Without a token the seat answers, renders
+ *   and previews, and the 400ms-save that follows any edit comes back 401 and
+ *   `api/client.ts` sends the browser to the login route -- off this page and
+ *   onto one the console does not serve. So the tests that edit sign in first.
+ * - On this fleet's fixtures a weight drag moves the bar and nothing else: the
+ *   top three of a seat's pool do not reorder under +5% on one axis (measured
+ *   -- see `rerank.perf.spec.ts`), so `session.shipText` stays "Ship now" and
+ *   a drag would prove nothing. A change that really re-ranks the list is the
+ *   one the rows own: taking a model off what ships.
  */
 
-/** the one row for a named profile, on the Profiles list */
-const rowFor = (page: Page, profile: string) =>
-  page.locator('li.row').filter({ has: page.locator(`#w-${profile}-cost`) });
+const TOKEN = 'ci-secret';
+const SHIP_TABLE = { name: 'What these settings would ship' };
+const POOL_TABLE = { name: 'Every reachable model' };
+const TOAST = '.toast';
 
-test('a deep link opens that profile on the list', async ({ page }) => {
-  await page.goto('/profiles/coder');
-  await expect(page).toHaveURL(/\/profiles\?open=coder/);
-  await expect(page.getByRole('heading', { name: 'Profiles', level: 1 })).toBeVisible();
+/** The `who` block of the top bar: the pasted token is what the writes carry. */
+async function signIn(page: Page, token = TOKEN): Promise<void> {
+  await page.locator('button.who').click();
+  const field = page.getByPlaceholder('paste a bearer token');
+  await field.fill(token);
+  await page.keyboard.press('Escape');
+  await expect(field).toHaveCount(0);
+}
 
-  const row = rowFor(page, 'coder');
-  await expect(row).toBeVisible();
-  await expect(row.locator('ol.live li').first()).toBeVisible();
-});
+/** `/seats` hands you the seat you last worked, and the page has answered. */
+async function open(page: Page, path = '/seats'): Promise<string> {
+  await page.goto(path);
+  await expect(page).toHaveURL(/\/seats\/[^/]+$/);
+  const seat = decodeURIComponent(new URL(page.url()).pathname.split('/').pop() ?? '');
+  expect(seat, 'no seat to open').not.toBe('');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(seat);
+  await expect(shipRows(page).first()).toBeVisible();
+  return seat;
+}
 
-test('moving a weight re-ranks that row and says it is not applied', async ({ page }) => {
-  await page.goto('/profiles');
+function shipRows(page: Page) {
+  return page.getByRole('table', SHIP_TABLE).locator('[role="row"][data-row]');
+}
 
-  const row = rowFor(page, 'coder');
-  const list = row.locator('ol.live li');
-  // before anything is asked of the server the row shows what it is serving
-  await expect(row.locator('.hintline')).toBeVisible();
-  await expect(list.first()).toBeVisible();
-  const before = await list.first().locator('.id').innerText();
+function listRows(page: Page) {
+  return page.getByRole('table', POOL_TABLE).locator('[role="row"][data-row]');
+}
 
-  await expect(row.locator('.chip')).not.toContainText('changed');
+/** The ship button is the one whose text is `session.shipText`. */
+function ship(page: Page) {
+  return page.getByRole('button', { name: /^Ship/ });
+}
 
-  // cost to 0.95: the cheapest reachable model has to come out on top
-  const cost = page.locator('#w-coder-cost');
-  await cost.fill('0.95');
-  await cost.dispatchEvent('input');
+/** What the seat will tell the next reader it last shipped. */
+async function applied(page: Page, seat: string): Promise<string> {
+  const link = page.locator(`aside[aria-label="Seats"] a[href="/seats/${seat}"]`);
+  await expect(link).toHaveCount(1);
+  return (await link.innerText()).replace(/\s+/g, ' ').trim();
+}
 
-  await expect(row.locator('.chip')).toContainText('changed, not applied');
-  await expect(row.locator('.hintline')).toHaveCount(0);
-  await expect(list.first().locator('.id')).not.toHaveText(before);
+/** The bar's segments, which are the weights as the page draws them. */
+async function weights(page: Page): Promise<string[]> {
+  return page.locator('.track button.seg').evaluateAll((els) =>
+    els.map((el) => el.getAttribute('aria-label') ?? '')
+  );
+}
 
-  // and the weights still sum to 1
-  await expect(row.locator('.sum')).toContainText('1.000');
-});
+/** Take the top of what ships off the list: the draft re-ranks around it. */
+async function rerank(page: Page): Promise<string> {
+  const row = shipRows(page).first();
+  const before = await row.getAttribute('data-row');
+  await row.getByRole('button', { name: /^(Never ship|Take off)/ }).click();
+  await expect(ship(page)).toHaveText(/^Ship \d+ changes?$/);
+  return before ?? '';
+}
 
-test('a slider moves every row on its own, not the one next to it', async ({ page }) => {
-  await page.goto('/profiles');
+test('a seat is a page: the url carries it, and the panes around it are there', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page);
 
-  const coder = rowFor(page, 'coder');
-  await expect(coder.locator('ol.live li').first()).toBeVisible();
+  // the three panes of section 6.3-6.6, one beside the other at 1280
+  await expect(page.locator('[data-slot="seats"]')).toBeVisible();
+  await expect(page.locator('[data-slot="seat"]')).toBeVisible();
+  await expect(page.locator('[data-slot="inspector"]')).toBeVisible();
+  await expect(page.locator('[data-slot="seats"] a[aria-current="page"]')).toBeVisible();
 
-  const cost = page.locator('#w-coder-cost');
-  await cost.fill('0.95');
-  await cost.dispatchEvent('input');
-
-  await expect(coder.locator('.chip')).toContainText('changed, not applied');
-  // every other row is still showing what it shipped
-  await expect(page.locator('li.row .chip', { hasText: 'changed, not applied' })).toHaveCount(1);
-});
-
-test('applying without a token shows the 401 rather than pretending', async ({ page }) => {
-  await page.goto('/profiles');
-
-  const row = rowFor(page, 'coder');
-  const cost = page.locator('#w-coder-cost');
-  await cost.fill('0.5');
-  await cost.dispatchEvent('input');
-
-  await row.getByRole('button', { name: 'Apply' }).click();
-  await expect(row.locator('.error')).toContainText(/token/i);
-});
-
-test('discard puts the draft back', async ({ page }) => {
-  await page.goto('/profiles');
-
-  const row = rowFor(page, 'coder');
-  const list = row.locator('ol.live li');
-  await expect(list.first()).toBeVisible();
-
-  // engage the row first, so what is compared is two previews and not a
-  // preview against the chain the gateway happens to be holding
-  const cost = page.locator('#w-coder-cost');
-  await cost.fill('0.30');
-  await cost.dispatchEvent('input');
-  await expect(row.locator('.chip')).toContainText('changed, not applied');
-  await row.getByRole('button', { name: 'Discard' }).click();
-  await expect(row.locator('.chip')).not.toContainText('changed');
-
-  const settled = await list.first().locator('.id').innerText();
-
-  await cost.fill('0.95');
-  await cost.dispatchEvent('input');
-  await expect(row.locator('.chip')).toContainText('changed, not applied');
-
-  await row.getByRole('button', { name: 'Discard' }).click();
-  await expect(row.locator('.chip')).not.toContainText('changed');
-  await expect(list.first().locator('.id')).toHaveText(settled);
-});
-
-test('the old Rankings URL opens the row, with what carried each score', async ({ page }) => {
-  await page.goto('/rankings/coder');
-  await expect(page).toHaveURL(/\/profiles\?open=coder/);
-
-  const row = rowFor(page, 'coder');
-  await expect(row.getByRole('heading', { name: 'What carried each score' })).toBeVisible();
-  await expect(row.locator('tr.lead')).toBeVisible();
-});
-
-test('the old Chains URL lands on the list too', async ({ page }) => {
-  await page.goto('/chains');
-  await expect(page).toHaveURL(/\/profiles$/);
-  await expect(page.getByRole('heading', { name: 'Profiles', level: 1 })).toBeVisible();
-});
-
-test('nothing scrolls sideways at 390px', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 780 });
-  for (const path of ['/field', '/profiles', '/profiles?open=coder', '/sources', '/connectors']) {
-    await page.goto(path);
-    await page.waitForTimeout(400);
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth > window.innerWidth
-    );
-    expect(overflow, `${path} scrolls sideways at 390px`).toBe(false);
+  // the weights bar, and the columns the table has when there is room
+  await expect(page.locator('.track button.seg').first()).toBeVisible();
+  const table = page.getByRole('table', SHIP_TABLE);
+  for (const column of ['Model', 'Score', 'Per task', 'Can do', 'Via']) {
+    await expect(table.getByRole('columnheader', { name: column, exact: true })).toBeVisible();
   }
+
+  // a row opens in the inspector, and the link carries the seat on its own
+  const first = shipRows(page).first();
+  const id = await first.getAttribute('data-row');
+  await first.click();
+  await expect(page.locator('[data-slot="inspector"]')).toContainText(id ?? '');
+  await expect(page).toHaveURL(/\/seats\/[^/]+$/);
+
+  await page.goto('/seats/coder');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('coder');
+  await expect(shipRows(page).first()).toBeVisible();
+
+  // the pool behind it: every reachable model, and the id of the seat in the url
+  await page.goto('/seats/coder?view=all');
+  await expect(page.getByRole('table', POOL_TABLE)).toBeVisible();
+  await expect(listRows(page).first()).toBeVisible();
 });
 
-test('the list still re-ranks with motion reduced', async ({ page }) => {
-  // FLIP is a nicety; the reorder is the function. With reduce-motion on, the
-  // animation has to collapse to nothing without taking the reorder with it.
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/profiles');
+test('a re-rank is a draft until it is shipped', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page);
+  const seat = await open(page);
+  const chain = await applied(page, seat);
+  const rows = await shipRows(page).evaluateAll((els) =>
+    els.map((el) => el.getAttribute('data-row'))
+  );
+  await expect(ship(page)).toBeDisabled();
 
-  const list = rowFor(page, 'coder').locator('ol.live li');
-  await expect(list.first()).toBeVisible();
-  const before = await list.first().locator('.id').innerText();
+  await rerank(page);
+  const after = await shipRows(page).evaluateAll((els) =>
+    els.map((el) => el.getAttribute('data-row'))
+  );
+  expect(after, 'the list did not re-rank').not.toEqual(rows);
 
-  const cost = page.locator('#w-coder-cost');
-  await cost.fill('0.95');
-  await cost.dispatchEvent('input');
+  // the seat still says it last shipped what it shipped, and a reload does not
+  // apply the draft behind the reader's back
+  expect(await applied(page, seat)).toBe(chain);
+  await page.reload();
+  await expect(shipRows(page).first()).toBeVisible();
+  await expect(ship(page)).toHaveText(/^Ship \d+ changes?$/);
+  expect(await applied(page, seat)).toBe(chain);
 
-  await expect(list.first().locator('.id')).not.toHaveText(before);
+  // and the seat is still the one the url names
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(seat);
+});
+
+test('working one seat leaves the seat next door alone', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page);
+  const here = await open(page);
+
+  const other = await page
+    .locator('aside[aria-label="Seats"] a[href^="/seats/"]')
+    .evaluateAll((els) =>
+      els
+        .map((el) => el.getAttribute('href') ?? '')
+        .find((href) => href !== `/seats/${here}`) ?? ''
+    );
+  expect(other, 'the pane lists no other seat').not.toBe('');
+
+  await page.goto(other);
+  await expect(shipRows(page).first()).toBeVisible();
+  const before = await shipRows(page).evaluateAll((els) =>
+    els.map((el) => el.getAttribute('data-row'))
+  );
+  const barBefore = await weights(page);
+
+  await page.goto(`/seats/${here}`);
+  await expect(shipRows(page).first()).toBeVisible();
+  await rerank(page);
+
+  await page.goto(other);
+  await expect(shipRows(page).first()).toBeVisible();
+  expect(await weights(page)).toEqual(barBefore);
+  expect(
+    await shipRows(page).evaluateAll((els) => els.map((el) => el.getAttribute('data-row')))
+  ).toEqual(before);
+});
+
+test('a token gate refuses is said out loud, and the change does not go out', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page);
+  const seat = await open(page);
+  const chain = await applied(page, seat);
+  await rerank(page);
+
+  // a token that is not one of the server's: the ship is refused, not sailed
+  await signIn(page, 'not-a-token-gate-knows');
+  await ship(page).click();
+
+  await expect(page.locator(TOAST)).toContainText(/token/i);
+  await expect(ship(page)).toHaveText(/^Ship \d+ changes?$/);
+  expect(await applied(page, seat)).toBe(chain);
+});
+
+test('discard puts the settings back', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signIn(page);
+  await open(page);
+  const bar = await weights(page);
+  const rows = await shipRows(page).evaluateAll((els) =>
+    els.map((el) => el.getAttribute('data-row'))
+  );
+
+  await rerank(page);
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
+
+  await expect(ship(page)).toBeDisabled();
+  expect(await weights(page)).toEqual(bar);
+  expect(
+    await shipRows(page).evaluateAll((els) => els.map((el) => el.getAttribute('data-row')))
+  ).toEqual(rows);
 });

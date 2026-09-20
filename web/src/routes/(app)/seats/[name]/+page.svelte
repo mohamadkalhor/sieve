@@ -11,9 +11,20 @@
    * object across a seat change.
    *
    * Each pane scrolls itself, so a long axis list never moves the column beside
-   * it, and below 900px there is one column and the seat is it -- the list is
-   * `/seats`, one tap away. The seats list (F) and the inspector (E) are still
-   * the rows that say so; the seat pane and the history drawer are here.
+   * it. Which panes are drawn is a media query, not a measurement: a stylesheet
+   * gets it right on the first paint, without JavaScript, and cannot disagree
+   * with itself halfway through a resize. Section 6.8's four widths come out of
+   * `layout/viewport.svelte.ts` and must not drift from the three in the styles
+   * below -- the responsive spec is what holds the two together.
+   *
+   * Below 1280px the inspector is not a column and becomes the overlay in
+   * section 6.8: a drawer over the seat pane's right edge down to 900px, and a
+   * bottom sheet under it from 900px down. The overlay is drawn from a
+   * selection somebody *asked* for (see `state/selection.svelte.ts`), which is
+   * the one thing here a stylesheet cannot know, and it is what stops a seat's
+   * own answer from covering the seat on every load. The seats list (F) and the
+   * inspector (E) are still the rows that say so; the seat pane, the history
+   * drawer and the overlay are here.
    */
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
@@ -24,7 +35,9 @@
   import SeatsPane from '$lib/console/seats/SeatsPane.svelte';
   import { browserDeps, SeatSession } from '$lib/console/state/seat.svelte';
   import { Selection } from '$lib/console/state/selection.svelte';
+  import { viewport } from '$lib/console/layout/viewport.svelte';
   import Inspector from '$lib/console/inspector/Inspector.svelte';
+  import InspectorOverlay from '$lib/console/inspector/InspectorOverlay.svelte';
   import HistoryDrawer from '$lib/console/seat/HistoryDrawer.svelte';
   import SeatPane from '$lib/console/seat/SeatPane.svelte';
   import type { PageData } from './$types';
@@ -111,19 +124,27 @@
     if (session.preview) picked.adopt(session);
   });
 
+  // Section 6.8, below 1280px: the inspector is an overlay rather than a column.
+  // It is drawn when a person asked for a model -- a row, a palette hit, a
+  // `?model=` link they followed -- and never for the selection `adopt` picked
+  // on the seat's own behalf, which would otherwise cover the seat every load.
+  const frame = viewport();
+  const overlay = $derived(frame.shape !== 'three' && picked.wanted && picked.id !== null);
+  const kind = $derived<'drawer' | 'sheet'>(frame.shape === 'single' ? 'sheet' : 'drawer');
+
   onDestroy(() => session.close());
 </script>
 
 <div class="work">
-  <aside class="list" data-slot="seats">
+  <aside class="list" data-slot="seats" inert={overlay || undefined}>
     <SeatsPane />
   </aside>
 
-  <section class="seat" data-slot="seat" aria-label={`Seat ${session.name}`}>
+  <section class="seat" data-slot="seat" aria-label={`Seat ${session.name}`} inert={overlay || undefined}>
     <SeatPane {session} {view} onview={showView} />
   </section>
 
-  <aside class="inspect" data-slot="inspector" aria-label="Inspector">
+  <aside class="inspect" data-slot="inspector" aria-label="Inspector" inert={overlay || undefined}>
     {#if session.historyOpen}
       <HistoryDrawer {session} />
     {:else}
@@ -132,6 +153,13 @@
       </div>
     {/if}
   </aside>
+
+  {#if overlay}
+    <!-- a dialog covers part of the seat, so the seat stops answering: `inert`
+         takes it out of the tab order, out of the pointer's reach and out of
+         the accessibility tree while the panel is up -->
+    <InspectorOverlay {session} {kind} onclose={() => picked.close()} />
+  {/if}
 </div>
 
 <style>
@@ -140,6 +168,8 @@
     grid-template-columns: var(--w-seats) minmax(0, 1fr) var(--w-inspect);
     height: 100%;
     min-height: 0;
+    /* the overlay in section 6.8 is placed against this box, not the page */
+    position: relative;
   }
 
   .list,
@@ -164,13 +194,26 @@
     padding: 16px;
   }
 
-  @media (max-width: 900px) {
+  /* section 6.8. 1280 and 1024 are the two widths in `layout/viewport.svelte.ts`
+     that decide whether the inspector is a column: it is one from 1280 up, and
+     below that it is the overlay the route mounts. 1024 is where the seats pane
+     stops being worth 260px of a narrow window. */
+  @media (max-width: 1279px) {
+    .work {
+      grid-template-columns: var(--w-seats) minmax(0, 1fr);
+    }
+
+    .inspect {
+      display: none;
+    }
+  }
+
+  @media (max-width: 1023px) {
     .work {
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .list,
-    .inspect {
+    .list {
       display: none;
     }
 

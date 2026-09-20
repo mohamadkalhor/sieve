@@ -98,4 +98,11 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
+
+  /* §6.8: below 900px a button is a 44px target whichever size it asked for. */
+  @media (max-width: 899px) {
+    .btn {
+      min-height: 44px;
+    }
+  }
 </style>
