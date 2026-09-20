@@ -1,0 +1,16 @@
+# The model behind the `jev` agent, which does not judge anything itself: it
+# builds one TypeSafe System One request, runs it through the `jev` CLI, and
+# reports the probabilities. So the shape of the request matters and the
+# intelligence behind it does not — instruction-following leads, tool use
+# follows, and cost counts because this runs on every judgment.
+
+name: jev
+modality: llm
+purpose: "driving the jev CLI: one System One request built exactly to shape, run, and reported as numbers"
+weights:
+  instruction: 0.35
+  agentic_tools: 0.25
+  cost: 0.2
+  latency: 0.1
+  intelligence: 0.1
+ship: 4
