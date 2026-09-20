@@ -1418,3 +1418,64 @@ that one is A's.
 
 **Commits.** `336783a` (the view model and its tests) and the commit this entry
 arrives in.
+
+## Package E · The inspector
+
+**Landed.** `console/state/card.svelte.ts` — the model card, read once per
+(modality, id) and kept, holding the four things a panel has to keep apart: the
+card, the read's state, the read's failure, and the *price* lookup's own failure,
+because "No posted price" is only sayable once a successful lookup actually said
+null (finding 9). A missing card is not a dead end: `rowAbilities` turns a
+preview row into card-shaped answers so the ability table still draws, `priceFor`
+hunts `/v1/models` for the exact id -- following `next_cursor` to the end, and
+accepting a listing that reports no modality, which the store's llm rows are --
+and the panel keeps drawing while the lookup runs. `console/inspector/` —
+`view.ts` decides every number and every sentence away from the DOM (the §6.7
+rules are testable without a browser: an unmeasured axis says "not measured" and
+is hatched rather than drawn empty, an unanswered need says unknown with the
+sentence that explains it, the heading over the raw bars is the raw score and
+`fitLine` writes the equation from it to the final, nothing divides by a maximum
+that could be zero), and six components draw what it decided: `Inspector`,
+`WhyBars`, `AbilityTable`, `PriceBlock`, `ServedBy`, `InspectorActions`, whose
+every button goes through `session.edit`. The seat route carries the minimum: one
+import and `<Inspector {session} />` in the pane's slot.
+
+**Outside my files, disclosed.** `LineupTable`, `AllReachable`, `ManualList` and
+`WeightsBlock` passed class methods as callbacks (`onselect={pick.select}`,
+`onedit={session.edit}`), so the receiver called them unbound and every click on
+a row died inside `Selection.select` with "Cannot read properties of undefined
+(reading 'id')" -- the panel could not be opened by mouse at all, which is this
+package's own acceptance. One line each, `(id) => pick.select(id)` style. D2/G
+should fold it into the table package; `console-e.spec.ts` fails on the old code
+and passes on the new. Second deviation, §5.3: the cache is reached through a
+module accessor `cardCache()` exported by `state/card.svelte.ts` rather than
+`provideCards`, because `context.ts` is A's and the route D1's and E fills the
+inspector slot only. `CardCache implements CardCacheLike`, so the structural
+contract still holds; moving it behind the provider is one line in the route.
+
+**Stubbed.** Nothing in the panel. The left column's seats list is still A's
+placeholder (F's).
+
+**The review.** 9 (A, E): the card error and retry state, the price lookup's
+failure kept apart from an absent price, the exact id+modality match and the
+pagination are all aimed at it, with a test named after the distinction. 11
+(C, E): the bars are the raw axes, the heading is the raw score, `fitLine` shows
+the multipliers to the final, and the versus sentence comes from C's module
+rather than being re-derived here. 10 (C, D, E): the panel draws D2's row union
+and asks for nothing a bare row cannot answer. 4 (A, C, D, E, F): the cache is
+built from injected `browserCardDeps()` and typed structurally against
+`contracts.ts`, never importing a concrete store. 2 and 13: the panel names the
+sources it was given for each answer and never invents one, and every row,
+button and hatch is keyboard-reachable with `aria-*` on the block that has it.
+5: this section, `web/tests/console/e-*` and `web/e2e/console-e.spec.ts` are the
+files this package owns.
+
+**Checks.** `pnpm check` 0 errors / 0 warnings; `pnpm lint` clean; `pnpm test`
+296 passed / 20 files (`e-inspector.test.ts` alone: 30); `pnpm build` green.
+`pnpm test:e2e e2e/console-e.spec.ts` 6/6 against the seeded store (the six:
+the selected row and its URL, no number the panel made up, a server that does
+not say how a score is made up, a card built from the row, an unknown need, and
+a failed read that can be asked again); `console-d.spec.ts` 4/4 unchanged after
+the callback fix.
+
+**Commit.** The commit this entry arrives in.

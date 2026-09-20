@@ -91,7 +91,7 @@
           spare={session.spare}
           labels={session.labels}
           meanings={session.meanings}
-          onedit={session.edit}
+          onedit={(next) => session.edit(next)}
         />
       {:else}
         <ul class="exact">

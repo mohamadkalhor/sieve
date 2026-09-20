@@ -95,7 +95,7 @@
           {needs}
           tone={one.tone}
           actions={actionsAt(at)}
-          onselect={pick.select}
+          onselect={(id) => pick.select(id)}
           onaction={act}
           onmove={move}
         />

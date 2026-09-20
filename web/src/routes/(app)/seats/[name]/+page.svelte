@@ -23,6 +23,7 @@
   import { seats, provideSeatSession, provideSelection } from '$lib/console/context';
   import { browserDeps, SeatSession } from '$lib/console/state/seat.svelte';
   import { Selection } from '$lib/console/state/selection.svelte';
+  import Inspector from '$lib/console/inspector/Inspector.svelte';
   import HistoryDrawer from '$lib/console/seat/HistoryDrawer.svelte';
   import SeatPane from '$lib/console/seat/SeatPane.svelte';
   import type { PageData } from './$types';
@@ -133,7 +134,7 @@
       <HistoryDrawer {session} />
     {:else}
       <div class="scroll">
-        <p class="quiet">The inspector arrives with the inspector package. Select a model to open it.</p>
+        <Inspector {session} />
       </div>
     {/if}
   </aside>

@@ -157,7 +157,7 @@
           tone={keepsOut(row) ? 'blocked' : 'ship'}
           dim={keepsOut(row)}
           {actions}
-          onselect={pick.select}
+          onselect={(id) => pick.select(id)}
           onaction={act}
           onmove={move}
         />

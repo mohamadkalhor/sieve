@@ -103,7 +103,7 @@
           {needs}
           tone="ship"
           actions={['pin', 'remove']}
-          onselect={pick.select}
+          onselect={(id) => pick.select(id)}
           onaction={act}
           onmove={move}
         />
@@ -121,7 +121,7 @@
           {needs}
           tone="next"
           dim
-          onselect={pick.select}
+          onselect={(id) => pick.select(id)}
           onaction={act}
           onmove={move}
         />
@@ -135,7 +135,7 @@
           {needs}
           tone="next"
           dim
-          onselect={pick.select}
+          onselect={(id) => pick.select(id)}
           onaction={act}
           onmove={move}
         />
@@ -150,7 +150,7 @@
           tone="blocked"
           dim
           actions={['pin', 'remove']}
-          onselect={pick.select}
+          onselect={(id) => pick.select(id)}
           onaction={act}
           onmove={move}
         />
@@ -169,7 +169,7 @@
             tone="removed"
             dim
             actions={['restore']}
-            onselect={pick.select}
+            onselect={(id) => pick.select(id)}
             onaction={act}
             onmove={move}
           />
@@ -184,7 +184,7 @@
           {needs}
           tone="missing"
           dim
-          onselect={pick.select}
+          onselect={(id) => pick.select(id)}
           onaction={act}
           onmove={move}
         />
