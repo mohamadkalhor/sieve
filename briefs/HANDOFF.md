@@ -1537,4 +1537,6 @@ note and its missing badge, a badge only where the server sent a count, a
 collapse that survives a reload, Ctrl+K and `/`, arrows and Enter running a
 command, Esc handing focus back, and the status bar's two silences.
 
-**Commit.** The commit this entry arrives in.
+**Commit.** `67fffe9`, on top of `3e79210` (the pane, the bar and the palette's
+name) and `1d2213a` (the three stores). Pushed to `origin/console` as
+`e6b428f..67fffe9`.
