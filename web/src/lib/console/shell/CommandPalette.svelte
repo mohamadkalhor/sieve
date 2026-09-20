@@ -101,6 +101,7 @@
           class="entry"
           type="text"
           role="combobox"
+          aria-label="Find a model, a seat or an action"
           aria-expanded="true"
           aria-controls="palette-list"
           aria-activedescendant={p.active >= 0 ? `palette-${p.active}` : undefined}
@@ -137,7 +138,9 @@
         {/each}
 
         {#if !p.results.length}
-          <p class="none">No commands yet — the registry arrives with the logic package.</p>
+          <p class="none">
+            {p.query ? `Nothing matches “${p.query}”.` : 'Nothing to run yet.'}
+          </p>
         {/if}
       </div>
     </div>

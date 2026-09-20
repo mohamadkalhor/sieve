@@ -19,8 +19,9 @@
   import { goto } from '$app/navigation';
   import { onDestroy, untrack } from 'svelte';
   import { page } from '$app/stores';
-  import { explainError } from '$lib/api/client';
-  import { seats, provideSeatSession, provideSelection } from '$lib/console/context';
+  import { palette, seats, provideSeatSession, provideSelection } from '$lib/console/context';
+  import { attachSeat } from '$lib/console/state/palette.svelte';
+  import SeatsPane from '$lib/console/seats/SeatsPane.svelte';
   import { browserDeps, SeatSession } from '$lib/console/state/seat.svelte';
   import { Selection } from '$lib/console/state/selection.svelte';
   import Inspector from '$lib/console/inspector/Inspector.svelte';
@@ -80,6 +81,22 @@
   );
   provideSeatSession(session);
 
+  // The palette runs against the seat that is open, and this route is the only
+  // place that knows both the session and the selection it goes with (section
+  // 5.2): without this, "Find a model" and "Ship" would be offered against
+  // nothing.
+  const commands = palette();
+  $effect(() => {
+    attachSeat(commands, {
+      selection: picked,
+      session: () => session,
+      // the model's modality is the seat's, so the inspector reads it off the
+      // session rather than off the command
+      inspect: (id) => picked.select(id)
+    });
+    return () => attachSeat(commands, null);
+  });
+
   // The single effect that opens a seat and closes the one before it.
   $effect(() => {
     const name = here;
@@ -98,31 +115,8 @@
 </script>
 
 <div class="work">
-  <aside class="list" data-slot="seats" aria-label="Seats">
-    <div class="scroll">
-      {#if store.error}
-        <p class="quiet">{explainError(store.error)}</p>
-      {:else if !store.rows}
-        <p class="quiet">Reading the seats…</p>
-      {:else}
-        <ul class="rows">
-          {#each store.rows as row (row.name)}
-            <li>
-              <a
-                class="row"
-                href={`/seats/${encodeURIComponent(row.name)}`}
-                aria-current={row.name === here ? 'page' : undefined}
-              >
-                <span class="name mono">{row.name}</span>
-                {#if row.changes}
-                  <span class="changes num">{row.changes}</span>
-                {/if}
-              </a>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </div>
+  <aside class="list" data-slot="seats">
+    <SeatsPane />
   </aside>
 
   <section class="seat" data-slot="seat" aria-label={`Seat ${session.name}`}>
@@ -168,55 +162,6 @@
     height: 100%;
     overflow: auto;
     padding: 16px;
-  }
-
-  .list .scroll {
-    padding: 10px 8px;
-  }
-
-  .rows {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    border-radius: var(--r-3);
-    font-size: 13px;
-    color: var(--c-ink-2);
-  }
-
-  .row:hover {
-    background: var(--c-raised);
-    color: var(--c-ink);
-  }
-
-  .row[aria-current='page'] {
-    background: var(--c-raised);
-    color: var(--c-ink);
-  }
-
-  .name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .changes {
-    margin-left: auto;
-    font-size: 11px;
-    color: var(--c-accent);
-  }
-
-  .quiet {
-    margin: 0 0 10px;
-    font-size: 13px;
-    color: var(--c-muted);
-    max-width: 62ch;
   }
 
   @media (max-width: 900px) {

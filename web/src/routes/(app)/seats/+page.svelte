@@ -7,17 +7,17 @@
    * in, else the first seat with changes waiting, else the first seat. "Which
    * one?" is a question the console can answer, and a click to answer it is a
    * click on every visit. Below 900px there is no room for a list beside a
-   * seat, so there the list is the screen and this is it.
+   * seat, so there the list is the screen -- and the list is the pane, drawn
+   * once and used in both places rather than copied into this file.
    *
-   * The rows come from the seats store, which really fetches: this page has to
-   * answer from the server's list, not from a copy of it. The filters, counts
-   * and sort, and the pane's own look, arrive with the seats package.
+   * `?new=1` is the palette's "New seat": it asks for the form, not for a seat,
+   * so the seat it opens carries the query along and the pane reads it there.
    */
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
-  import { explainError } from '$lib/api/client';
+  import { page } from '$app/stores';
   import { seats } from '$lib/console/context';
-  import Icon from '$lib/console/ui/Icon.svelte';
+  import SeatsPane from '$lib/console/seats/SeatsPane.svelte';
 
   /** §1.3's key: the seat page writes it, this page reads it, so a return
    * visit opens where you left off rather than asking again */
@@ -27,6 +27,8 @@
 
   /** false once the list is the answer: nothing to open, or a narrow screen */
   let opening = $state(true);
+  /** the palette's "New seat", which is a request for the form */
+  const wantsNew = $derived($page.url.searchParams.get('new') === '1');
 
   $effect(() => {
     if (!browser) return;
@@ -39,7 +41,7 @@
       await store.load();
       if (!alive) return;
       const rows = store.rows ?? [];
-      // Nothing to open, or nothing readable: stay here and let the page say
+      // Nothing to open, or nothing readable: stay here and let the pane say
       // which of the two it is.
       if (!rows.length) {
         opening = false;
@@ -50,7 +52,8 @@
         rows.find((row) => row.name === remembered) ??
         rows.find((row) => (row.changes ?? 0) > 0) ??
         rows[0];
-      await goto(`/seats/${encodeURIComponent(seat.name)}`, { replaceState: true });
+      const query = wantsNew ? '?new=1' : '';
+      await goto(`/seats/${encodeURIComponent(seat.name)}${query}`, { replaceState: true });
     })();
     return () => {
       alive = false;
@@ -58,42 +61,32 @@
   });
 </script>
 
-<header class="head">
-  <h1>Seats</h1>
-  <p class="say">
-    Every seat: what it is for, what it holds now, and what it would hold if you shipped it.
-  </p>
-</header>
-
-{#if store.error}
-  <p class="bad">{explainError(store.error)}</p>
-{:else if !store.rows}
-  <p class="quiet">{opening ? 'Opening the seat you last worked in…' : 'Reading the seats…'}</p>
-{:else if !store.rows.length}
-  <p class="quiet">No seats yet.</p>
-{:else}
-  {#if store.degraded}
-    <p class="warn note caps">
-      Some chains could not be read, so this list is provisional.
+<div class="screen">
+  <header class="head">
+    <h1>Seats</h1>
+    <p class="say">
+      Every seat: what it is for, what it holds now, and what it would hold if you shipped it.
     </p>
+  </header>
+
+  {#if opening}
+    <p class="quiet">Opening the seat you last worked in…</p>
+  {:else}
+    <SeatsPane />
   {/if}
-  <ul class="rows">
-    {#each store.rows as row (row.name)}
-      <li>
-        <a class="row" href={`/seats/${encodeURIComponent(row.name)}`}>
-          <span class="name mono">{row.name}</span>
-          <span class="caps">{row.modality}</span>
-          {#if row.changes}
-            <span class="changes num">{row.changes} changed</span>
-          {/if}
-          <Icon name="chevron" />
-        </a>
-      </li>
-    {/each}
-  </ul>
-{/if}
+</div>
 
 <style>
+  /* the stage is flush here: the seat route is panes that scroll themselves,
+     and this screen is the pane */
+  .screen {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+    padding: 20px 28px 64px;
+  }
+
   .head {
     margin: 0 0 18px;
   }
@@ -112,52 +105,6 @@
     max-width: 62ch;
   }
 
-  .rows {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    border-top: 1px solid var(--c-rule);
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 6px;
-    border-bottom: 1px solid var(--c-rule);
-    color: var(--c-ink-2);
-  }
-
-  .row:hover {
-    background: var(--c-raised);
-    color: var(--c-ink);
-  }
-
-  .name {
-    font-size: 13px;
-    color: inherit;
-  }
-
-  .changes {
-    font-size: 12px;
-    color: var(--c-accent);
-  }
-
-  .warn {
-    color: var(--c-warn);
-  }
-
-  .row :global(svg) {
-    margin-left: auto;
-    color: var(--c-muted);
-  }
-
-  .bad {
-    margin: 0;
-    font-size: 13px;
-    color: var(--c-bad);
-  }
-
   .quiet {
     margin: 0;
     font-size: 13px;
@@ -165,13 +112,12 @@
   }
 
   @media (max-width: 900px) {
-    .head {
-      margin-bottom: 12px;
+    .screen {
+      padding: 12px 12px 48px;
     }
 
-    .row {
-      gap: 8px;
-      padding: 12px 6px;
+    .head {
+      margin-bottom: 12px;
     }
   }
 </style>
