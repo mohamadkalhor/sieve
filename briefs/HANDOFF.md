@@ -1478,4 +1478,63 @@ not say how a score is made up, a card built from the row, an unknown need, and
 a failed read that can be asked again); `console-d.spec.ts` 4/4 unchanged after
 the callback fix.
 
+## Package F · The seats pane, the status bar, the palette
+
+**Landed.** Three stores and every screen that reads them.
+
+`state/seats.svelte.ts` holds the list once for the whole app and joins the
+request already in flight, which is what makes "one request paints the seats
+pane" true rather than lucky; `patch(name, part)` is how a save or a ship moves
+one row with no second request, and it is wired through the seat session's own
+`patch` dep in the seat route, so the pane and the palette never disagree with
+the seat that just shipped. `state/status.svelte.ts` polls once a minute,
+re-polls on `/v1/events`, and calls the server unreachable only while nothing
+has been read yet -- a failure after a reading keeps the reading, because "the
+last thing we knew" is not the same news as "we know nothing". Its answers are
+also what signs a person in on a server whose `/v1/me` never landed.
+
+`shell/statusbar.ts` is the bar's rules as data, kept out of the component so
+they can be tested without a browser. `state/palette.svelte.ts` is the palette's
+state and its groups, `attachSeat` being the one seam that gives a command the
+open seat and its selection.
+
+`console/seats/` is the pane: `SeatsPane` (a group per modality with its count,
+collapsing remembered in localStorage), `SeatLink` (a real anchor, so middle
+click and the browser's own history work), `NewSeatForm` (the create form ported
+from the old profiles page, `/v1/profiles` then `/v1/profiles/create`, the 404
+fallback and the 401 wording intact) and `view.ts` for the two decisions worth
+testing. `/seats` on a desktop opens the seat this browser last worked in and
+stays the list in a narrow window, where a list is all there is room for; one
+component draws the list in both places. `(app)/+layout.svelte` creates the
+stores and starts the status polling (A's placeholder replaced; F owns it after
+A), and the palette's combobox now has the accessible name it never had --
+`role="combobox"` with no name is announced as nothing at all.
+
+**Stubbed.** Nothing in this package. The four old pages are still there; G
+deletes them.
+
+**The review.** 3 (F's part): the line under a seat's name is the first model of
+the last applied chain and is labelled as such -- it is not claimed to be what
+the gateway is holding this second. 4: every store takes its dependencies by
+injection and implements the `contracts.ts` interface (`SeatsStoreLike`,
+`StatusStoreLike`, `PaletteLike`), and the palette reads `PaletteContext`
+rather than a concrete store. 5: this section, `web/tests/console/f-*` and
+`web/e2e/console-f.spec.ts` are the files this package owns. 6 (F's part): the
+sidebar is patched from the save/ship that succeeded, never from whichever
+preview happens to be visible. 13 (F's part): group headings are buttons with
+`aria-expanded`, the combobox has a name and every option an id, Escape returns
+focus to what had it, and the status bar scrolls inside itself on a narrow
+screen instead of hiding a field the server did send. 15: `degraded` says the
+fallback ran, `schedules` absent ("this server does not say") is kept apart from
+`schedules` present with no `next_fire` ("no schedule"), and a field the server
+did not send is omitted rather than printed as a zero nobody measured.
+
+**Checks.** `pnpm check` 0 errors / 0 warnings; `pnpm lint` clean; `pnpm test`
+351 passed / 25 files (`f-palette` 21, `f-statusbar` 11, `f-status` 8,
+`f-seats` 7, `f-view` 8); `pnpm build` green. `SIEVE_E2E_PORT=8141 pnpm
+test:e2e e2e/console-f.spec.ts` 8/8: the one-request list, the 404 fallback's
+note and its missing badge, a badge only where the server sent a count, a
+collapse that survives a reload, Ctrl+K and `/`, arrows and Enter running a
+command, Esc handing focus back, and the status bar's two silences.
+
 **Commit.** The commit this entry arrives in.
