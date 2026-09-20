@@ -1357,3 +1357,64 @@ passed / 18 files; `pnpm build` green.
 **Commits.** `57060df` (the session and the selection, with their tests),
 `fc44039` (the pane, the twelve components, the route), and the commit this entry
 arrives in.
+
+## Package D2 · The table
+
+**Landed.** `console/seat/rows.ts` — the table's view model as data, so its order
+and its wording are testable without a browser. The row is a discriminated union
+(finding 10): a `ranked` row carries the server's `Listed`, a `bare` one carries
+an id and a name and nothing else, and a row nobody read draws `—` for score,
+cost and capabilities with the reason on the hover rather than a zero. Two
+deliberate departures from section 6.6's props, both from that finding:
+`ModelRow`'s `row` is the union, not `Listed`, and `rank`/`note` live on the row
+the union hands it rather than beside it. `tableSections` draws the five lists in
+6.6's order and deduplicates a leaving id against the lineup, `next`, blocked,
+removed, missing and anything else on screen (`alsoVisible` is what the hand list
+or the pool is already showing, so a model is never drawn twice and read as two
+changes); a leaving id the pool still holds stays a ranked row, one nobody ever
+ranked is bare. `emptyText` says "Nothing ships: no reachable model meets every
+need" only when the answer says so — non-zero `failed_needs`, nothing removed,
+not manual — and the neutral "Nothing would ship with these settings" otherwise.
+Also `manualRows`, `standing` (ported with its wording), `canDo`, `via`,
+`actionLabel`, `poolRows`/`poolDisplay` (the 200-row cap and "N more — keep
+typing"), `moveFor`/`stepIndex`/`tabStop`. Components under `console/seat/`:
+`LineupTable`, `ManualList`, `AllReachable`, `ModelRow`, `UnlinkedRow`,
+`ShipLine`, `ListStateView`, `ViewSwitch`. `SeatPane` renders them where D1's
+numbered list of ids was, and the seat route carries `?view=all` as URL state
+through the same pushed history the selection uses, so the whole pool is a link
+someone can send and Back returns to the lineup. One more deviation, for the
+browser: 6.6's columns (24/210/70/110/50/64, gap 12, padding 0 20) add up to
+700px, which is wider than the 680px pane at 1280 — the pane scrolled sideways
+and `focus.spec.ts` counted a clipped row ring, so the columns are now
+24/168/minmax(56,1fr)/66/104/46/56 with gap 10 and padding 0 12 (622px), and the
+same numbers are in all five copies of the grid. Tests:
+`web/tests/console/d-rows.test.ts` (31) and `web/e2e/console-d.spec.ts` (4, in a
+real browser against the seeded store: the ship line, the roving tab stop, the
+view switch and its deep link, the filter that narrows without renumbering).
+
+**Stubbed.** The inspector column is still D1's one line (E's); the seats list in
+the left column is still A's placeholder (F's).
+
+**The review.** 10 is this package: the union, the dashes, the dedup against every
+displayed collection and the neutral empty sentence, with three tests named after
+its own cases (an empty hand list, a lineup emptied by removals, a leaving id
+nobody ever ranked). 13: the row holds the keyboard — ↑/↓ move the selection and
+the tab stop together, a key or a click that started in a button, a link or a
+field is that control's, and a composing keystroke is nobody's. 12 is D1's
+snapshot; the table only calls `pin`, `remove`, `restore`, `addManual`,
+`nudgeManual` and `dropManual`.
+
+**Checks.** `pnpm check` 0 errors / 0 warnings; `pnpm lint` clean; `pnpm test` 266
+passed / 19 files (`d-rows.test.ts` alone: 31); `pnpm build` green. e2e, whole
+suite: 68 passed / 16 failed, against 62 passed / 18 failed before the column
+widths changed — the two that went away are `focus.spec.ts`'s two "Profiles:
+every Tab stop shows a focus ring that is not clipped" cases, which the 700px
+table in a 680px pane was failing, and no failure is new. `console-d.spec.ts` 4/4;
+`console-a.spec.ts` passes 18/18 when its own file runs alone. The 16 that remain
+are the suites G owns (smoke 9, rerank.perf 3, plus aliases-guide, field-search,
+pulse and responsive's rail) and `console-a.spec.ts:77`, which fails only in the
+full run and passes alone: the seat it reopens depends on what ran before it, so
+that one is A's.
+
+**Commits.** `336783a` (the view model and its tests) and the commit this entry
+arrives in.

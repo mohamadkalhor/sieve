@@ -12,22 +12,27 @@
    */
   import { explainError } from '$lib/api/client';
   import type { SeatSession } from '$lib/console/state/seat.svelte';
-  import Button from '$lib/console/ui/Button.svelte';
+  import AllReachable from './AllReachable.svelte';
+  import LineupTable from './LineupTable.svelte';
+  import ManualList from './ManualList.svelte';
   import NeedChips from './NeedChips.svelte';
   import SeatHeader from './SeatHeader.svelte';
   import ShipStepper from './ShipStepper.svelte';
   import TrimRow from './TrimRow.svelte';
+  import ViewSwitch from './ViewSwitch.svelte';
   import WeightsBlock from './WeightsBlock.svelte';
 
   interface Props {
     session: SeatSession;
+    /** which of the table's two views is being shown; the route owns the URL */
+    view?: 'lineup' | 'all';
+    onview?: (view: 'lineup' | 'all') => void;
   }
 
-  let { session }: Props = $props();
+  let { session, view = 'lineup', onview = () => {} }: Props = $props();
 
   const mode = $derived(session.settings?.mode ?? session.profile?.mode ?? 'auto');
-  const rows = $derived(session.preview?.models ?? null);
-  const waited = $derived((session.waitedMs / 1000).toFixed(1));
+  const pool = $derived(session.preview?.pool?.length ?? 0);
 </script>
 
 {#if session.loading && !session.profile && !session.gone}
@@ -58,29 +63,13 @@
     {/if}
 
     <div class="table">
-      {#if session.listing === 'error'}
-        <p class="quiet">
-          {session.failed ?? 'The list could not be read.'}
-          <Button variant="ghost" size="sm" onclick={() => void session.refresh()}>Try again</Button>
-        </p>
-      {:else if session.listing === 'ranking' || session.listing === 'busy'}
-        <p class="quiet">{session.listing === 'busy' ? `Still ranking… ${waited}s` : 'Ranking…'}</p>
-      {:else if rows === null}
-        <p class="quiet">Nothing has been ranked yet.</p>
-      {:else if rows.length === 0}
-        <p class="quiet">
-          These settings ship nothing: no reachable model answers every must-support.
-        </p>
+      <ViewSwitch {view} {pool} {onview} />
+      {#if view === 'all'}
+        <AllReachable {session} />
+      {:else if mode === 'manual'}
+        <ManualList {session} onadd={() => onview('all')} />
       {:else}
-        <!-- the table package replaces this list with the rows themselves -->
-        <ol class="names" data-slot="lineup">
-          {#each rows as row, index (row.id)}
-            <li class="row">
-              <span class="at">{index + 1}</span>
-              <span class="id mono">{row.id}</span>
-            </li>
-          {/each}
-        </ol>
+        <LineupTable {session} />
       {/if}
     </div>
   </div>
@@ -108,37 +97,6 @@
 
   .table {
     padding: 0 0 24px;
-    border-top: 1px solid var(--c-rule);
-  }
-
-  .names {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 7px 20px;
-    border-bottom: 1px solid var(--c-rule);
-    font-size: 13px;
-    color: var(--c-ink);
-  }
-
-  .at {
-    min-width: 14px;
-    font-family: var(--f-mono);
-    font-size: 11px;
-    color: var(--c-muted);
-  }
-
-  .id {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .name {

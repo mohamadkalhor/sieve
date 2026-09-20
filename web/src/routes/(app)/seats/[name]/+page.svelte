@@ -55,6 +55,18 @@
   });
   provideSelection(picked);
 
+  // The table's view is URL state too, and for the same reason: `?view=all`
+  // survives a reload, and a link to the whole pool is a link someone can send.
+  // It is pushed rather than replaced, so Back returns to the lineup.
+  const view = $derived($page.url.searchParams.get('view') === 'all' ? 'all' : 'lineup');
+
+  function showView(next: 'lineup' | 'all'): void {
+    const url = new URL($page.url);
+    if (next === 'all') url.searchParams.set('view', 'all');
+    else url.searchParams.delete('view');
+    void goto(url, { keepFocus: true, noScroll: true });
+  }
+
   // One session for the whole visit. A seat change moves it (see `retarget`)
   // instead of replacing it, which is what lets the inspector read one object.
   const session = new SeatSession(
@@ -113,7 +125,7 @@
   </aside>
 
   <section class="seat" data-slot="seat" aria-label={`Seat ${session.name}`}>
-    <SeatPane {session} />
+    <SeatPane {session} {view} onview={showView} />
   </section>
 
   <aside class="inspect" data-slot="inspector" aria-label="Inspector">

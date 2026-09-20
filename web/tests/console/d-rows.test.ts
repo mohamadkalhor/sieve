@@ -14,6 +14,8 @@ import {
   canDo,
   emptyText,
   idsOf,
+  manualRows,
+  poolDisplay,
   poolRows,
   standing,
   stepIndex,
@@ -194,6 +196,56 @@ describe('canDo', () => {
       warn: false,
       title: 'no source says it can do any of these'
     });
+  });
+});
+
+describe('poolDisplay', () => {
+  it('keeps the pool rank when the list is filtered', () => {
+    const pool = [row('a', { name: 'Alpha' }), row('b', { name: 'Beta' }), row('c', { name: 'Gamma' })];
+    const shown = poolDisplay(pool, { needle: 'gamma' });
+    expect(shown.rows).toHaveLength(1);
+    expect(shown.rows[0]).toMatchObject({ kind: 'ranked', id: 'c', rank: '3' });
+    expect(shown.more).toBe(0);
+  });
+
+  it('says how many matched but were not drawn', () => {
+    const pool = [row('a', {}), row('b', {}), row('c', {})];
+    expect(poolDisplay(pool, { limit: 2 }).more).toBe(1);
+  });
+});
+
+describe('manualRows', () => {
+  const ranked = { name: 'Alpha', score: 0.7, cost_per_task: 0.02 } as Partial<Listed>;
+
+  it('keeps the hand order and says what keeps a row out', () => {
+    const preview = {
+      models: [{ id: 'a', ...ranked }],
+      pool: [row('b', { name: 'Beta', lacks: ['tools'] })],
+      next: [],
+      blocked: [],
+      removed: [],
+      missing: []
+    } as unknown as PreviewResult;
+    const drawn = manualRows(preview, ['b', 'a', 'gone']);
+    expect(drawn.map((one) => one.row.id)).toEqual(['b', 'a', 'gone']);
+    expect(drawn.map((one) => one.tone)).toEqual(['blocked', 'ship', 'missing']);
+    expect(drawn.map((one) => one.row.rank)).toEqual(['1', '2', '']);
+    // the id nothing knows anything about is still on the list, named by its id
+    expect(drawn[2].row.name).toBe('gone');
+  });
+
+  it('prefers the row the server ranked over the pool copy of it', () => {
+    const preview = {
+      models: [{ id: 'a', ...ranked, score: 0.91 }],
+      pool: [row('a', { name: 'Alpha', score: 0.12 })],
+      next: [],
+      blocked: [],
+      removed: [],
+      missing: []
+    } as unknown as PreviewResult;
+    expect(manualRows(preview, ['a'])[0].row).toMatchObject({ kind: 'ranked', id: 'a' });
+    const drawn = manualRows(preview, ['a'])[0].row;
+    expect(drawn.kind === 'ranked' && drawn.row.score).toBe(0.91);
   });
 });
 

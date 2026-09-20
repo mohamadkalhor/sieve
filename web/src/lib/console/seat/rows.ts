@@ -161,6 +161,35 @@ export function tableSections(
 }
 
 /**
+ * The hand-made list, in the order it was made (section 6.6, `ManualList`).
+ *
+ * A hand-picked id is in the list because somebody put it there, so it keeps
+ * its place even when the ranking has nothing to say about it: a row a need
+ * keeps out is drawn with the need, and an id the pool no longer holds is drawn
+ * as `missing` rather than dropped -- a list that quietly shortens is a list
+ * you cannot trust.
+ */
+export interface ManualRow {
+  row: DisplayRow;
+  tone: 'ship' | 'blocked' | 'missing';
+}
+
+export function manualRows(preview: PreviewResult | null, manual: readonly string[]): ManualRow[] {
+  const known = new Map<string, Listed>();
+  for (const row of [...(preview?.models ?? []), ...(preview?.pool ?? [])]) {
+    if (!known.has(row.id)) known.set(row.id, row);
+  }
+  return manual.map((id, at) => {
+    const listed = known.get(id);
+    if (!listed) return { row: bare(id, id, 'missing', ''), tone: 'missing' as const };
+    return {
+      row: ranked(listed, `${at + 1}`, ''),
+      tone: listed.lacks?.length ? ('blocked' as const) : ('ship' as const)
+    };
+  });
+}
+
+/**
  * What an empty lineup says.
  *
  * "Nothing ships: no reachable model meets every need" is a claim about needs,
@@ -302,6 +331,30 @@ export function poolRows(pool: readonly Listed[] | null | undefined, filter: Poo
   });
 
   return { rows: matched.slice(0, limit), more: Math.max(0, matched.length - limit) };
+}
+
+export interface PoolDisplay {
+  rows: DisplayRow[];
+  /** how many matched but were not drawn */
+  more: number;
+}
+
+/**
+ * The pool the way the all-reachable view draws it: the filter's rows, each
+ * carrying the rank it holds in the whole pool. A filter narrows the list; it
+ * does not renumber it.
+ */
+export function poolDisplay(
+  pool: readonly Listed[] | null | undefined,
+  filter: PoolFilter = {}
+): PoolDisplay {
+  const held = pool ?? [];
+  const at = new Map(held.map((row, index) => [row.id, index + 1]));
+  const shown = poolRows(held, filter);
+  return {
+    rows: shown.rows.map((row) => ranked(row, `${at.get(row.id) ?? ''}`, '')),
+    more: shown.more
+  };
 }
 
 /** The router ids that matched no catalogue entry, matched the same way. */
