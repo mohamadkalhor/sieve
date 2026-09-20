@@ -53,6 +53,15 @@
     font-family: var(--f-mono);
     font-size: 11px;
     color: var(--c-muted);
+    /* The row is one line of a fixed height, so on a narrow screen it scrolls
+       inside itself rather than widening the page. Clipping would be quieter
+       and would hide a field the server did send. */
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .status::-webkit-scrollbar {
+    display: none;
   }
   .item {
     display: flex;

@@ -6,9 +6,12 @@
    * copied URL and the browser's own history all work, and SvelteKit navigates
    * it without a reload.
    *
-   * The line under the name is the first model the gateway holds -- and the two
-   * ways of having none are drawn differently on purpose: no chain was ever
-   * read (`live` is null) says nothing, while a seat that ships nothing says so.
+   * The line under the name is the first model of the chain this seat last
+   * shipped -- the last stored/applied chain, which is not the same claim as
+   * what the gateway is holding this second (REVIEW.md finding 3), so it is
+   * labelled as such rather than left to read as a live read. The two ways of
+   * having none are drawn differently on purpose: no chain was ever stored
+   * (`live` is null) says nothing, while a seat that ships nothing says so.
    */
   import type { SeatRow } from '$lib/api/client';
   import { badge } from '../logic/seats';
@@ -36,7 +39,7 @@
   <span class="dot" class:changing aria-hidden="true"></span>
   <span class="text">
     <span class="name">{row.name}</span>
-    {#if line}<span class="line">{line}</span>{/if}
+    {#if line}<span class="line" title="last applied chain">{line}</span>{/if}
   </span>
   {#if mark}<span class="badge" class:accent={mark.tone === 'accent'}>{mark.text}</span>{/if}
 </a>
