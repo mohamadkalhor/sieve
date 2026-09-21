@@ -639,7 +639,9 @@ class Store:
         sql += " ORDER BY inventory, local_id"
         return [self._reachable(r) for r in self.db.execute(sql)]
 
-    def local_ids(self, owner_id: str | None = None) -> dict[str, list[str]]:
+    def local_ids(
+        self, owner_id: str | None = None, modality: Modality | None = None
+    ) -> dict[str, list[str]]:
         """Canonical model id -> the local ids that serve it, right now.
 
         Stale rows are left out on purpose: this map is what a chain resolves
@@ -648,6 +650,11 @@ class Store:
         With an `owner_id`, only what *that person's* connectors serve: a chain
         is seated on their routers, and a local id nobody they own can reach is
         not somewhere they can send traffic.
+
+        With a `modality`, only ids the catalogue holds in that modality. A
+        router id is matched to a catalogue id with no modality, so a row here
+        says the box can call a model and nothing about what it makes; without
+        this an image seat ranked, and shipped, every llm the box can reach.
         """
         sql = (
             "SELECT r.model_id AS model_id, r.local_id AS local_id FROM reachable r"
@@ -658,6 +665,9 @@ class Store:
         if owner_id is not None:
             sql += " AND IFNULL(c.owner_id,'') = IFNULL(?,'')"
             args = (owner_id,)
+        if modality is not None:
+            sql += " AND EXISTS (SELECT 1 FROM models m WHERE m.id = r.model_id AND m.modality = ?)"
+            args = (*args, modality)
         out: dict[str, list[str]] = {}
         for r in self.db.execute(sql + " ORDER BY r.local_id", args):
             out.setdefault(r["model_id"], []).append(r["local_id"])
