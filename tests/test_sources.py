@@ -416,7 +416,7 @@ def test_the_recordings_match_what_the_manifest_claims(player: FixturePlayer) ->
     is then quietly measuring something else.
     """
     manifest = json.loads((FIXTURES / "RECORDINGS.json").read_text(encoding="utf-8"))
-    assert len(manifest) == 24
+    assert len(manifest) == 28
 
     for name, entry in manifest.items():
         body = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
@@ -451,7 +451,9 @@ def test_the_recordings_match_what_the_manifest_claims(player: FixturePlayer) ->
 
         assert len(rows) == entry["rows_kept"], f"{name} holds {len(rows)}, manifest says {entry}"
         assert entry["rows_kept"] <= entry["rows_published"]
-        assert f"{fixture_slug(entry['url'], _params_of(entry))}.json" == name
+        # a recording kept as a set sits in a folder of its own; the file is
+        # still named for its request
+        assert f"{fixture_slug(entry['url'], _params_of(entry))}.json" == Path(name).name
 
     llms = manifest["artificialanalysis_ai_api_v2_data_llms_models.json"]
     assert llms["rows_published"] == 644, "the figure the phase 1 report could not claim"

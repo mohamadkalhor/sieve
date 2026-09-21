@@ -15,6 +15,7 @@ below.
 | 2026-09-08 | fal, no key needed | `fal_ai_api_models__limit_200_page_1.json` |
 | 2026-09-09 | deepinfra, no key needed | `api_deepinfra_com_models_list.json` |
 | 2026-09-09 | Artificial Analysis leaderboard **pages**, no key | the seven `artificialanalysis_ai_*leaderboard*` and speech files |
+| 2026-09-21 | Artificial Analysis, with a live key | the four files in `aa_music_wrong_board_2026_09_21/` |
 
 `RECORDINGS.json` gives, per file, the exact URL it came from, the query
 parameters that were sent, the date, how many rows the endpoint published that
@@ -22,6 +23,14 @@ day, and how many were kept. They are **trimmed**: the LLM endpoint published
 644 models and 60 are kept here, the five arena endpoints published 74–157 each
 and 40 are kept. The four free-tier files are whole, being small enough
 (15–67 rows).
+
+`aa_music_wrong_board_2026_09_21/` is a set, not a stand-in for the 2026-09-08
+files: one pull's text-to-image and image-editing arenas beside what the two
+music URLs answered the same minute. From 2026-09-16 AA served those arenas at
+the music URLs, row for row, and the pull stored them as music. Each file keeps
+its first 40 rows, and the 40 kept from each music answer are the 40 kept from
+the matching arena, so the failure survives the trim. A test points the player
+at the folder; nothing else reads it.
 
 The deepinfra file keeps all 116 media rows and four rows of other types, so a test can prove the others are skipped rather than assume it.
 
