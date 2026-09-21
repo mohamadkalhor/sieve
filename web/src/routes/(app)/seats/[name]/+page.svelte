@@ -48,10 +48,12 @@
   const here = $derived(decodeURIComponent($page.params.name ?? data.name));
 
   $effect(() => {
-    if (!store.rows) void store.load();
-  });
-
-  $effect(() => {
+    // The list of seats is asked for in exactly one place -- `SeatsPane`, which
+    // renders on this route and on `/seats` both-and, and whose effect is the
+    // one that survives a move between the two. A second `load()` here paints
+    // nothing the pane does not paint and, worse, is a second request that
+    // `SeatsStore.load()` cannot fold into the first (it shares an in-flight
+    // read, but only while the first one is still in flight).
     // §1.3: opening a seat is what makes `/seats` open it again next time, so
     // the key is written here rather than when the list is drawn.
     if (browser) window.localStorage.setItem('sieve:last-seat', here);
@@ -62,7 +64,14 @@
   const picked = new Selection({
     read: () => $page.url.searchParams.get('model'),
     replace: (id) => {
-      const url = new URL($page.url);
+      // A session outlives the screen it was made for, and its answers keep
+      // arriving after the reader has left: the pool's own link out is the easy
+      // one to hit. `?model=` names a model on *this* seat, so it is written
+      // only while this seat is still what the address says -- otherwise the
+      // seat's next answer writes its own address back and drags the reader
+      // away from wherever they went.
+      const url = new URL(window.location.href);
+      if (url.pathname !== `/seats/${encodeURIComponent(session.name)}`) return;
       if (id) url.searchParams.set('model', id);
       else url.searchParams.delete('model');
       void goto(url, { replaceState: true, keepFocus: true, noScroll: true });

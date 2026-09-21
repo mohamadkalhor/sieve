@@ -16,7 +16,7 @@
  * injected, so a test can drive a whole run cycle without waiting a minute.
  */
 import { api as realApi, subscribe as realSubscribe } from '$lib/api/client';
-import type { Result, StatusRow } from '$lib/api/client';
+import type { ApiError, Result, StatusRow } from '$lib/api/client';
 import type { StatusStoreLike } from '../contracts';
 
 /** How often the bar asks when nothing is happening. */
@@ -52,6 +52,14 @@ export class StatusStore implements StatusStoreLike {
    * the API is down when it plainly is not.
    */
   unreachable = $state(false);
+  /**
+   * The last read that failed, whatever the failure was -- a 500, a 501, a
+   * token the server would not honour. It is `null` again as soon as a read
+   * answers, so the bar can say what went wrong instead of drawing nothing:
+   * `bar()` only knows what a *reading* holds, and a failed read has no row to
+   * put in it.
+   */
+  failed = $state<ApiError | null>(null);
 
   #deps: Required<StatusDeps>;
   #timer: Timer | null = null;
@@ -95,11 +103,16 @@ export class StatusStore implements StatusStoreLike {
     // a late answer after teardown belongs to a store nobody is reading
     if (this.#stopped) return;
     if (!result.ok) {
-      if (result.error.status === 0) this.unreachable = true;
+      // `status === 0` is the fetch itself failing -- no route to the API at
+      // all. Anything else answered: it is a reading about the API, and the one
+      // the bar says out loud, with the last good reading still beside it.
+      this.unreachable = result.error.status === 0;
+      this.failed = result.error;
       return;
     }
     this.row = result.value;
     this.unreachable = false;
+    this.failed = null;
     this.#deps.adopt(result.value);
     this.#watch(result.value);
   }

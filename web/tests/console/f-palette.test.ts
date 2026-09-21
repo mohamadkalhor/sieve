@@ -79,7 +79,7 @@ function context(over: Partial<PaletteContext> = {}): PaletteContext {
   return {
     goto: async () => {},
     seats: seatsStore(),
-    status: { row: null, unreachable: false, start: () => () => {} },
+    status: { row: null, unreachable: false, failed: null, start: () => () => {} },
     selection: { id: null, select: () => {}, adopt: () => {} },
     session: () => null,
     inspect: () => {},

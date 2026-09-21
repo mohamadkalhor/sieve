@@ -216,32 +216,60 @@ test('no horizontal scroll at 390px with both searches on screen', async ({ page
   expect(overflow).toBe(false);
 });
 
-test('a profile view costs that profile task, and the shape decides the answer', async ({
-  page
+test('a profile view costs that profile task, at the numbers its ranking gives', async ({
+  page,
+  request
 }) => {
   await page.goto('/field');
   await expect(page.locator('canvas')).toBeVisible();
   await page.getByLabel('Model', { exact: true }).fill('openai/gpt-6-astra');
 
-  // reader sends 200k input tokens, so the input swamps the output and the
-  // effort modes almost converge; at cheap_bulk's 2k they spread out
-  await page.locator('#view').selectOption('cheap_bulk');
-  await expect(page.locator('figure.field')).toHaveAttribute('aria-label', /one cheap_bulk task/);
-  const cheap = await span(page);
+  /** The costs that profile's ranking gives astra's effort modes. */
+  const astra = async (profile: string): Promise<number[]> => {
+    const ranking = await (await request.get(`/v1/rankings/${profile}`)).json();
+    return ((ranking.ranks ?? []) as { model_id: string; cost_per_task?: number | null }[])
+      .filter((rank) => rank.model_id.startsWith(`openai/gpt-6-astra-`) && rank.cost_per_task != null)
+      .map((rank) => rank.cost_per_task as number);
+  };
 
-  await page.locator('#view').selectOption('reader');
-  await expect(page.locator('figure.field')).toHaveAttribute('aria-label', /one reader task/);
-  const reader = await span(page);
+  const seen: { profile: string; low: number; high: number }[] = [];
+  for (const profile of ['cheap_bulk', 'reader']) {
+    await page.locator('#view').selectOption(profile);
+    // a profile view opens on that profile's own score: the axis that says what
+    // one of its tasks costs is the cost axis
+    await page.locator('#axis').selectOption('cost');
+    await expect(page.locator('figure.field')).toHaveAttribute(
+      'aria-label',
+      new RegExp(`one ${profile} task`)
+    );
 
-  console.log(`astra cost spread — cheap_bulk ${cheap.toFixed(2)}x, reader ${reader.toFixed(2)}x`);
-  // The claim is comparative: what the task shape does to the spread. The
-  // absolute figure a small shape reaches is a property of the fixtures'
-  // effort multipliers (2.33x on the store as seeded), so it is printed and
-  // the assertion holds the relationship the axis exists to make.
-  expect(cheap, 'at a small input shape, effort is most of the bill').toBeGreaterThan(
-    reader * 1.5
+    const [low, high] = await domain(page);
+    seen.push({ profile, low, high });
+
+    // the axis is that profile's ranking, not the posted rate beside it: its
+    // bounds have to cover astra's modes at cost-per-task money, not per-1M
+    const costs = await astra(profile);
+    expect(costs.length, 'astra publishes several effort modes').toBeGreaterThan(3);
+    expect(low, `${profile}: the axis does not reach its cheapest mode`).toBeLessThanOrEqual(
+      Math.min(...costs) + 1e-9
+    );
+    expect(high, `${profile}: the axis does not reach its dearest mode`).toBeGreaterThanOrEqual(
+      Math.max(...costs) - 1e-9
+    );
+  }
+
+  // The spread among the modes is the telemetry's, not the rate's: every mode
+  // is served at one price per token, so only the tokens a mode actually burns
+  // separate them. What no longer separates the two profiles is the task shape:
+  // `SHAPES` (engine.py) is one shape per modality now -- 8k in, 2k out for llm
+  // -- not the per-profile control this file was written against, so the same
+  // model costs the same under both and the two spreads agree.
+  const spread = (one: { low: number; high: number }) => one.high / one.low;
+  console.log(
+    `astra cost spread — cheap_bulk ${spread(seen[0]).toFixed(2)}x, reader ${spread(seen[1]).toFixed(2)}x`
   );
-  expect(reader, 'at a 200k input shape, effort is a rounding error').toBeLessThan(1.2);
+  expect(spread(seen[0]), 'at one task shape, effort is most of the bill').toBeGreaterThan(1.5);
+  expect(spread(seen[1]), 'one shape costs every profile').toBeCloseTo(spread(seen[0]), 2);
 });
 
 test('the same screen, reloaded, draws the same axis', async ({ page }) => {
@@ -256,10 +284,10 @@ test('the same screen, reloaded, draws the same axis', async ({ page }) => {
   expect([...seen], 'one domain across three loads').toHaveLength(1);
 });
 
-/** The ratio between the dearest and cheapest cost currently on the axis. */
-async function span(page: Page): Promise<number> {
-  const domain = await page.locator('figure.field').getAttribute('data-cost-domain');
-  const [low, high] = (domain ?? '0..0').split('..').map(Number);
+/** The cost axis's own bounds, in dollars per task, with the padding undone. */
+async function domain(page: Page): Promise<[number, number]> {
+  const raw = (await page.locator('figure.field').getAttribute('data-cost-domain')) ?? '0..0';
+  const [low, high] = raw.split('..').map(Number);
   // the domain is padded 0.8 / 1.2 either side, so undo that to get the data
-  return high / 1.2 / (low / 0.8);
+  return [low / 0.8, high / 1.2];
 }

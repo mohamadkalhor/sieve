@@ -133,7 +133,7 @@ test('the palette opens on Ctrl+K and on `/`, moves, runs, and hands focus back'
   await expect(link).toBeFocused();
 
   await page.keyboard.press('Control+k');
-  const entry = page.getByRole('combobox');
+  const entry = page.getByRole('combobox', { name: 'Find a model, a seat or an action' });
   await expect(entry).toBeFocused();
 
   await entry.fill('Runs');
@@ -142,9 +142,10 @@ test('the palette opens on Ctrl+K and on `/`, moves, runs, and hands focus back'
 
   await expect(page).toHaveURL(/\/runs$/);
 
-  // and the shortcut nobody has to be told about
+  // and the shortcut nobody has to be told about. Named, because this screen
+  // has selects of its own and a bare `combobox` is five of them.
   await page.keyboard.press('/');
-  await expect(page.getByRole('combobox')).toBeFocused();
+  await expect(page.getByRole('combobox', { name: 'Find a model, a seat or an action' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });

@@ -76,6 +76,8 @@ export interface SeatsStoreLike {
 export interface StatusStoreLike {
   row: StatusRow | null;
   unreachable: boolean;
+  /** the last read that failed, so the bar can name it instead of drawing nothing */
+  failed: ApiError | null;
   /** begins polling and returns the function that stops it */
   start(): () => void;
 }

@@ -74,11 +74,16 @@ export class Selection implements SelectionLike {
     const lineup = preview.models.map((row) => row.id);
     const { moves } = diffLineup(session.live, lineup);
     const moved = lineup.find((id) => moves[id] && moves[id].kind !== 'same');
-    // The seat's own choice, not a person's: no URL write and no `wanted`. A
-    // click is the only thing that puts `?model=` in the address bar, so a deep
-    // link, a share and a reload all keep meaning what they meant, and an
-    // overlay (section 6.8) does not open itself on every load.
+    // The seat's own choice, not a person's: no `wanted`, so an overlay
+    // (section 6.8) does not open itself on every load.
     const chosen = moved ?? lineup[0] ?? null;
+    // But when the address bar *did* name a model and the pool no longer has
+    // it, the choice above is a correction: `?model=gone` is a link to nothing,
+    // and leaving it there would hand the next reload or share a different
+    // model than the one on screen. An address bar that said nothing is left
+    // saying nothing -- a click is the only thing that puts `?model=` in it.
+    const was = this.id;
     this.id = chosen;
+    if (was !== null) this.deps.replace(chosen);
   }
 }

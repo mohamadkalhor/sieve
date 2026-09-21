@@ -145,8 +145,32 @@ describe('the status store', () => {
     expect(t.store.row?.reachable).toBe(7);
     // it said something: this is not an API that cannot be reached
     expect(t.store.unreachable).toBe(false);
+    // but the failure is kept, because the bar has to be able to say it: `bar()`
+    // draws a *reading*, and a failed read has no reading in it
+    expect(t.store.failed?.status).toBe(500);
+    expect(t.store.failed?.message).toBe('the API said no');
     // and a bad answer does not stop the clock
     expect(t.armed()).toEqual([POLL_MS]);
+    stop();
+  });
+
+  it('forgets the failure as soon as a read answers again', async () => {
+    const api = {
+      status: vi
+        .fn()
+        .mockResolvedValueOnce(fail({ code: 'server', message: 'the API said no', status: 500 }))
+        .mockResolvedValueOnce(ok(status({ reachable: 7 })))
+    };
+    const t = made({ api });
+
+    const stop = t.store.start();
+    await settle();
+    expect(t.store.failed?.status).toBe(500);
+
+    t.fire();
+    await settle();
+
+    expect(t.store.failed).toBeNull();
     stop();
   });
 
@@ -161,6 +185,7 @@ describe('the status store', () => {
 
     expect(t.store.unreachable).toBe(true);
     expect(t.store.row).toBeNull();
+    expect(t.store.failed?.status).toBe(0);
     stop();
   });
 

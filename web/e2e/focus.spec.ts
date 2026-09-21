@@ -25,12 +25,18 @@ import { expect, test, type Page } from '@playwright/test';
  * than passing on an empty list.
  */
 
-// Profiles, Rankings and Chains are one screen now: the list, and the list
-// with one row opened, which is where every control the other two had lives.
+// Profiles, Rankings and Chains are one screen now -- the seats screen, which
+// is `/seats/<name>`: the list is the left pane and one seat is open beside it,
+// and every control the other two screens had lives there.
+//
+// None of these is a redirect any more. `/profiles` and `/profiles?open=<name>`
+// still resolve (a bookmark has to land somewhere) but they resolve by handing
+// the browser to the seats screen, and a walk over a document that is on its
+// way somewhere else measures nothing.
 const SCREENS = [
   { path: '/field', name: 'Field' },
-  { path: '/profiles', name: 'Profiles' },
-  { path: '/profiles?open=coder', name: 'Profiles, one row opened' },
+  { path: '/seats/coder', name: 'Seats, one seat open' },
+  { path: '/pulse', name: 'Pulse' },
   { path: '/sources', name: 'Sources' }
 ];
 
@@ -108,14 +114,26 @@ async function describeFocused(page: Page): Promise<Stop | null> {
   }, RING_SLACK);
 }
 
-/** Tab through a screen, collecting every stop until focus wraps or runs out. */
+/**
+ * Tab through a screen, collecting every stop until focus wraps or runs out.
+ *
+ * A screen that answers while the walker is on it can take the focused element
+ * out from under it -- a polling screen redraws and focus falls back to the
+ * body. That is not the end of the screen, so the walk waits there and tabs
+ * again; it only gives up after three Tabs in a row landed on nothing.
+ */
 async function walk(page: Page, limit = 60): Promise<Stop[]> {
   const stops: Stop[] = [];
   const seen = new Set<string>();
-  for (let i = 0; i < limit; i++) {
+  let lost = 0;
+  for (let i = 0; i < limit && lost < 3; i++) {
     await page.keyboard.press('Tab');
     const stop = await describeFocused(page);
-    if (!stop) break;
+    if (!stop) {
+      lost += 1;
+      continue;
+    }
+    lost = 0;
     const key = `${stop.tag}:${stop.label}`;
     if (seen.has(key) && stops.length > 3) break; // wrapped
     seen.add(key);
@@ -127,6 +145,15 @@ async function walk(page: Page, limit = 60): Promise<Stop[]> {
 for (const screen of SCREENS) {
   test(`${screen.name}: every Tab stop shows a focus ring that is not clipped`, async ({ page }) => {
     await page.goto(screen.path);
+    // The app ships as a single-page app, so `goto` resolves on the shell's
+    // document a moment before Svelte has put the top bar in it. Tabbing into
+    // that document reads as a screen with no controls, which is the failure
+    // this walk is looking for -- so wait for the bar the shell always draws.
+    await expect(page.locator('header.topbar')).toBeVisible();
+    // ...and then let the screen finish answering. A walk that starts while the
+    // seat is still arriving measures a document that is about to be replaced
+    // wholesale, and the replacement drops focus: two stops and then nothing.
+    await page.waitForLoadState('networkidle');
     await page.locator('body').click({ position: { x: 2, y: 2 } });
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
@@ -162,10 +189,12 @@ for (const screen of SCREENS) {
  * otherwise a stylesheet regression would sail through as six green ticks.
  */
 test('the detector fails when the rings are taken away', async ({ page }) => {
-  await page.goto('/profiles');
+  await page.goto('/seats/coder');
+  await expect(page.locator('header.topbar')).toBeVisible();
   await page.addStyleTag({
     content: `*, *::before, *::after { outline: none !important; box-shadow: none !important; }`
   });
+  await page.waitForLoadState('networkidle');
   await page.locator('body').click({ position: { x: 2, y: 2 } });
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 

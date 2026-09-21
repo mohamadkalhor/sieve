@@ -11,6 +11,7 @@
    * "14 min ago" keeps meaning 14 min ago rather than freezing at mount.
    */
   import { status as statusStore } from '../context';
+  import { explainError } from '$lib/api/client';
   import { bar } from './statusbar';
 
   const store = statusStore();
@@ -27,7 +28,13 @@
 <footer class="status" aria-label="Status">
   {#if store.unreachable}
     <span class="item bad">Cannot reach the API</span>
-  {:else if view}
+  {:else if store.failed}
+    <!-- A read that failed is said out loud: `bar()` draws a reading, and a
+         failed read has no reading to draw. The last good one stays beside it,
+         because the server did answer. -->
+    <span class="item bad">Cannot read the status: {explainError(store.failed)}</span>
+  {/if}
+  {#if view}
     {#each view.items as item (item.key)}
       <span class="item {item.tone}">
         {#if item.key === 'run'}<span class="dot" aria-hidden="true"></span>{/if}

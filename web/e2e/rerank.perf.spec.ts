@@ -25,6 +25,25 @@ const SAMPLES = 12;
 /** The debounce in `session.edit` (400 ms) plus a round trip, with room. */
 const SETTLE_MS = 2500;
 
+/** The seeded store's write token: a nudge is an edit, and an edit is saved. */
+const TOKEN = 'ci-secret';
+
+/**
+ * Sign in before nudging anything.
+ *
+ * A nudge is saved 400 ms later, and this browser has no token: the save comes
+ * back 401 and the app sends it to the login route, which lands in the middle
+ * of a measurement and takes the rows with it. Reads need no token; the edit
+ * this file makes does.
+ */
+async function signIn(page: Page): Promise<void> {
+  await page.locator('button.who').click();
+  const field = page.getByPlaceholder('paste a bearer token');
+  await field.fill(TOKEN);
+  await page.keyboard.press('Escape');
+  await expect(field).toHaveCount(0);
+}
+
 type Measured = { costs: number[]; moved: number; rows: number };
 
 /** Quantised to 0.1 ms by Chromium; useless below ~0.5 ms, fine at 32. */
@@ -107,6 +126,7 @@ function report(label: string, measured: Measured) {
 test('an input on a weight costs a fraction of a frame', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/seats/coder?view=all');
+  await signIn(page);
   await expect(
     page.getByRole('table', { name: 'Every reachable model' }).locator('[role="row"][data-row]').first()
   ).toBeVisible();
@@ -125,6 +145,7 @@ test('the list follows the input in one round trip', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/seats/coder?view=all');
   const rows = page.getByRole('table', { name: 'Every reachable model' }).locator('[role="row"][data-row]');
+  await signIn(page);
   await expect(rows.first()).toBeVisible();
 
   const before = await rows.evaluateAll((els) => els.map((el) => el.textContent ?? ''));
