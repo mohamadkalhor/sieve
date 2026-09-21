@@ -32,11 +32,15 @@
 </div>
 
 <style>
+  /* The switch is the table's first row, so it starts where the table's own
+     cells start -- the 20px it used to carry put it out of line with the
+     columns under it. `min-height` rather than `height`: the control is 34px
+     (48px on a phone), and a 32px box let it hang over the table's top rule. */
   .switch {
     display: flex;
     align-items: center;
-    height: 32px;
-    padding: 0 20px;
+    min-height: 32px;
+    padding: 0 12px;
     border-top: 1px solid var(--c-rule);
   }
 </style>

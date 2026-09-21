@@ -240,4 +240,24 @@
       height: 44px;
     }
   }
+
+  /* §6.8: the hint is a sentence about a gesture the phone does not offer, and
+     beside its label it wrapped into three lines; the presets take the row
+     under the label instead of crowding it. */
+  @media (max-width: 899px) {
+    .head {
+      flex-wrap: wrap;
+    }
+
+    .hint {
+      display: none;
+    }
+
+    .presets {
+      margin-left: 0;
+      flex: 1 1 100%;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+  }
 </style>

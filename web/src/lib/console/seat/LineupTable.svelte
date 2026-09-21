@@ -283,17 +283,19 @@
     background: var(--c-panel);
   }
 
-  /* §6.8: at 900px the per-task, can-do and via columns move into the sheet.
-     The header and the rows both lose those three cells -- a grid that keeps
-     them puts them on a second line, one under the other. */
+  /* §6.8: at 900px the per-task, can-do and via columns move into the sheet,
+     and so do the row's buttons -- a thumb aims at them there, and in the row
+     they landed on top of the score. What is left is the rank, the model with
+     its tags under the name, and the score. */
   @media (max-width: 899px) {
     .table {
-      --cols: 22px minmax(0, 1fr) 62px 40px;
+      --cols: 22px minmax(0, 1fr) 88px;
     }
 
     .head .task,
     .head .can,
-    .head .via {
+    .head .via,
+    .head .acts {
       display: none;
     }
   }

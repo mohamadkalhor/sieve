@@ -94,23 +94,27 @@
   </div>
 
   <div class="acts">
-    <Segmented
-      label="List mode"
-      value={mode}
-      options={[
-        { value: 'auto', label: 'Auto' },
-        { value: 'manual', label: 'Manual' }
-      ]}
-      onchange={(value) => session.setMode(value as 'auto' | 'manual')}
-    />
-    <Button
-      variant="primary"
-      disabled={session.button.disabled}
-      title={session.button.title}
-      onclick={() => void session.ship()}
-      >{session.shipText}</Button
-    >
-    <SeatMenu {session} />
+    <div class="modes">
+      <Segmented
+        label="List mode"
+        value={mode}
+        options={[
+          { value: 'auto', label: 'Auto' },
+          { value: 'manual', label: 'Manual' }
+        ]}
+        onchange={(value) => session.setMode(value as 'auto' | 'manual')}
+      />
+    </div>
+    <div class="ship">
+      <Button
+        variant="primary"
+        disabled={session.button.disabled}
+        title={session.button.title}
+        onclick={() => void session.ship()}
+        >{session.shipText}</Button
+      >
+    </div>
+    <div class="menu"><SeatMenu {session} /></div>
   </div>
 </header>
 
@@ -226,5 +230,68 @@
     align-items: center;
     gap: 8px;
     flex: 0 0 auto;
+  }
+
+  /* The three groups are wrappers only: at every width above the phone rule
+     they are `display: contents`, so the header lays out exactly as it did
+     before they existed. They exist to be placed as grid areas below 900px. */
+  .modes,
+  .ship,
+  .menu {
+    display: contents;
+  }
+
+  /* §6.8, one column: name and the menu on the first row, the purpose full
+     width under it, and Auto/Manual beside a Ship that takes what is left.
+     Sharing one row was what cut the name to "code:" and broke the purpose
+     into one word per line. */
+  @media (max-width: 899px) {
+    .head {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas:
+        'name name menu'
+        'purpose purpose purpose'
+        'modes ship ship';
+      align-items: center;
+      column-gap: 8px;
+      row-gap: 8px;
+      padding: 12px 16px;
+    }
+
+    .who,
+    .acts {
+      display: contents;
+    }
+
+    .name {
+      grid-area: name;
+      min-width: 0;
+    }
+
+    .purpose,
+    .purpose-edit {
+      grid-area: purpose;
+      margin-top: 0;
+    }
+
+    .modes {
+      grid-area: modes;
+      display: block;
+    }
+
+    .ship {
+      grid-area: ship;
+      display: block;
+    }
+
+    .ship :global(.btn) {
+      width: 100%;
+    }
+
+    .menu {
+      grid-area: menu;
+      display: block;
+    }
   }
 </style>

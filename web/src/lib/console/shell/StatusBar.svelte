@@ -36,15 +36,17 @@
   {/if}
   {#if view}
     {#each view.items as item (item.key)}
-      <span class="item {item.tone}">
+      <span class="item {item.tone}" data-key={item.key}>
         {#if item.key === 'run'}<span class="dot" aria-hidden="true"></span>{/if}
         {item.text}
       </span>
     {/each}
     {#if view.unscored !== null}
-      <a class="item link" href="/unscored">{view.unscored.toLocaleString('en-US')} unscored</a>
+      <a class="item link" data-key="unscored" href="/unscored"
+        >{view.unscored.toLocaleString('en-US')} unscored</a
+      >
     {/if}
-    {#if view.next}<span class="item right">{view.next}</span>{/if}
+    {#if view.next}<span class="item right" data-key="next">{view.next}</span>{/if}
   {/if}
 </footer>
 
@@ -111,5 +113,19 @@
   .link:focus-visible {
     outline: 2px solid var(--c-accent);
     outline-offset: 1px;
+  }
+
+  /* §6.8: at 375 the bar is wider than the screen, so it scrolled and the last
+     item was cut mid-word at the edge. The phone keeps what is worth a phone's
+     width -- the run state and the way to the unscored models -- and the rest
+     is on the desktop. A failure is never dropped: it carries no `data-key`. */
+  @media (max-width: 899px) {
+    .item[data-key]:not([data-key='run']):not([data-key='unscored']) {
+      display: none;
+    }
+
+    .status {
+      gap: 12px;
+    }
   }
 </style>

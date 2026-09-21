@@ -219,9 +219,11 @@
   }
 
   /* §6.8: below 900px the row is the rank, the model and the score -- per-task,
-     can-do and via are things the sheet beside the model already says -- and
-     the move and the tags sit under the name instead of beside it, because
-     there is no longer a column's worth of room to put them in. */
+     can-do and via are things the sheet beside the model already says, and the
+     move and the tags sit under the name instead of beside it, because there
+     is no longer a column's worth of room to put them in. The row's buttons
+     move into the sheet with them: drawn here they sat on top of the score
+     number, and a phone aims at them in the sheet. */
   @media (max-width: 899px) {
     .row {
       align-items: start;
@@ -230,7 +232,8 @@
 
     .cell.task,
     .cell.can,
-    .cell.via {
+    .cell.via,
+    .cell.acts {
       display: none;
     }
 
@@ -240,9 +243,12 @@
       gap: 2px;
     }
 
-    .cell.rank,
-    .cell.acts {
+    .cell.rank {
       align-items: center;
+      align-self: center;
+    }
+
+    .cell.score {
       align-self: center;
     }
   }
