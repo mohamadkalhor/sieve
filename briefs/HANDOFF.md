@@ -1560,3 +1560,42 @@ and `console-f` were brought up to the current UI without losing a check.
 (`SIEVE_E2E_PORT=8331`: 8123 and 8127 are taken on this host).
 
 **Commit.** `dfa92e7` on `console`, pushed as `1ca12f5..dfa92e7`.
+
+## PHONE · the five the 375 screen showed
+
+**Fixed.** In `web/src/lib/console/{seat,shell}`: the seat header stacks at 375
+-- name and the seat menu, then the purpose full width, then Auto/Manual beside
+a Ship that takes the rest of the line, which is what had cut the name to
+"code:" and the purpose to one word per line; the weights hint "one bar, drag a
+divider" is not drawn below 900px and the presets get a line of their own; the
+row is rank, model (tags under the name) and score, with the pin and the remove
+only in the sheet, where they had been landing on the score; the Lineup switch
+starts where the table's cells start instead of hanging over the table's top
+rule; the status bar shows the run state and the unscored link only, so nothing
+is cut mid-word at 375.
+
+**Item 6, the 404.** No card is owed, and `v1.py`'s `model-card` is right to
+answer 404: a card is per (id, modality) and no image-to-video model carries
+that id. On `/seats` the inspector asks
+`GET /v1/model-card?id=anthropic%2Fclaude-opus-5&modality=image-to-video`
+because `/seats` redirects to `animate_general`, and that seat's lineup is led
+by the three llm models the gateway can reach instead of by video models.
+
+**So the fix is upstream, not in the route.** `engine._rank_profile` builds its
+pool as `set(obs.models()) | set(store.local_ids())`, and `store.local_ids`
+(`sieve/store/db.py:663`) is modality-free: a router id that matched an llm
+model is marked reachable -- and given a position, so it ships -- in every
+modality's ranking, against `CONSOLE.md:118`, "pool | every reachable model of
+the modality". A video seat therefore offers llm rows whose card, asked for in
+the seat's own modality, cannot exist. Scoping `local_ids` to the profile's
+modality is the change; it moves what media seats ship, so it is not this card.
+
+**Checks.** `web/e2e/console-phone.spec.ts` measures all five as boxes at
+375x812, at 900 (where the row still draws its buttons, and none of them sits on
+the score) and at the desk, which the three phone-only changes had to leave
+alone. `pnpm check` 0 errors / 0 warnings; `pnpm lint` clean; `pnpm test` 357
+passed / 26 files; `pnpm build` green; `pnpm test:e2e` 98 passed, 0 failed
+(`SIEVE_E2E_PORT=8331`). Screenshots of `/seats/coder` at 375, 414 and 1440 in
+`/srv/personal/sieve-console-uitest/phone/`.
+
+**Commit.** `654072b`, pushed to `origin/console` as `f93f7f1..654072b`.
