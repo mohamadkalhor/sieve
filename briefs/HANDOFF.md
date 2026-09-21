@@ -1540,3 +1540,23 @@ command, Esc handing focus back, and the status bar's two silences.
 **Commit.** `67fffe9`, on top of `3e79210` (the pane, the bar and the palette's
 name) and `1d2213a` (the three stores). Pushed to `origin/console` as
 `e6b428f..67fffe9`.
+
+## FIX · the five the UI test confirmed
+
+**Fixed.** 1: `/profiles/<name>`, `/profiles`, `/rankings/<p>` and
+`/chains/<p>` were 404s, not redirects -- a loader with no page beside it is not
+a route SvelteKit matches, so the load never ran; each has its page now.
+2: any refused `/v1/status` read puts a line in the bar, not only an unreachable
+one. 3: the seat route no longer asks for the seats list beside the pane, and
+the store shares one in-flight read. 4: an answer that landed after the reader
+had left the seat wrote the seat's own address back, which is why the pool's
+"score them" link did nothing; the `?model=` correction is written only while
+that seat is still the address. 5: `web/e2e/console-fix.spec.ts` proves all of
+it, remove/restore included, and `smoke`, `focus`, `rerank.perf`, `field-search`
+and `console-f` were brought up to the current UI without losing a check.
+
+**Checks.** `pnpm check` 0 errors / 0 warnings; `pnpm lint` clean; `pnpm test`
+357 passed / 26 files; `pnpm build` green; `pnpm test:e2e` 93 passed, 0 failed
+(`SIEVE_E2E_PORT=8331`: 8123 and 8127 are taken on this host).
+
+**Commit.** `dfa92e7` on `console`, pushed as `1ca12f5..dfa92e7`.
