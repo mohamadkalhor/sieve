@@ -19,6 +19,7 @@ export interface BarItem {
   key: string;
   text: string;
   tone: Tone;
+  title?: string;
 }
 
 export interface Bar {
@@ -83,7 +84,12 @@ export function bar(status: StatusRow, now: Date = new Date()): Bar {
   const run = runItem(status, now);
   if (run) items.push(run);
   if (status.runs?.last?.summary) {
-    items.push({ key: 'summary', text: status.runs.last.summary, tone: 'muted' });
+    items.push({
+      key: 'summary',
+      text: status.runs.last.summary,
+      tone: 'muted',
+      title: status.runs.last.summary
+    });
   }
   if (typeof status.reachable === 'number') {
     items.push({ key: 'reachable', text: `${count(status.reachable)} reachable`, tone: 'muted' });

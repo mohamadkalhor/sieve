@@ -60,6 +60,11 @@ that: each of A–E as written is several hours of work.
 
 ---
 
+## STATUS
+
+The summary now ellipsizes into the space left, links to `/runs`, and retains its full text for hover and assistive technology.
+The desktop, tablet, and phone regression is in `web/e2e/console-status.spec.ts`; full E2E passed 104/104.
+
 ## A · scoring and axes
 
 Landed and green. Left for whoever takes this on:

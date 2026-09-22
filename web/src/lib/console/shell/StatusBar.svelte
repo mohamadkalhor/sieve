@@ -36,10 +36,20 @@
   {/if}
   {#if view}
     {#each view.items as item (item.key)}
-      <span class="item {item.tone}" data-key={item.key}>
-        {#if item.key === 'run'}<span class="dot" aria-hidden="true"></span>{/if}
-        {item.text}
-      </span>
+      {#if item.key === 'summary'}
+        <a
+          class="item link summary"
+          data-key={item.key}
+          href="/runs"
+          title={item.title ?? item.text}
+          aria-label={item.text}
+        >{item.text}</a>
+      {:else}
+        <span class="item {item.tone}" data-key={item.key}>
+          {#if item.key === 'run'}<span class="dot" aria-hidden="true"></span>{/if}
+          {item.text}
+        </span>
+      {/if}
     {/each}
     {#if view.unscored !== null}
       <a class="item link" data-key="unscored" href="/unscored"
@@ -62,21 +72,22 @@
     font-family: var(--f-mono);
     font-size: 11px;
     color: var(--c-muted);
-    /* The row is one line of a fixed height, so on a narrow screen it scrolls
-       inside itself rather than widening the page. Clipping would be quieter
-       and would hide a field the server did send. */
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-  }
-  .status::-webkit-scrollbar {
-    display: none;
+    /* The summary yields the remaining width; every operational item keeps its
+       full width, so the bar itself never makes the page scroll sideways. */
+    overflow: hidden;
   }
   .item {
     display: flex;
     align-items: center;
+    flex: 0 0 auto;
     gap: 6px;
     white-space: nowrap;
+  }
+  .item.summary {
+    min-width: 0;
+    overflow: hidden;
+    flex: 1 1 auto;
+    text-overflow: ellipsis;
   }
   .item.right {
     margin-left: auto;
