@@ -1599,3 +1599,13 @@ passed / 26 files; `pnpm build` green; `pnpm test:e2e` 98 passed, 0 failed
 `/srv/personal/sieve-console-uitest/phone/`.
 
 **Commit.** `654072b`, pushed to `origin/console` as `f93f7f1..654072b`.
+
+## POLISH
+
+Fixed the 900–1023px shell overflow and full-width lineup table, restored model-row focus after pin/remove/restore and reranking, and enlarged phone purpose, preset, and weight-segment hit areas. Added `web/e2e/console-polish.spec.ts` covering the three defects. Commit `ced62d4`, pushed to `origin/console`.
+
+Round 3 items 2, 3 and 4 are not bugs, checked on a fresh seeded server: (2) the seed measures only Cost, so moving weights rescales every score (0.08 to 0.02) but cannot reorder them, and Ship stays 'Ship now' because the lineup is unchanged; (3) switching to Manual keeps a hand list the seat already has, on purpose, and on a seat without one it starts from the lineup in order; (4) History opens in the inspector pane and lists the changes.
+
+Checks: `pnpm check`, `pnpm lint`, `pnpm test` (357 passed), `pnpm build`, targeted polish E2E (3 passed), full E2E (101 passed, 0 failed).
+
+**Commit.** `ced62d4`, pushed to `origin/console`.
