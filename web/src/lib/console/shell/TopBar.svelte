@@ -156,7 +156,7 @@
      228px logo cell and the full search sentence leave those links wider than
      the window. Keep every destination and collapse only the decorative space
      and search copy; the icon remains the same command-palette control. */
-  @media (min-width: 900px) and (max-width: 1023px) {
+  @media (min-width: 900px) and (max-width: 1279px) {
     .topbar {
       gap: 6px;
     }

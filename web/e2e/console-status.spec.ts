@@ -3,8 +3,11 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 const SUMMARY = 'status summary '.repeat(40).slice(0, 400);
 const PHONE = { width: 375, height: 812 };
 const DESKS = [
-  { width: 1440, height: 900 },
-  { width: 1024, height: 768 }
+  { width: 1024, height: 768 },
+  { width: 1040, height: 768 },
+  { width: 1075, height: 768 },
+  { width: 1100, height: 768 },
+  { width: 1440, height: 900 }
 ];
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -76,26 +79,47 @@ test('a long run summary yields to every status item on a desk', async ({ page }
 
   for (const viewport of DESKS) {
     const status = await openSeat(page, viewport);
-    const footer = await box(status, 'the status bar');
+    const topbar = page.locator('header.topbar');
     const summary = status.getByRole('link', { name: SUMMARY });
     const unscored = status.getByRole('link', { name: '333 unscored' });
+    const next = status.locator('[data-key="next"]');
+    const windowWidth = await page.evaluate(() => window.innerWidth);
 
     await expect(summary).toHaveAttribute('title', SUMMARY);
     await expect(summary).toHaveAttribute('href', '/runs');
     await expect(unscored).toBeVisible();
-    expect(
-      await summary.evaluate((element) => element.scrollWidth > element.clientWidth),
-      `the ${viewport.width}px summary is not ellipsized`
-    ).toBe(true);
+    await expect(next).toBeVisible();
+    const summaryStyle = await summary.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        display: style.display,
+        textOverflow: style.textOverflow,
+        truncated: element.scrollWidth > element.clientWidth
+      };
+    });
+    expect(summaryStyle.textOverflow).toBe('ellipsis');
+    expect(summaryStyle.display).not.toBe('flex');
+    expect(summaryStyle.truncated, `the ${viewport.width}px summary is not truncated`).toBe(true);
 
+    for (const [locator, what] of [
+      [topbar, 'the top bar'],
+      [status, 'the status bar']
+    ] as const) {
+      const where = await box(locator, what);
+      expect(where.x + where.width, `${what} runs past the window`).toBeLessThanOrEqual(
+        windowWidth + 1
+      );
+    }
     for (const item of await status.locator(':scope > *').all()) {
       if (!(await item.isVisible())) continue;
       const where = await box(item, 'a status item');
-      expect(where.x + where.width, 'a status item runs past the footer').toBeLessThanOrEqual(
-        footer.x + footer.width + 1
+      expect(where.x + where.width, 'a status item runs past the window').toBeLessThanOrEqual(
+        windowWidth + 1
       );
     }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
+    expect(await next.evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(
+      await next.evaluate((element) => element.clientWidth)
+    );
 
     await unscored.click();
     await expect(page).toHaveURL(/\/unscored$/);

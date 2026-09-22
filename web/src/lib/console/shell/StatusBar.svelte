@@ -84,9 +84,11 @@
     white-space: nowrap;
   }
   .item.summary {
+    display: block;
     min-width: 0;
     overflow: hidden;
     flex: 1 1 auto;
+    line-height: var(--h-status);
     text-overflow: ellipsis;
   }
   .item.right {
