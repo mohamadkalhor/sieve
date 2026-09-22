@@ -60,7 +60,8 @@ async function inStep(page: Page): Promise<string[]> {
   const answer = await page.request.get('/v1/seats');
   expect(answer.ok(), 'the seats list did not answer').toBe(true);
   const rows = (await answer.json()) as { name: string; changes?: number | null }[];
-  return rows.filter((row) => (row.changes ?? 0) === 0).map((row) => row.name);
+  // `null` means the server did not compare, which is not the same as in step
+  return rows.filter((row) => row.changes === 0).map((row) => row.name);
 }
 
 /**

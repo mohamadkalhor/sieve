@@ -69,6 +69,24 @@ export function groupByModality(rows: readonly SeatRow[]): SeatGroup[] {
 }
 
 /**
+ * The seat `/seats` opens: the one you last worked in, else the first with
+ * changes waiting, else the first seat -- "first" in the pane's order, so the
+ * seat that opens is the one at the top of the list beside it, not whichever
+ * the server happened to sort first (a video seat, alphabetically).
+ */
+export function landingSeat(
+  rows: readonly SeatRow[],
+  remembered: string | null
+): SeatRow | undefined {
+  const ordered = groupByModality(rows).flatMap((group) => group.rows);
+  return (
+    ordered.find((row) => row.name === remembered) ??
+    ordered.find((row) => (row.changes ?? 0) > 0) ??
+    ordered[0]
+  );
+}
+
+/**
  * The badge beside a seat's name.
  *
  * The count is the difference between what ships and what the connector holds,

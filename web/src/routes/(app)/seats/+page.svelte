@@ -17,6 +17,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { seats } from '$lib/console/context';
+  import { landingSeat } from '$lib/console/logic/seats';
   import SeatsPane from '$lib/console/seats/SeatsPane.svelte';
 
   /** §1.3's key: the seat page writes it, this page reads it, so a return
@@ -47,11 +48,7 @@
         opening = false;
         return;
       }
-      const remembered = window.localStorage.getItem(LAST_SEAT);
-      const seat =
-        rows.find((row) => row.name === remembered) ??
-        rows.find((row) => (row.changes ?? 0) > 0) ??
-        rows[0];
+      const seat = landingSeat(rows, window.localStorage.getItem(LAST_SEAT)) ?? rows[0];
       const query = wantsNew ? '?new=1' : '';
       await goto(`/seats/${encodeURIComponent(seat.name)}${query}`, { replaceState: true });
     })();

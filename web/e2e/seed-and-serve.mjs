@@ -78,10 +78,12 @@ modalities = ["text-to-image", "image-editing", "text-to-video", "image-to-video
 
 [inventories.gateway]
 kind = "list"
+# ids the recorded catalogue holds: a seat ranks only what it can reach in
+# its own modality, so a video id the catalogue lacks leaves video seats empty
 models = [
   "anthropic/claude-opus-5", "anthropic/claude-sonnet-5", "openai/gpt-5-2",
   "google/gemini-3-pro", "z-ai/glm-5.3", "deepseek/deepseek-v4",
-  "google/veo-4", "openai/sora-3"
+  "google/veo-3-1", "google/veo-3-1-fast"
 ]
 
 [targets.out]

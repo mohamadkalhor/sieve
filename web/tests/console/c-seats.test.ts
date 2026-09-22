@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { SeatRow } from '../../src/lib/api/client';
 import type { Modality } from '../../src/lib/types';
-import { MODALITY_LABEL, badge, groupByModality } from '../../src/lib/console/logic/seats';
+import {
+  MODALITY_LABEL,
+  badge,
+  groupByModality,
+  landingSeat
+} from '../../src/lib/console/logic/seats';
 
 /**
  * The seats list: the modality order it is grouped by, and the two things a
@@ -98,5 +103,27 @@ describe('badge', () => {
       changes: null
     });
     expect(badge(hand)).toEqual({ text: 'hand', tone: 'muted' });
+  });
+});
+
+describe('landingSeat', () => {
+  const rows = [
+    seat({ name: 'animate', modality: 'text-to-image' }),
+    seat({ name: 'coder', modality: 'llm' }),
+    seat({ name: 'writer', modality: 'llm' })
+  ];
+
+  it('opens the top of the list the pane draws, not the first row sent', () => {
+    expect(landingSeat(rows, null)?.name).toBe('coder');
+  });
+
+  it('prefers the seat you last worked in, then one with changes waiting', () => {
+    expect(landingSeat(rows, 'animate')?.name).toBe('animate');
+    const waiting = rows.map((row) => (row.name === 'writer' ? { ...row, changes: 2 } : row));
+    expect(landingSeat(waiting, 'gone')?.name).toBe('writer');
+  });
+
+  it('has nothing to open when there are no seats', () => {
+    expect(landingSeat([], null)).toBeUndefined();
   });
 });
