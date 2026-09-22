@@ -231,3 +231,119 @@ Because one full-suite failure duplicates direct check 10, the aggregate is repo
 - The targeted repository D/E/F and responsive suites passed 26/26.
 
 The seeded servers started by this test run were stopped after testing. The unrelated `uvicorn` service on port 8124 was not touched.
+
+## Round 3 (Codex, Luna)
+
+Tested the fresh `console` branch clone at `/tmp/luna-console` against the seeded throwaway server on port 8341. The browser pass used Chromium at 1440×900, 1100×800, 1023×900 for the stated switcher boundary, 768×1024, and 375×812. Mutating checks used the supplied `ci-secret` token. No application files were changed.
+
+Summary: 19 pass, 6 fail, 0 could not test across 25 UI checks. The separate repository E2E suite finished with 98 passed.
+
+### Check matrix
+
+| Check | Status | Screenshot |
+| --- | --- | --- |
+| Responsive layout, panes, drawer/switcher/sheet, and no clipping | fail | `01-look-1440.png`, `01-look-1100.png`, `01-look-1023.png`, `01-look-768.png`, `01-look-375.png`, `01-look-1100-drawer.png`, `01-look-1023-switcher.png`, `01-look-375-sheet.png` |
+| 1440 comparison with `Console.reference.html` | pass | `01-look-1440.png` |
+| Muted text contrast | pass | `02-muted-contrast.png` |
+| Divider mouse/keyboard movement, 100% invariant, rerank, Ship label | fail | `03-weights-drag-keyboard.png`, `03b-rerank.png` |
+| Segment exact percent, lock, add/remove axis, last-axis guard | pass | `04-axis-popover-lock-remove.png`, `17-last-axis.png` |
+| Presets Even / Quality first / Value and Reset | pass | `05-presets-reset.png` |
+| Four Must chips change the list | pass | `06c-must-changes.png` |
+| Ships − / + stepper never below 1 | pass | `06b-ship-stepper.png` |
+| Trim routers set and blank | pass | `07-trim-router.png` |
+| Pin, remove, restore | pass | `10-pin-remove-restore.png` |
+| Manual starts from current lineup; move/drop/Add models; return Auto | fail | `09-manual-start.png`, `09-manual-list.png` |
+| All reachable filter, Unscored only, and `/unscored` link | pass | `08-all-reachable-unscored.png` |
+| Edit the purpose sentence | pass | `11-purpose-edit.png` |
+| Seat menu Copy/Rename/Delete/History | fail | `12-seat-menu-full.png`, `12-history.png` |
+| New seat, including copy-from | pass | `13-new-seat.png` |
+| Ship reports the actual result | pass | `14-ship-outcome.png` |
+| Model selection, inspector provenance/abilities/price/served-by, `?model=` and unknown axes | pass | `15-inspector-model.png` |
+| Keyboard list selection, `p`, Delete, and field shortcut guard | fail | `16-keyboard-list.png`, `16b-field-shortcut-guard.png` |
+| Ctrl+K and `/` palette, arrows, Enter, Escape focus return | pass | `18-palette.png` |
+| Every top-bar link works inside the shell | pass | `19-top-links.png` |
+| Legacy address redirects | pass | `20-legacy-redirects.png` |
+| Keyboard-only traversal and visible focus rings | pass | `21-keyboard-only.png` |
+| Phone clipping/overlap/table fit and ≥44px touch targets | fail | `22-mobile-targets.png` |
+| Failure honesty: status 500, seats 404, model-card 404, preview 500, preview delayed 10s | pass | `23-status-500.png`, `23-seats-404.png`, `23-model-card-404.png`, `23-preview-500.png`, `23-preview-delay-busy.png` |
+| Cold-load `/v1/seats` request count | pass | `24-seats-cold-load.png` |
+
+The expected `/auth/me` 404 was ignored. The `/v1/model-card` 404 was exercised as the known seeded-data fallback and did not count as a UI failure. The final contrast audit found a minimum rendered contrast of 6.20:1, above 4.5:1.
+
+### Failures
+
+1. Responsive shell clips at the 900–1023px switcher breakpoint — severity: high
+
+   Steps: set the viewport to 1023×900 and open `/seats/coder`.
+
+   Expected: CONSOLE.md §6.8 keeps the seat switcher layout usable from 900–1023px with no sideways scroll or clipped top/status controls.
+
+   Actual: the document reports `scrollWidth=1023`, but the rendered `.topbar`, seat stage, and status bar are each 1075px wide. The rightmost 52px is clipped by the shell, including part of the nav/account area and the status bar. The 1440 three-pane, 1100 drawer, 768 single-column, and 375 single-column layouts otherwise rendered.
+
+   Evidence: `01-look-1023.png`.
+
+2. Weight changes do not rerank or describe the pending Ship count — severity: high
+
+   Steps: sign in, open a text seat, drag the Cost/Tool-use divider, and wait 2.2 seconds for the preview.
+
+   Expected: CONSOLE.md §8(5) and §5.2 require adjacent weights to move while summing to 100%, the server-backed list to rerank, and the Ship button to say how many changes are pending.
+
+   Actual: the weights changed and still summed to 100%, but the table row IDs/text/scores stayed unchanged and the button remained `Ship now` instead of reporting a change count.
+
+   Evidence: `03b-rerank.png`.
+
+3. Manual mode does not start from the current lineup — severity: high
+
+   Steps: record the Auto lineup for `reader`, then switch using the `Manual` radio.
+
+   Expected: CONSOLE.md §8(12) and §5.2 start Manual from the current lineup in the same order.
+
+   Actual: Auto was `[anthropic/claude-sonnet-5, anthropic/claude-opus-5, z-ai/glm-5.3]`; Manual started `[z-ai/glm-5.3, anthropic/claude-opus-5]`, changing the order and dropping a row before any manual edit. Move, drop, and Add models controls were present and individually operable.
+
+   Evidence: `09-manual-start.png`.
+
+4. History has no visible result — severity: medium
+
+   Steps: sign in, open the seat More menu, and choose the `History` menuitem.
+
+   Expected: CONSOLE.md §6.3 and §8(15) provide a visible history result for the seat.
+
+   Actual: the menu contains Copy, Rename, Delete, and History, but clicking History closes the menu and produces no dialog, panel, history rows, or explanatory message.
+
+   Evidence: `12-seat-menu-full.png`, `12-history.png`.
+
+5. Keyboard Delete does not remove the selected model — severity: high
+
+   Steps: focus the model list, press ArrowDown to select the next row, press `p`, then press Delete.
+
+   Expected: CONSOLE.md §8(19) pins with `p` and removes the selected model with Delete, exposing a restore action.
+
+   Actual: the selected row was pinned by `p`, but Delete did not expose Restore and the row remained. Typing `p` into the purpose input did not fire row shortcuts.
+
+   Evidence: `16-keyboard-list.png`, `16b-field-shortcut-guard.png`.
+
+6. Phone controls are below the required 44px touch target — severity: medium
+
+   Steps: open `/seats/coder` at 375×812 and measure visible interactive elements.
+
+   Expected: CONSOLE.md §6.8 makes every phone tap target at least 44px, with no overlaps or clipping.
+
+   Actual: visible controls included the purpose button at about 20.8px high, preset buttons at 26px high, and weight segments at 40px high. The sheet spanned the seat area and the table fit, but these controls violate the target-size requirement.
+
+   Evidence: `22-mobile-targets.png`.
+
+### 1440 reference comparison
+
+The core geometry matches the reference: a 52px top bar, 260px seats pane, 840px middle pane, 340px inspector, and 28px status bar. The current rendered differences that matter are:
+
+- The current spec adds Unscored, Connectors, Axes, and the account button to the top bar; the older static mockup shows only Seats, Field, Sources, Runs, and Guide.
+- The seeded data has 10 text seats and additional modality groups, versus the mockup’s illustrative shorter list.
+- The seed has three reachable models and many no-score states, so the table is shorter than the mockup’s five-row example and the inspector shows the synthetic Z.ai model rather than the mockup’s GPT example.
+- The current status response omits run/ranked/shipped fields, so the status bar omits them rather than inventing zeros; it still shows reachable, telemetry, unscored, and next-run fields.
+- Narrow weight segments intentionally show only their number/blank label according to §5.2 label fitting.
+
+### E2E totals
+
+Command: `SIEVE_E2E_PORT=8342 CI=1 pnpm test:e2e --reporter=line 2>&1 | tail -n 25`
+
+Result: `98 passed (3.6m)`, exit 0. The first attempt lacked the server’s documented `/root/.local/bin` PATH and failed before tests could start; the command was rerun with that environment setup and produced the totals above.
