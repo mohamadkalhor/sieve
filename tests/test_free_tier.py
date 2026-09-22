@@ -264,3 +264,63 @@ def test_a_model_on_two_leaderboards_keeps_both_scores() -> None:
         assert held == scored[modality], (
             f"{modality}: pulled {len(scored[modality])} models, store kept {len(held)}"
         )
+
+
+# --------------------------------------------------------------------------- #
+# a music URL that answers with a picture board
+# --------------------------------------------------------------------------- #
+
+#: What the two music URLs returned on 2026-09-21: AA's text-to-image arena at
+#: `music/with-vocals` and its image-editing arena at `music/instrumental`, row
+#: for row -- same UUIDs, same Elos -- beside the two arenas read in the same
+#: pull. From 2026-09-16 the daily pull stored every row as music, and
+#: Seedream 5.0 Pro came first in the music ranking.
+WRONG_BOARD = FIXTURES / "aa_music_wrong_board_2026_09_21"
+
+
+def _pull_music_beside_images(directory: Path) -> object:
+    cfg = SourceConfig(
+        name="aa_media",
+        key_env="ARTIFICIAL_ANALYSIS_API_KEY",
+        modalities=["text-to-image", "image-editing", "music"],
+        options={"free_music_instrumental": True, "free_music_with_vocals": True},
+    )
+    return AAMediaSource().pull(cfg, FixturePlayer(directory))
+
+
+def test_a_music_url_answering_with_an_image_board_stores_nothing_as_music() -> None:
+    """The endpoint path is the only thing that said these rows were music.
+
+    A modality is claimed, never assumed: an answer whose rows are the models
+    this pull just read off another modality's board is that board, whatever
+    URL it came from. It is refused whole and named, and the pull is marked
+    unreadable, so the run says so instead of ranking pictures as songs.
+    """
+    pulled = _pull_music_beside_images(WRONG_BOARD)
+
+    music = sorted(
+        {m.id for m in pulled.models if m.modality == "music"}  # type: ignore[attr-defined]
+        | {o.model_id for o in pulled.observations if o.modality == "music"}  # type: ignore[attr-defined]
+    )
+    assert not music, f"{len(music)} image models were claimed as music: {music[:5]}"
+
+    # the two image boards themselves are untouched
+    images = {m.id for m in pulled.models if m.modality == "text-to-image"}  # type: ignore[attr-defined]
+    assert "bytedance-seed/seedream-5-0-pro" in images
+    assert {m.modality for m in pulled.models} == {"text-to-image", "image-editing"}  # type: ignore[attr-defined]
+
+    assert pulled.ok is False  # type: ignore[attr-defined]
+    warnings = " | ".join(pulled.warnings)  # type: ignore[attr-defined]
+    assert "music/with-vocals" in warnings and "text-to-image board" in warnings, warnings
+    assert "music/instrumental" in warnings and "image-editing board" in warnings, warnings
+
+
+def test_the_real_music_boards_pass_the_same_check() -> None:
+    """The 2026-09-08 recordings share no row with any arena, so nothing is refused."""
+    pulled = _pull_music_beside_images(FIXTURES)
+
+    stored = [o for o in pulled.observations if o.modality == "music"]  # type: ignore[attr-defined]
+    assert len(stored) == 18 + 15, "every row of both real music boards is kept"
+    assert "suno/suno-v5-5" in {o.model_id for o in stored}
+    assert pulled.ok is True  # type: ignore[attr-defined]
+    assert not [w for w in pulled.warnings if "board" in w], pulled.warnings  # type: ignore[attr-defined]

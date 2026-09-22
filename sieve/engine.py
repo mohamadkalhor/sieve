@@ -318,7 +318,11 @@ def _rank_profile(
         else {}
     )
     costs, costed_from_telemetry = add_cost_observations(obs, profile, at, measured_tokens)
-    local = store.local_ids(owner_id)
+    # Reachable models *of this modality*. A router row names a model, not what
+    # it makes, so every other modality's reachable ids would otherwise join
+    # this pool at a score of 0 and take positions (and ship) in a seat that
+    # cannot use them.
+    local = store.local_ids(owner_id, profile.modality)
     try:
         adjusted = _cheapest_multipliers(store, costs, local, owner_id)
     except (RuntimeError, AttributeError):

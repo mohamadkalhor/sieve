@@ -537,7 +537,9 @@ def chain_for(
         return None
     caps = capability_map(store, found.modality) if cfg.needs else None
     ids = shipped_ids(ranked, cfg, caps)
-    local = store.local_ids(owner_id=owner_id)
+    # only what this seat's modality holds, even from a ranking stored before
+    # the engine scoped its pool: a video combo never seats an llm
+    local = store.local_ids(owner_id=owner_id, modality=found.modality)
     ids = [model for model in ids if local.get(model)]
     if not ids:
         return None

@@ -12,7 +12,9 @@ categories exist.
 
 The free-tier music and speech endpoints are probed only when switched on in
 `sieve.toml`; their shape is not documented, so whatever is numeric is stored
-and anything else is a warning. They never fail the pull.
+and anything else is a warning. They never raise. Their modality comes from
+the URL alone, so an answer that is really another board is refused rather
+than stored under it -- see `copied_board`.
 """
 
 from __future__ import annotations
@@ -173,6 +175,57 @@ def model_id_of(entry: dict[str, Any]) -> str | None:
     return canonical_id(creator_slug, candidate)
 
 
+def identities(entry: dict[str, Any]) -> set[str]:
+    """What names one published row as AA's model, on whichever board it sits.
+
+    AA gives a model one `id` across every board -- GPT Image 2 carries the same
+    UUID on text-to-image and image-editing -- and one display name. Both are
+    kept, so a board that ever stops publishing the UUID is still recognised.
+    """
+    out: set[str] = set()
+    uuid = str(entry.get("id") or "").strip()
+    if _UUID.match(uuid):
+        out.add(f"id:{uuid.lower()}")
+    name = str(entry.get("name") or "").strip().lower()
+    if name:
+        creator = entry.get("model_creator") or entry.get("creator") or {}
+        if isinstance(creator, dict):
+            creator = creator.get("name") or creator.get("slug") or ""
+        out.add(f"name:{str(creator).strip().lower()}/{name}")
+    return out
+
+
+#: The share of an answer's rows that, found on one board of another modality,
+#: makes the answer that board. Measured, not guessed: on 2026-09-21 every row
+#: of `music/with-vocals` was on the text-to-image board and every row of
+#: `music/instrumental` on image-editing, while in the 2026-09-08 recordings the
+#: real music, speech-to-text and speech-to-speech boards share no row, by id
+#: or by name, with any board of another modality (arenas trimmed to 40 rows).
+#: Boards of one modality overlap by design (the two music votes share 15 of 18
+#: models) and are never compared.
+COPIED_SHARE = 0.5
+
+
+def copied_board(
+    rows: list[dict[str, Any]], modality: Modality, boards: dict[Modality, set[str]]
+) -> tuple[Modality, int] | None:
+    """`(modality, rows shared)` when `rows` is really a board of another modality.
+
+    A model can sit on two boards of different modalities, so one shared row
+    proves nothing. An answer made mostly of one other board's models is that
+    board served at the wrong URL.
+    """
+    keyed = [identities(row) for row in rows]
+    found: tuple[Modality, int] | None = None
+    for other, seen in boards.items():
+        if other == modality:
+            continue
+        shared = sum(1 for keys in keyed if keys & seen)
+        if shared > COPIED_SHARE * len(keyed) and (found is None or shared > found[1]):
+            found = (other, shared)
+    return found
+
+
 class Category(NamedTuple):
     """One published per-category Elo, with its own sample size and interval."""
 
@@ -266,18 +319,26 @@ class AAMediaSource:
         headers = {"x-api-key": key} if key else {}
 
         wanted = [m for m in (cfg.modalities or list(ENDPOINTS.values()))]
+        # every model each board of this pull published, by modality -- what a
+        # free-tier answer is checked against before its URL is believed
+        boards: dict[Modality, set[str]] = {}
         for path, modality in ENDPOINTS.items():
             if modality not in wanted:
                 continue
-            self._pull_arena(http, headers, path, modality, at, result)
+            self._pull_arena(http, headers, path, modality, at, result, boards)
 
-        for path, spec in FREE_ENDPOINTS.items():
-            option = f"free_{slugify(path)}"
-            if not cfg.options.get(option, False):
-                continue
-            if spec.modality not in wanted:
-                continue
-            self._pull_free(http, headers, path, spec, at, result)
+        free = [
+            (path, spec)
+            for path, spec in FREE_ENDPOINTS.items()
+            if cfg.options.get(f"free_{slugify(path)}", False) and spec.modality in wanted
+        ]
+        if free and not boards:
+            result.warnings.append(
+                "aa_media: no arena board was read in this pull, so the free tier's "
+                "modalities rest on their URLs alone"
+            )
+        for path, spec in free:
+            self._pull_free(http, headers, path, spec, at, result, boards)
 
         result.rate_limit = http.rate_limit()
         return result
@@ -292,6 +353,7 @@ class AAMediaSource:
         modality: Modality,
         at: Any,
         result: PullResult,
+        boards: dict[Modality, set[str]],
     ) -> None:
         url = f"{BASE}/{path}"
         response = http.get(url, headers=headers, params={"include_categories": "true"})
@@ -310,6 +372,7 @@ class AAMediaSource:
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
+            boards.setdefault(modality, set()).update(identities(entry))
             model_id = model_id_of(entry)
             if model_id is None:
                 continue
@@ -387,6 +450,7 @@ class AAMediaSource:
         spec: FreeSpec,
         at: Any,
         result: PullResult,
+        boards: dict[Modality, set[str]],
     ) -> None:
         """One free-tier endpoint, read to the shape it really returns.
 
@@ -394,6 +458,12 @@ class AAMediaSource:
         confidence interval in beside the Elo as if it were a second
         measurement, and wrote two different leaderboards to one field name.
         This reads only the keys the spec names.
+
+        Nothing in a row says what it measures; only the URL does. From
+        2026-09-16 AA answered both music URLs with its image arenas, and every
+        row went into the catalogue as a music model. So an answer that is
+        another modality's board is refused whole, named, and the pull marked
+        unreadable, which is what it is.
         """
         url = f"{FREE_BASE}/{path}/models/free"
         try:
@@ -412,11 +482,23 @@ class AAMediaSource:
             result.warnings.append(f"aa_media: {path} free tier returned an unexpected shape")
             return
 
+        rows = [entry for entry in entries if isinstance(entry, dict)]
+        copied = copied_board(rows, spec.modality, boards)
+        if copied is not None:
+            other, shared = copied
+            result.warnings.append(
+                f"aa_media: {path} free tier answered with the {other} board -- {shared} of "
+                f"{len(rows)} rows are models this pull read there -- refused; nothing from "
+                f"it is stored as {spec.modality}"
+            )
+            result.ok = False
+            return
+        for entry in rows:
+            boards.setdefault(spec.modality, set()).update(identities(entry))
+
         stored = 0
         unmatched = 0
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
+        for entry in rows:
             model_id = model_id_of(entry)
             if model_id is None:
                 unmatched += 1
