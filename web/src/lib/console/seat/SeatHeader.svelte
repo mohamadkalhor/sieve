@@ -272,6 +272,7 @@
     .purpose,
     .purpose-edit {
       grid-area: purpose;
+      min-height: 44px;
       margin-top: 0;
     }
 

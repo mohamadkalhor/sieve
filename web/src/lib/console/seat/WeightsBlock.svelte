@@ -259,5 +259,10 @@
       flex-wrap: wrap;
       justify-content: flex-start;
     }
+
+    .chip,
+    .num {
+      min-height: 44px;
+    }
   }
 </style>

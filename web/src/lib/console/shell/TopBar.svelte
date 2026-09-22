@@ -152,7 +152,34 @@
     min-width: 200px;
   }
 
-  @media (max-width: 900px) {
+  /* The seat switcher range still keeps the desktop navigation, but the fixed
+     228px logo cell and the full search sentence leave those links wider than
+     the window. Keep every destination and collapse only the decorative space
+     and search copy; the icon remains the same command-palette control. */
+  @media (min-width: 900px) and (max-width: 1023px) {
+    .topbar {
+      gap: 6px;
+    }
+
+    .logo {
+      width: 52px;
+      flex-basis: 52px;
+    }
+
+    .word,
+    .say,
+    .find .hint {
+      display: none;
+    }
+
+    .find {
+      flex: 0 0 32px;
+      justify-content: center;
+      padding: 0;
+    }
+  }
+
+  @media (max-width: 899px) {
     .logo {
       width: auto;
       flex: 0 0 auto;

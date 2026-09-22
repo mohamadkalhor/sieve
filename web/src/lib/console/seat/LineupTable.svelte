@@ -75,6 +75,7 @@
 
   let list = $state<HTMLElement | null>(null);
   let stop = $state<string | null>(null);
+  let focusId: string | null = null;
   /** The tab stop is the focused row, and until one is focused the selection. */
   const active = $derived(tabStop(ids, stop, pick.id));
 
@@ -85,6 +86,8 @@
   $effect.pre(() => {
     void drawn.length;
     seated = tops(list);
+    const focused = document.activeElement?.closest<HTMLElement>('[data-row]');
+    if (focused?.dataset.row) focusId = focused.dataset.row;
   });
 
   $effect(() => {
@@ -105,6 +108,13 @@
       }
     }
     seated = moved;
+    if (focusId) {
+      const row = list.querySelector<HTMLElement>(`[data-row="${CSS.escape(focusId)}"]`);
+      if (row) {
+        row.focus();
+        focusId = null;
+      }
+    }
   });
 
   function draw(id: string): void {
@@ -123,6 +133,7 @@
 
   function act(action: RowAction, id: string): void {
     if (!settings) return;
+    focusId = id;
     if (action === 'pin') session.edit(pin(settings, id));
     else if (action === 'remove') session.edit(remove(settings, id));
     else if (action === 'restore') session.edit(restore(settings, id));
@@ -250,6 +261,8 @@
 <style>
   .table {
     --cols: 24px 168px minmax(56px, 1fr) 66px 104px 46px 56px;
+    width: 100%;
+    min-width: 0;
   }
 
   .head {

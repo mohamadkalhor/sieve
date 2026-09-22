@@ -96,6 +96,8 @@
   }
 
   .table {
+    width: 100%;
+    min-width: 0;
     padding: 0 0 24px;
   }
 

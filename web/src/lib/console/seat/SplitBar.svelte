@@ -382,6 +382,18 @@
     color: var(--c-ink);
   }
 
+  @media (max-width: 899px) {
+    .track,
+    .seg {
+      min-height: 48px;
+    }
+
+    .add {
+      width: 48px;
+      height: 48px;
+    }
+  }
+
   .hint {
     margin: 8px 0 0;
     font-size: 11px;
