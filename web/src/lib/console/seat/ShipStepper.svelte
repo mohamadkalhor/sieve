@@ -97,6 +97,13 @@
     cursor: default;
   }
 
+  @media (max-width: 899px) {
+    .step {
+      width: 44px;
+      height: 44px;
+    }
+  }
+
   .n {
     min-width: 20px;
     text-align: center;

@@ -388,6 +388,16 @@
       min-height: 48px;
     }
 
+    .seg {
+      min-width: 24px;
+      flex-shrink: 1;
+    }
+
+    .divider {
+      width: 44px;
+      margin-left: -22px;
+    }
+
     .add {
       width: 48px;
       height: 48px;

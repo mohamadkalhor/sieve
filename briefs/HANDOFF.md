@@ -1608,4 +1608,7 @@ Round 3 items 2, 3 and 4 are not bugs, checked on a fresh seeded server: (2) the
 
 Checks: `pnpm check`, `pnpm lint`, `pnpm test` (357 passed), `pnpm build`, targeted polish E2E (3 passed), full E2E (101 passed, 0 failed).
 
+Phone tap targets now meet 44px height / 24px width below 900px, including Must chips, ship stepper, weight segments, dividers, and seat switcher.
+Added a bounding-box regression test covering every visible button, link, input, and slider in `main` at 375x812.
+
 **Commit.** `ced62d4`, pushed to `origin/console`.

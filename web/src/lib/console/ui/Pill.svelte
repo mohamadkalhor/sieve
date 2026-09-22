@@ -44,4 +44,10 @@
     border-color: var(--c-accent);
     color: var(--c-accent);
   }
+
+  @media (max-width: 899px) {
+    .pill {
+      height: 44px;
+    }
+  }
 </style>

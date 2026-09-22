@@ -88,3 +88,30 @@ test('phone purpose, presets and weight segments have phone-sized hit areas', as
   }
   expect(await height(page.locator('.track .seg').first()), 'weight bar height').toBeGreaterThanOrEqual(48);
 });
+
+test('every phone control in main has a usable tap target', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/seats/coder');
+  await expect(page.getByRole('table', SHIP_TABLE)).toBeVisible();
+
+  const controls = page.locator('main button, main a[href], main input, main [role="slider"]');
+  const undersized = await controls.evaluateAll((nodes) =>
+    nodes
+      .filter((node) => {
+        const style = getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      })
+      .map((node) => {
+        const rect = node.getBoundingClientRect();
+        return {
+          control: node.getAttribute('aria-label') ?? node.textContent?.trim() ?? node.tagName,
+          height: rect.height,
+          width: rect.width
+        };
+      })
+      .filter(({ height, width }) => height < 44 || width < 24)
+  );
+
+  expect(undersized).toEqual([]);
+});

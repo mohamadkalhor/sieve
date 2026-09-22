@@ -185,9 +185,10 @@
     }
   }
 
-  @media (pointer: coarse) {
+  @media (max-width: 899px) {
     /* the seat's name is the only way to another seat down here */
     .switcher {
+      min-width: 44px;
       min-height: 44px;
     }
   }
