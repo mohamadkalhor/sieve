@@ -9,6 +9,13 @@ Every GET is answered from the store and touches no network -- a list of
 routers should not be as slow as the slowest one, and a gateway that is down
 should not make the page that would tell you so hang. `test` and `pull` are the
 only two calls that leave the box, and both are explicit.
+
+Every write here -- create, update, delete, `test`, `pull` -- needs the `admin`
+scope, which the gate owner's role alone carries. A connector says which host a
+token this box holds is sent to, so a member or a viewer may tune their own
+profiles without being able to add, redirect or delete one. What a kind may
+carry in `options` is listed per kind below, and an option key a kind does not
+name is refused rather than stored and quietly ignored.
 """
 
 from __future__ import annotations
@@ -44,9 +51,23 @@ _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$", re.I)
 #: rather than storing a key in a database that was built never to hold one.
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 
-#: The options a connector may carry. Every one of them *names* something.
-#: There is deliberately nowhere to put a value that has to stay secret.
-OPTIONS = {"admin_token_env", "timeout"}
+#: The options a connector carries when its kind has not said otherwise. Every
+#: one of them *names* something. There is deliberately nowhere to put a value
+#: that has to stay secret.
+OPTIONS = frozenset({"timeout"})
+
+#: The options each kind understands, by kind. `admin_token_env` is the
+#: ninerouter admin credential's variable name and means nothing to a
+#: read-only catalogue, so a key a kind does not name is refused rather than
+#: stored and quietly ignored.
+OPTIONS_PER_KIND: dict[str, frozenset[str]] = {
+    "ninerouter": OPTIONS | {"admin_token_env"},
+}
+
+
+def allowed_options(kind: str) -> frozenset[str]:
+    """The option keys this kind understands. Kinds are free to say nothing."""
+    return OPTIONS_PER_KIND.get(kind, OPTIONS)
 
 
 class ConnectorBody(BaseModel):
@@ -101,37 +122,52 @@ def connectors_of(request: Request) -> Store:
     return store
 
 
-def problem(body: ConnectorBody) -> str | None:
-    """Why this connector cannot be stored, in a sentence, or None."""
+def problem(body: ConnectorBody) -> tuple[int, str, str] | None:
+    """Why this connector cannot be stored, or None.
+
+    A (status, code, sentence) triple rather than a bare sentence: an option
+    key this kind does not understand is refused as 422 `bad_connector`, the
+    same status a schema violation gets, while everything else here is an
+    ordinary 400 `bad_request`.
+    """
     if not _NAME.match(body.name):
         return (
+            400,
+            "bad_request",
             f"{body.name!r} is not a usable connector name: letters, digits, "
-            "hyphen and underscore, up to 64 characters"
+            "hyphen and underscore, up to 64 characters",
         )
     if body.kind not in KINDS:
-        return f"no connector kind {body.kind!r}; have {', '.join(kinds())}"
+        return (400, "bad_request", f"no connector kind {body.kind!r}; have {', '.join(kinds())}")
     if not re.match(r"^https?://", body.base_url.strip()):
-        return f"base_url must be an http(s) URL, not {body.base_url!r}"
+        return (400, "bad_request", f"base_url must be an http(s) URL, not {body.base_url!r}")
     if body.write and not KINDS[body.kind].writes:
         return (
+            400,
+            "bad_request",
             f"kind {body.kind!r} can only be read from; the kinds that can be "
-            f"written to are {', '.join(writing_kinds())}"
+            f"written to are {', '.join(writing_kinds())}",
         )
     if body.poll_minutes < 1:
-        return "poll_minutes must be at least 1"
-    unknown = sorted(set(body.options) - OPTIONS)
+        return (400, "bad_request", "poll_minutes must be at least 1")
+    allowed = allowed_options(body.kind)
+    unknown = sorted(set(body.options) - allowed)
     if unknown:
         return (
-            f"unknown option(s) {', '.join(unknown)}; a connector carries "
-            f"{', '.join(sorted(OPTIONS))}"
+            422,
+            "bad_connector",
+            f"unknown option(s) {', '.join(unknown)} for kind {body.kind!r}; "
+            f"it carries {', '.join(sorted(allowed))}",
         )
     for field in ("token_env", "admin_token_env"):
         named = body.token_env if field == "token_env" else body.options.get(field)
         if named and not _ENV_NAME.match(str(named)):
             return (
+                400,
+                "bad_request",
                 f"{field} is the NAME of an environment variable holding the token "
                 f"(like GATEWAY_TOKEN), not the token; {str(named)[:8]}... is not a "
-                "variable name"
+                "variable name",
             )
     return None
 
@@ -199,12 +235,12 @@ def get_connector_models(request: Request, connector_id: str, _: Read = None) ->
 def create_connector(
     request: Request,
     body: Annotated[ConnectorBody, Body()],
-    token: Annotated[Token, Depends(require_scope("apply"))],
+    token: Annotated[Token, Depends(require_scope("admin"))],
 ) -> Any:
     store = connectors_of(request)
-    reason = problem(body)
-    if reason:
-        return error(400, "bad_request", reason)
+    complaint = problem(body)
+    if complaint:
+        return error(*complaint)
     owner_id = owner_of(request)
     if store.connector_named(body.name, owner_id):
         return error(409, "conflict", f"a connector named {body.name!r} already exists")
@@ -224,7 +260,7 @@ def update_connector(
     request: Request,
     connector_id: str,
     body: Annotated[ConnectorPatch, Body()],
-    token: Annotated[Token, Depends(require_scope("apply"))],
+    token: Annotated[Token, Depends(require_scope("admin"))],
 ) -> Any:
     store = connectors_of(request)
     connector = found(store, connector_id, owner_of(request))
@@ -232,9 +268,9 @@ def update_connector(
         return error(404, "not_found", f"no connector {connector_id!r}")
     changes = body.model_dump(exclude_none=True)
     merged = connector.model_copy(update=changes)
-    reason = problem(ConnectorBody(**merged.model_dump(include=set(ConnectorBody.model_fields))))
-    if reason:
-        return error(400, "bad_request", reason)
+    complaint = problem(ConnectorBody(**merged.model_dump(include=set(ConnectorBody.model_fields))))
+    if complaint:
+        return error(*complaint)
     clash = store.connector_named(merged.name, owner_of(request))
     if clash is not None and clash.id != connector.id:
         return error(409, "conflict", f"a connector named {merged.name!r} already exists")
@@ -247,7 +283,7 @@ def update_connector(
 def delete_connector(
     request: Request,
     connector_id: str,
-    token: Annotated[Token, Depends(require_scope("apply"))],
+    token: Annotated[Token, Depends(require_scope("admin"))],
 ) -> Any:
     store = connectors_of(request)
     connector = found(store, connector_id, owner_of(request))
@@ -267,22 +303,22 @@ def delete_connector(
 def test_connector(
     request: Request,
     connector_id: str,
-    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+    token: Annotated[Token, Depends(require_scope("admin"))],
 ) -> Any:
     """Reach the router now. Answers 200 with `ok: false` when it is down.
 
     A connector that cannot be reached is a fact about the world, not a server
     error, and a 500 would lose the sentence that says which one it is.
 
-    Gated on `profiles:write` (gate v2, CONTRACTS section 10): this used to
-    carry no scope dependency at all, on the theory that testing a router
-    decides nothing about where traffic goes. That reasoning stood only while
-    every caller reached this box over loopback; behind nginx's edge a bare
-    read would have let anybody with a live gate session -- or nobody at all,
-    before gate existed -- make this box call out to an arbitrary connector's
-    `base_url` on demand. `profiles:write` rather than `apply`: it is the same
-    scope that already lets a caller *read* every connector's shape, and
-    reaching one to ask if it answers is not a stronger act than that.
+    Gated on `admin` (gate v2, then A01; CONTRACTS section 10). It used to
+    carry no scope dependency at all, and then `profiles:write`, on the theory
+    that testing a router decides nothing about where traffic goes. That
+    reasoning stood only while every caller reached this box over loopback;
+    behind nginx's edge a bare read would have let anybody with a live gate
+    session -- or nobody at all, before gate existed -- make this box call out
+    to an arbitrary connector's `base_url` on demand. `admin`, like every other
+    connector write: the call leaves the box carrying a credential the owner
+    put there, whatever the answer turns out to be.
     """
     store = connectors_of(request)
     connector = found(store, connector_id, owner_of(request))
@@ -301,13 +337,14 @@ def test_connector(
 def pull_connector(
     request: Request,
     connector_id: str,
-    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+    token: Annotated[Token, Depends(require_scope("admin"))],
 ) -> Any:
     """Refresh this connector's inventory now, instead of waiting for the hour.
 
-    Gated on `profiles:write` for the same reason `test` now is: it reaches
-    an arbitrary connector's `base_url` on demand, and behind nginx's edge
-    that is not something an anonymous caller should be able to trigger.
+    Gated on `admin` for the same reason `test` is: it reaches an arbitrary
+    connector's `base_url` on demand and spends the credential that connector
+    names, and behind nginx's edge that is not something a member or a viewer
+    should be able to trigger.
     """
     cfg, store = config_of(request), connectors_of(request)
     connector = found(store, connector_id, owner_of(request))

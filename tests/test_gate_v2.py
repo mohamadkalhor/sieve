@@ -214,7 +214,7 @@ def test_a_bad_json_reply_from_gate_is_no_session(
 @pytest.mark.parametrize(
     ("role", "expected"),
     [
-        ("owner", {"read", "profiles:write", "apply"}),
+        ("owner", {"read", "profiles:write", "apply", "admin"}),
         ("member", {"read", "profiles:write", "apply"}),
         ("viewer", {"read", "profiles:write"}),
     ],

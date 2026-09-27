@@ -63,8 +63,20 @@ GATE_APP = "sieve"
 #: copies of every profile, same as a member) but never ship a chain to a
 #: live gateway. Nothing here grants `telemetry`: that is for machines
 #: reporting outcomes, and a machine carries a token.
+#:
+#: `admin` is the owner's alone. Managing a connector means telling this box
+#: which host it will send a token it holds to, and where that token is read
+#: from; a role that may not spend the owner's credentials may not point them
+#: somewhere new either. A `member` keeps `apply` -- shipping a chain to a
+#: router somebody already configured is a different act from configuring it
+#: -- and a `viewer` keeps `profiles:write`, both confined to their own rows.
+#:
+#: This table is a *role* table. A `SIEVE_TOKENS` record and a token minted
+#: through `/v1/tokens` carry the scopes they were given and are untouched by
+#: anything here: a script that could not manage connectors before still
+#: cannot, and one that could must be given `admin` explicitly.
 ROLE_SCOPES: dict[str, frozenset[str]] = {
-    "owner": frozenset({"read", "profiles:write", "apply"}),
+    "owner": frozenset({"read", "profiles:write", "apply", "admin"}),
     "member": frozenset({"read", "profiles:write", "apply"}),
     "viewer": frozenset({"read", "profiles:write"}),
 }

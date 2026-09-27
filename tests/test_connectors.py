@@ -356,7 +356,9 @@ def test_seeding_happens_once(tmp_path: Path) -> None:
 # the API
 # --------------------------------------------------------------------------- #
 
-TOKENS = "ops:read,profiles:write,apply,telemetry:s3cret"
+#: Includes `admin` (A01): these routes are the owner's, and a token carries
+#: exactly the scopes it was minted with, whatever any role table says.
+TOKENS = "ops:read,profiles:write,apply,admin,telemetry:s3cret"
 
 
 @pytest.fixture
@@ -401,8 +403,8 @@ def test_the_api_adds_tests_pulls_and_forgets_a_connector(client: Any, router: s
     assert SECRET not in listed.text
 
     # `test` and `pull` decide nothing about what is routed, but they do reach
-    # an arbitrary connector's `base_url` on demand, so gate v2 gates them on
-    # `profiles:write` like every other connector write (CONTRACTS section 10).
+    # an arbitrary connector's `base_url` on demand, so they need the same
+    # `admin` scope as every other connector write (A01, CONTRACTS section 10).
     denied = client.post(f"/v1/connectors/{connector_id}/test")
     assert denied.status_code == 401
 
@@ -450,7 +452,23 @@ def test_the_api_refuses_what_cannot_work(client: Any, router: str) -> None:
 
     assert post(kind="telepathy").status_code == 400
     assert post(base_url="localhost:20128").status_code == 400
-    assert post(options={"token": SECRET}).status_code == 400
+
+    # An option key this kind does not name. A connector holds no secret
+    # value, so there is nothing to smuggle here; the point is that a key
+    # nobody reads is refused instead of stored and quietly ignored (A01:
+    # `admin_token_env` is ninerouter's, `timeout` is everybody's).
+    unknown = post(options={"token": SECRET})
+    assert unknown.status_code == 422
+    assert unknown.json()["error"]["code"] == "bad_connector"
+    assert "timeout" in unknown.json()["error"]["message"]  # says what it does carry
+    # ...and it is ninerouter's own key, so that kind still carries it.
+    holds_it = post(
+        name="router", kind="ninerouter", options={"admin_token_env": "ROUTER_TOKEN"}
+    )
+    assert holds_it.status_code == 200
+    borrowed = post(options={"admin_token_env": "ROUTER_TOKEN"})  # ...not on openai_compat
+    assert borrowed.status_code == 422
+    assert borrowed.json()["error"]["code"] == "bad_connector"
 
     assert post().status_code == 200
     assert post().status_code == 409  # the name is taken

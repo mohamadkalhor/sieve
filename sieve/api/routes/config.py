@@ -12,7 +12,14 @@ from sieve.api.auth import Token, owner_of_request
 from sieve.api.auth import require as require_scope
 from sieve.api.routes.v1 import Read, config_of, error, store_of
 from sieve.axes import control as axis_control
-from sieve.config_bundle import apply_config, desired_config, diff, export_config, validate_config
+from sieve.config_bundle import (
+    apply_config,
+    desired_config,
+    diff,
+    export_config,
+    touches_connectors,
+    validate_config,
+)
 from sieve.connectors import seed_from_toml
 from sieve.profiles import control
 
@@ -59,6 +66,12 @@ def put_config(
     except ValueError as exc:
         return error(400, "bad_config", str(exc))
     changes = diff(_indexed(before), _indexed(target))
+    if touches_connectors(changes) and not token.allows("admin"):
+        # Refused as a whole, not connector by connector: the rest of the
+        # document was accepted on the strength of this write, and half of it
+        # landing while the connectors silently did not would be worse than
+        # none of it landing.
+        return error(403, "not_allowed", "changing connectors needs the admin scope")
     if dry_run:
         return changes
     target["_prune"] = prune

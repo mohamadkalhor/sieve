@@ -113,7 +113,7 @@ class Connector(BaseModel):     # a router, as data: added at runtime, not edite
     last_pull_at: datetime | None = None
     last_push_at: datetime | None = None
     last_error: str | None = None   # the last sentence it failed with; cleared by a success
-    options: dict[str, Any] = {}    # kind-specific, and every key names something: admin_token_env, timeout
+    options: dict[str, Any] = {}    # kind-specific, and every key names something; per kind below
     created_at: datetime | None = None
 
 class ConnectorTest(BaseModel):     # POST /v1/connectors/{id}/test; 200 even when the router is down
@@ -344,9 +344,9 @@ read needs a live gate session or a bearer.
 | DELETE /v1/cost-multipliers/{prefix} | profiles:write | {deleted,actor}; URL-encode prefix (slashes supported); 404 when unknown for caller. Removes stored default, not per-profile overrides; reachable prefixes may be recreated at 1.0 when multipliers are next read/synchronised |
 | GET /v1/guide | – | text/markdown: OPERATING.md, rendered on /guide |
 | GET /v1/connectors · GET /v1/connectors/{id} | – | Connector[] + token_present; never a token |
-| POST /v1/connectors · PUT /v1/connectors/{id} · DELETE /v1/connectors/{id} | apply | Connector |
-| POST /v1/connectors/{id}/test | profiles:write | ConnectorTest — 200 with `ok:false` when the router is down |
-| POST /v1/connectors/{id}/pull | profiles:write | {connector, found, matched, unmatched} — refresh its inventory now |
+| POST /v1/connectors · PUT /v1/connectors/{id} · DELETE /v1/connectors/{id} | admin | Connector; 422 `bad_connector` when `options` carries a key this `kind` does not name |
+| POST /v1/connectors/{id}/test | admin | ConnectorTest — 200 with `ok:false` when the router is down |
+| POST /v1/connectors/{id}/pull | admin | {connector, found, matched, unmatched} — refresh its inventory now |
 | GET /v1/connectors/{id}/models | – | what it was last seen serving, from the store |
 | GET /v1/events | – | SSE: `pull`, `ranking`, `decision`, `apply`, `connector` |
 | GET /v1/schedules · PUT /v1/schedules/{step} | – · profiles:write | cadence per step (+ `full`) with `next_fire` |
@@ -358,7 +358,7 @@ read needs a live gate session or a bearer.
 | GET /v1/diff | – | TargetDiff[] — what every configured target holds now against what Sieve would write |
 | GET /v1/leaderboard?modality=&metric= | – | Leaderboard — one modality, best first, deduplicated, with a price where one is published |
 | GET /v1/sources/{name}/fields | – | the fields this source has actually written, with row counts — what an axis can be built from |
-| GET · PUT /v1/config?dry_run=&prune= | – · profiles:write | the whole box as one document (profiles, axes, multipliers, connector shells — never a token) · applies it, or with `dry_run=1` returns only the diff it would apply; 400 `bad_config` |
+| GET · PUT /v1/config?dry_run=&prune= | – · profiles:write (admin to touch `connectors`) | the whole box as one document (profiles, axes, multipliers, connector shells — never a token) · applies it, or with `dry_run=1` returns only the diff it would apply; 400 `bad_config`; a bundle that adds, changes or prunes a connector is refused 403 `not_allowed` without the `admin` scope, whole, and a bundle that leaves them as they are needs none |
 | GET /v1/guide | – | text/markdown, `OPERATING.md` — how to drive this box, for an agent that arrived with no other context |
 | GET /v1/me | – | the seat this call is answered from: user_id, email, role, slug, counts. A box with no sign-ins answers `user_id: null`, role `owner` |
 | GET · POST /v1/tokens · DELETE /v1/tokens/{id} | profiles:write | script tokens for the signed-in seat: list · mint (**the secret is in that reply and nowhere else**; 403 `scope_refused` when the role cannot grant it, 409 `exists` on a repeated name) · revoke. 409 `no_identity` where nobody has signed in |
@@ -435,9 +435,20 @@ tell them apart.
 
    | gate role | scopes here |
    |---|---|
-   | `owner` | `read`, `profiles:write`, `apply` |
+   | `owner` | `read`, `profiles:write`, `apply`, `admin` |
    | `member` | `read`, `profiles:write`, `apply` |
    | `viewer` | `read`, `profiles:write` |
+
+   `admin` (A01) is the owner's alone and covers exactly one thing: the
+   connectors. A connector says which host a token this box holds is sent to,
+   and `POST /v1/connectors/{id}/test` and `/pull` make this box reach that
+   host on demand, so a role that may not spend the owner's credentials does
+   not get to add, redirect, delete, test or refresh one. `apply` — shipping a
+   chain to a router somebody already configured — stays with `member`: the
+   two are different acts, and this is only about the second. Like every
+   other scope check, this one reads the token: a `SIEVE_TOKENS` record and a
+   token minted through `/v1/tokens` carry the scopes they were given, so an
+   ops token that managed connectors before needs `admin` added to it.
 
    A viewer could only read before this; gate v2's viewer may now write
    their **own** rows — `sieve.owners`' existing ownership model already
@@ -445,8 +456,8 @@ tell them apart.
    profile, an axis, a cost multiplier, a script token), so a viewer gets
    the same private seed copies of the shipped profiles a member gets, and
    can tune and rename her own copies same as anyone else. She can never
-   `apply` — ship a chain to a live gateway — nor manage a connector: both
-   of those stay `member`/`owner` only. (`data/aliases.yaml`, the shared
+   `apply` — ship a chain to a live gateway — nor manage a connector, which is
+   the owner's `admin` alone. (`data/aliases.yaml`, the shared
    catalogue of ids, is the one thing `profiles:write` still reaches that is
    not owner-scoped; that was already true of `member` before this change
    and is not new here — see the risk noted in the app-side handoff.)

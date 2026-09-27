@@ -173,6 +173,21 @@ def diff(before: Any, after: Any, path: str = "") -> list[dict[str, Any]]:
     return []
 
 
+def touches_connectors(changes: list[dict[str, Any]]) -> bool:
+    """Does this diff add, change or prune a connector?
+
+    A connector is the one part of a bundle that decides which host a token
+    this box holds is sent to, so it is the one part gated on `admin`. A bundle
+    that leaves the connectors exactly as they are -- which is what the export,
+    edit, import round trip of everything *else* in the document looks like --
+    changes nothing about that and is accepted without it.
+    """
+    return any(
+        change["path"] == "connectors" or change["path"].startswith("connectors/")
+        for change in changes
+    )
+
+
 def desired_config(current: dict[str, Any], incoming: ConfigBundle, prune: bool) -> dict[str, Any]:
     result = json.loads(json.dumps(current))
     result["version"] = incoming.version
