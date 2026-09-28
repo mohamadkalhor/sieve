@@ -140,12 +140,20 @@ def kit_scopes(scopes: Iterable[str]) -> frozenset[str]:
 
 
 def kit_role_scopes() -> dict[str, frozenset[str]]:
-    """`auth.ROLE_SCOPES` in the kit's vocabulary.
+    """`auth.ROLE_SCOPES` in the kit's vocabulary, plus `telemetry` for the owner.
 
     Derived from sieve's own table rather than written out again, so the cap the
     kit applies to a key cannot drift away from the scopes a session has.
+
+    `telemetry` is in no role's table, because no *browser* reports outcomes --
+    but the kit caps a key by its owner's role, so without it here every
+    telemetry key (sieve-feed, sieve-probe, brain's outcome poster, all minted
+    by or configured for the owner) would lose the scope the moment `AGENT_V1`
+    went on. The owner's role holds it; nobody else's does.
     """
-    return {role: kit_scopes(scopes) for role, scopes in auth.ROLE_SCOPES.items()}
+    table = {role: kit_scopes(scopes) for role, scopes in auth.ROLE_SCOPES.items()}
+    table[OWNER_ROLE] = table.get(OWNER_ROLE, frozenset()) | PASSTHROUGH_SCOPES
+    return table
 
 
 #: §3.1's public paths: what a caller with no credential at all may read. sieve

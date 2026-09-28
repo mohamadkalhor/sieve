@@ -51,8 +51,10 @@ RUN_MARK = "__aio_run__"
 OWNER_EMAIL = "mohamad@example.test"
 ADA = "ada@example.test"
 #: The box's own token: name, scopes, secret.
-TOKENS = "ops:read,profiles:write,apply:s3cret"
+TOKENS = "ops:read,profiles:write,apply:s3cret;feed:telemetry:t3lem"
 BOX = {"Authorization": "Bearer s3cret"}
+#: The box's telemetry token, the shape sieve-feed and sieve-probe carry.
+FEED = {"Authorization": "Bearer t3lem"}
 GATE = "http://127.0.0.1:8122"
 
 
@@ -482,3 +484,40 @@ def test_on_the_envelope_is_the_shape_the_ui_reads(on: TestClient) -> None:
         error = answer.json()["error"]
         assert isinstance(error["code"], str) and error["code"]
         assert isinstance(error["message"], str) and error["message"]
+
+
+# --------------------------------------------------------------------------- #
+# on: the machine callers that exist today keep working (orchestrator review)
+# --------------------------------------------------------------------------- #
+
+
+def test_on_a_telemetry_token_still_reports(on: TestClient) -> None:
+    """sieve-feed and sieve-probe post telemetry with a `SIEVE_TOKENS` record.
+
+    `telemetry` is in no role's table, and the kit caps a key by its owner's
+    role; the owner's role carries it, so the box's own token keeps its scope.
+    """
+    answer = on.post("/v1/telemetry", json=[], headers=FEED)
+    assert answer.status_code not in (401, 403), answer.text
+
+
+def test_on_a_members_telemetry_key_is_capped(
+    on: TestClient, seats: Store, _gate: GateStub
+) -> None:
+    """Only the owner reports outcomes: a member's key loses the scope."""
+    secret, _ = secret_for(seats, ADA, {"telemetry"})
+    _gate._body = {
+        "user_id": 18, "email": ADA, "name": "Ada", "role": "member",
+        "status": "active", "app": "sieve",
+    }
+    auth._gate_cache.clear()
+    forget_gate(on)
+    answer = on.post("/v1/telemetry", json=[], headers=auth_header(secret))
+    assert answer.status_code == 403
+    assert answer.json()["error"]["code"] == "not_allowed"
+
+
+def test_on_the_probes_apply_needs_no_idempotency_key(on: TestClient) -> None:
+    """sieve-probe posts /v1/profiles/{name}/apply without a key every 15 min."""
+    answer = on.post("/v1/profiles/nope/apply", json={}, headers=BOX)
+    assert answer.json().get("error", {}).get("code") != "idempotency_key_required"
