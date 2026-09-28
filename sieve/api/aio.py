@@ -572,9 +572,6 @@ def mount(app: Any, config: Any) -> None:
         for route in app.router.routes
         if not (isinstance(route, APIRoute) and route.path == "/v1/guide")
     ]
-    _envelope_the_catch_all(app)
-    if os.environ.get("APP_ENV", "").strip().lower() == "dev":
-        _mount_crash(app)
     guide_path = _ROOT / "OPERATING.md"
     if guide_path.is_file():
         kit.guide.mount(
@@ -584,6 +581,20 @@ def mount(app: Any, config: Any) -> None:
             version=__version__,
             surfaces=["errors", "credentials", "idempotency"],
         )
+
+
+def after_routes(app: Any) -> None:
+    """The second half of `mount`, once `create_app` has added its /v1 catch-all.
+
+    Nothing at all when `AGENT_V1` is off. On, the catch-all answers in the
+    kit's words, and under `APP_ENV=dev` the conformance crash route is added
+    ahead of it.
+    """
+    if not agent_v1():
+        return
+    _envelope_the_catch_all(app)
+    if os.environ.get("APP_ENV", "").strip().lower() == "dev":
+        _mount_crash(app)
 
 
 def _envelope_the_catch_all(app: Any) -> None:

@@ -229,6 +229,10 @@ def create_app(config: Config | None = None) -> FastAPI:
             content={"error": {"code": "not_found", "message": f"no /v1/{path} endpoint"}},
         )
 
+    # With the kit on, that catch-all answers in the kit's envelope (404 with a
+    # request id, 405 with Allow). A no-op when AGENT_V1 is off.
+    aio.after_routes(app)
+
     web = cfg.path(cfg.server.web)
     if web.is_dir():
         index = web / "index.html"
