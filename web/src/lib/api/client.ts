@@ -71,6 +71,12 @@ export interface RequestOptions {
   body?: unknown;
   signal?: AbortSignal;
   responseType?: 'json' | 'text';
+  /**
+   * §3.4: the key that makes a run retryable. Omitted, `request` mints one per
+   * call for a run route; pass one to reuse the same key across your own
+   * retries of one action.
+   */
+  idempotencyKey?: string;
 }
 
 /**
@@ -92,11 +98,41 @@ function redirectToPending(): void {
   window.location.href = '/auth/pending';
 }
 
+/**
+ * agent-io §3.4: a run -- a call that does work rather than records it -- is
+ * retryable, and carries an `Idempotency-Key` so that a retry replays the first
+ * answer instead of running a second time. These are the run routes sieve
+ * requires a key on; the server refuses a run without one, so the UI mints a
+ * fresh key per action below.
+ */
+const RUN_ROUTES =
+  /^\/v1\/(apply|runs\/[^/]+|sources\/[^/]+\/pull)$/;
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * A key for one action. `randomUUID` where the browser has it (a secure
+ * context, which the app always is), and a time-and-random key where it does
+ * not -- the server only compares keys for equality, so any fresh string is a
+ * valid one.
+ */
+function newIdempotencyKey(): string {
+  const source = globalThis.crypto;
+  if (source && typeof source.randomUUID === 'function') return source.randomUUID();
+  return `k-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<Result<T>> {
   const run = options.fetch ?? globalThis.fetch;
   const headers: Record<string, string> = {};
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (options.token) headers.authorization = `Bearer ${options.token}`;
+  const method = options.method ?? 'GET';
+  if (WRITE_METHODS.has(method) && RUN_ROUTES.test(path)) {
+    // One key per call, which is one key per user action: this client never
+    // retries a call itself, so minting here cannot split one action into two
+    // runs. A caller that does retry passes its own key in `idempotencyKey`.
+    headers['idempotency-key'] = options.idempotencyKey ?? newIdempotencyKey();
+  }
 
   let response: Response;
   try {

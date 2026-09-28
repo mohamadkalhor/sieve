@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from sieve import __version__, owners
+from sieve.api import aio
 from sieve.api.edge import EdgeAuthMiddleware, SecurityHeadersMiddleware
 from sieve.api.routes.config import router as config_router
 from sieve.api.routes.connectors import router as connectors_router
@@ -206,6 +207,12 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.include_router(config_router)
     app.include_router(runs_router)
 
+    # The kit, when `AGENT_V1` says so -- and nothing at all when it does not.
+    # Mounted here, after every /v1 router and before both catch-alls: a
+    # catch-all registered first would answer `/v1/guide`, `/llms.txt` and
+    # anything else the kit adds with the app shell.
+    aio.mount(app, cfg)
+
     # Anything under /v1 that no route claims is an API call that went wrong,
     # and it has to say so in JSON. The SPA catch-all below would hand it the
     # app shell with a 200, which a client reads as "the endpoint exists and
@@ -221,6 +228,10 @@ def create_app(config: Config | None = None) -> FastAPI:
             status_code=404,
             content={"error": {"code": "not_found", "message": f"no /v1/{path} endpoint"}},
         )
+
+    # With the kit on, that catch-all answers in the kit's envelope (404 with a
+    # request id, 405 with Allow). A no-op when AGENT_V1 is off.
+    aio.after_routes(app)
 
     web = cfg.path(cfg.server.web)
     if web.is_dir():
