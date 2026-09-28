@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -231,11 +231,30 @@ def create_app(config: Config | None = None) -> FastAPI:
         # link like /rankings/coder -- the link a person actually shares -- is
         # a 404 from StaticFiles.
         @app.get("/{path:path}", include_in_schema=False)
-        async def spa(path: str) -> Response:
+        async def spa(path: str, request: Request) -> Response:
+            # The build links its scripts relatively (`./_app/...`). At
+            # `/seats/` those resolve to `/seats/_app/...`, the fallback below
+            # answered them with HTML, the browser refused to run it, and the
+            # page sat on its prerendered shell with no data. One address per
+            # page: drop the slash.
+            if path.endswith("/"):
+                target = "/" + path.rstrip("/")
+                if request.url.query:
+                    target += "?" + request.url.query
+                return RedirectResponse(target, status_code=308)
+
             root = web.resolve()
             candidate = (web / path).resolve()
             if path and candidate.is_file() and candidate.is_relative_to(root):
                 return FileResponse(candidate)
+
+            # A missing build asset is a 404, never the HTML shell: HTML where
+            # a script was asked for fails silently in the browser.
+            if path.startswith("_app/") or "/_app/" in path:
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": {"code": "not_found", "message": f"no asset /{path}"}},
+                )
 
             # A prerendered route is `<path>.html` on disk. Without this the
             # request fell through to the empty SPA shell and the build-time
