@@ -34,6 +34,8 @@ from typing import Any
 import httpx
 from fastapi import Header, HTTPException, Request
 
+from sieve.api import aio
+
 ENV_VAR = "SIEVE_TOKENS"
 
 # --- gate v2, the sign-in service (CONTRACTS section 10, AUTH-CONTRACT.md) --
@@ -325,9 +327,16 @@ def actor_for(request: Request, authorization: str | None) -> str:
 
 
 def require(scope: str):  # type: ignore[no-untyped-def]
-    """FastAPI dependency: the call must carry a token holding `scope`."""
+    """FastAPI dependency: the call must carry a token holding `scope`.
+
+    With `AGENT_V1` on, this hands the call to the kit (see `sieve/api/aio.py`):
+    the credential rule, the buckets and the scope demand are the kit's, and the
+    refusal is the kit's envelope. Off -- the default -- nothing below changes.
+    """
 
     def dependency(request: Request, authorization: str | None = Header(default=None)) -> Token:
+        if aio.agent_v1():
+            return aio.require_scope(request, scope)
         secret = bearer(authorization)
         if not secret:
             # No token: this is a browser, so ask gate who it is.
@@ -363,6 +372,8 @@ def require_read():  # type: ignore[no-untyped-def]
     def dependency(
         request: Request, authorization: str | None = Header(default=None)
     ) -> Token | None:
+        if aio.agent_v1():
+            return aio.read_identity(request)
         cfg = getattr(request.app.state, "config", None)
         secret = bearer(authorization)
         if cfg is None or not cfg.server.read_token:
