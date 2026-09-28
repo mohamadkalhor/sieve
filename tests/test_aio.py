@@ -25,6 +25,7 @@ import shutil
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -65,11 +66,16 @@ class FakeReply:
 
 
 class GateStub:
-    """`httpx.get` answered like gate: `GET /v1/session` and `GET /v1/user/{id}`.
+    """gate, as both readers see it: `GET /v1/session` and `GET /v1/user/{id}`.
 
     One body answers both, which is what the real gate does closely enough for
     this file: `status` and `role` are what the owner-status lookup reads, and
     `user_id`/`email`/`app` are what the session lookup reads.
+
+    Two entry points, because sieve and the kit dial gate differently: sieve's
+    own reader calls `httpx.get`, the kit's `GateLookup` holds an `httpx.Client`
+    and calls `.get` on it. Both are stood in for by the fixture below, so no
+    test can reach a gate running on this box.
     """
 
     def __init__(self, status_code: int = 200, **body: Any) -> None:
@@ -83,6 +89,16 @@ class GateStub:
         self.calls.append({"url": url, **dict(headers or {})})
         return FakeReply(self._status_code, dict(self._body))
 
+    def client(self, *args: Any, **kwargs: Any) -> GateStub:
+        """`httpx.Client(...)` -- the kit's way in. It keeps no state of its own."""
+        return self
+
+    def get(
+        self, url: str, *, headers: dict[str, str] | None = None, timeout: float = 0.0
+    ) -> FakeReply:
+        """What the kit's `GateLookup` calls on the client it was handed."""
+        return self(url, headers=headers, timeout=timeout)
+
 
 @pytest.fixture(autouse=True)
 def _gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[GateStub]:
@@ -92,8 +108,21 @@ def _gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[GateStub]
         user_id=17, email=ADA, name="Ada", role="owner", status="active", app="sieve"
     )
     monkeypatch.setattr(httpx, "get", fake)
+    monkeypatch.setattr(httpx, "Client", fake.client)
     yield fake
     auth._gate_cache.clear()
+
+
+def forget_gate(client: TestClient) -> None:
+    """Drop the kit's cached role answers for this app.
+
+    §3.1 caches a gate answer for 30 s, so a test that changes what gate says
+    has to say so here as well as at `auth._gate_cache` -- otherwise the second
+    request is answered from the first request's cache and proves nothing.
+    """
+    lookup = aio.gate_lookup(client.app)
+    if lookup is not None:
+        lookup.forget()
 
 
 @pytest.fixture
@@ -113,12 +142,18 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
 
 @pytest.fixture
 def seats(box: Config) -> Store:
-    """The gate owner and one member, signed in for the first time."""
+    """The gate owner and one member, signed in for the first time.
+
+    Both carry gate's own user id, because that is what a real sign-in records
+    (`owners.sign_in(..., gate_id=...)`, from gate's session): §3.1's G1 lookup
+    asks gate about that id, and a local row gate has never issued an id to is
+    a row gate cannot vouch for. The stub answers for any id.
+    """
     store = Store(box.db_path)
     axis_control.seed(store, box.axes_dir)
-    boss = owners.sign_in(store, OWNER_EMAIL, "owner", box.profiles_dir)
+    boss = owners.sign_in(store, OWNER_EMAIL, "owner", box.profiles_dir, gate_id="17")
     control.seed(store, box.profiles_dir, boss.id)
-    owners.sign_in(store, ADA, "member", box.profiles_dir)
+    owners.sign_in(store, ADA, "member", box.profiles_dir, gate_id="18")
     return store
 
 
@@ -262,6 +297,7 @@ def test_on_a_dropped_role_demotes_the_key(
         "status": "active", "app": "sieve",
     }
     auth._gate_cache.clear()
+    forget_gate(on)
     answer = on.delete("/v1/connectors/nope", headers=auth_header(secret))
     assert answer.status_code == 403
     assert answer.json()["error"]["code"] == "not_allowed"
@@ -275,7 +311,9 @@ def test_on_a_gate_that_cannot_be_reached_refuses_the_key(
 
     secret, _ = secret_for(seats, ADA, {"admin"})
     monkeypatch.setattr(httpx, "get", refuse)
+    monkeypatch.setattr(httpx, "Client", lambda *a, **k: SimpleNamespace(get=refuse))
     auth._gate_cache.clear()
+    forget_gate(on)
     answer = on.delete("/v1/connectors/nope", headers=auth_header(secret))
     assert answer.status_code >= 400
     assert answer.json()["error"]["code"] == "auth_unavailable"
@@ -379,6 +417,33 @@ def test_on_a_write_leaves_an_audit_row(on: TestClient, box: Config) -> None:
     )
     assert rows, "a write left no audit row"
     assert any(row[1] == "POST" and "tokens" in (row[2] or "") for row in rows)
+
+
+def test_on_the_kit_file_sits_beside_the_store_and_never_the_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`aio.db` comes from the data dir, not from where the process was started.
+
+    The store's own directory is the app's data dir -- `/srv/sieve/data` on the
+    box, from `[store] path = "data/sieve.db"` -- so the kit's file is
+    `<store dir>/aio.db`. Deriving it from the config root instead would put a
+    database in `/srv/sieve/aio.db`, and deriving it from the working directory
+    puts one wherever the process happened to start.
+    """
+    monkeypatch.setenv("AGENT_V1", "1")
+    monkeypatch.setenv("SIEVE_TOKENS", TOKENS)
+    monkeypatch.setenv("SIEVE_OWNER_EMAIL", OWNER_EMAIL)
+    monkeypatch.setenv("SIEVE_GATE_URL", GATE)
+    data = tmp_path / "data"
+    data.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    box = Config(root=tmp_path, store=StoreConfig(path="data/sieve.db"))
+    create_app(box)
+    assert aio.data_dir(box) == data
+    assert (data / "aio.db").is_file()
+    assert list(elsewhere.iterdir()) == [], "the kit wrote into the working directory"
 
 
 def test_on_every_write_route_carries_the_wrapper(

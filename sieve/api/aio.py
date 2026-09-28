@@ -37,6 +37,7 @@ from sieve import __version__
 from sieve import owners
 from sieve import tokens as script_tokens
 from sieve.api import auth
+from sieve.store import Store
 
 #: The app's own root: `sieve/api/aio.py` -> `sieve/api` -> `sieve` -> root.
 _ROOT = Path(__file__).resolve().parents[2]
@@ -174,9 +175,26 @@ class SieveKeys:
     belongs to another app.
     """
 
-    def __init__(self, state: Any) -> None:
+    def __init__(self, app: Any) -> None:
         self.app = auth.GATE_APP
-        self._state = state
+        self._app = app
+
+    def _store(self) -> Any:
+        """The app's store, built the way `routes.v1.store_of` builds it.
+
+        The kit asks for a key with no request in hand, so the store is taken
+        from the app rather than from a call: the same object `store_of` stashes
+        on `app.state`, built once from the app's config if nobody has yet.
+        """
+        store = getattr(self._app.state, "store", None)
+        if store is not None:
+            return store
+        config = getattr(self._app.state, "config", None)
+        if config is None:
+            return None
+        store = Store(config.db_path)
+        self._app.state.store = store
+        return store
 
     def verify(self, secret: str) -> Any:
         """The key this secret is, or None.
@@ -200,7 +218,7 @@ class SieveKeys:
                 created=0,
                 expires=0,
             )
-        store = getattr(self._state, "store", None)
+        store = self._store()
         if store is None:
             return None
         minted = script_tokens.lookup(store, token)
@@ -223,7 +241,7 @@ class SieveKeys:
         name, every row is unowned, and `owner_status` reads that case the same
         way sieve's own reader does.
         """
-        store = getattr(self._state, "store", None)
+        store = self._store()
         if store is None:
             return ""
         found = owners.owner(store)
@@ -277,7 +295,7 @@ def owner_status(app: Any, owner_id: str) -> tuple[str, str | None]:
     found = owners.by_id(store, owner)
     if found is None:
         return ("gone", None)
-    lookup = _gate_lookup()
+    lookup = gate_lookup(app)
     if lookup is None:
         return ("active", OWNER_ROLE)
     gate_id = str(getattr(found, "gate_id", "") or "").strip()
@@ -286,15 +304,23 @@ def owner_status(app: Any, owner_id: str) -> tuple[str, str | None]:
     return lookup(gate_id)
 
 
-_GATE: list[Any] = []
+def gate_lookup(app: Any) -> Any:
+    """The kit's gate lookup for *this* app, built once -- or None, no gate set.
 
-
-def _gate_lookup() -> Any:
-    """The kit's gate lookup, built once -- or None when no gate is configured."""
-    if not _GATE:
-        base = os.environ.get("SIEVE_GATE_URL", "").strip().rstrip("/")
-        _GATE.append(None if not base else _kit().auth.GateLookup(base, auth.GATE_APP))
-    return _GATE[0]
+    Per app, like `auth_config` and `limits_for`: two apps in one process must
+    not share a role cache, and the cache is the thing that makes "demoting a
+    user takes effect within 30 s" true. Built on first use rather than at
+    mount time so a box that never looks a role up never dials gate at all.
+    """
+    found = getattr(app.state, "aio_gate", None)
+    if found is not None:
+        return found
+    base = os.environ.get("SIEVE_GATE_URL", "").strip().rstrip("/")
+    if not base:
+        return None
+    found = _kit().auth.GateLookup(base, auth.GATE_APP)
+    app.state.aio_gate = found
+    return found
 
 
 def session_lookup(app: Any, cookie: str | None) -> Any:
@@ -338,7 +364,7 @@ def auth_config(app: Any) -> Any:
         kit = _kit()
         found = kit.auth.AuthConfig(
             app=auth.GATE_APP,
-            store=SieveKeys(app.state),
+            store=SieveKeys(app),
             owner_status=lambda owner_id: owner_status(app, owner_id),
             role_scopes=kit_role_scopes(),
             session_lookup=lambda cookie: session_lookup(app, cookie),
@@ -488,6 +514,29 @@ spec is `/v1/openapi.json`.
 """
 
 
+def data_dir(config: Any) -> Path:
+    """The app's data directory: where its store already lives.
+
+    `aio.db` is the kit's file next to the app's own data, so it is derived from
+    the setting that already says where that is -- `[store] path` resolved
+    against the config root (`Config.db_path`) -- and never from the working
+    directory. Getting this wrong puts a database in whatever directory the
+    process was started in; on this box the answer is `/srv/sieve/data/aio.db`
+    (`/srv/sieve/sieve.toml`, `[store] path = "data/sieve.db"`).
+    """
+    db = getattr(config, "db_path", None)
+    if db is None:  # a config with no store section: nothing to sit beside
+        return Path(config.path("aio.db")).parent
+    return Path(db).parent
+
+
+def _aio_db(config: Any) -> str:
+    """The kit's own file, created beside the store it belongs to."""
+    directory = data_dir(config)
+    directory.mkdir(parents=True, exist_ok=True)
+    return str(directory / "aio.db")
+
+
 def mount(app: Any, config: Any) -> None:
     """Put the kit on `app` -- and nothing at all when `AGENT_V1` is off.
 
@@ -503,8 +552,9 @@ def mount(app: Any, config: Any) -> None:
     # §3.7's cap and §3.10's row-per-write. Both read `request.state.principal`,
     # which the credential rule leaves there, so both see who this was.
     app.add_middleware(kit.limits.BodyCap)
-    kit.audit.mount(app, kit.audit.Audit(str(config.path("aio.db"))))
-    _wrap_writes(app, kit.idem.Idempotency(str(config.path("aio.db"))))
+    aio_db = _aio_db(config)
+    kit.audit.mount(app, kit.audit.Audit(aio_db))
+    _wrap_writes(app, kit.idem.Idempotency(aio_db))
     # sieve's own `/v1/guide` is the same document the kit serves; with the kit
     # on, the kit's route is the one that answers, so the older one comes out
     # rather than shadowing it (FastAPI answers with the first match).
