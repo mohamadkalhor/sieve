@@ -782,8 +782,12 @@ def mount(app: Any, config: Any) -> None:
             guide_path,
             LLMS_TEXT,
             version=__version__,
-            surfaces=["errors", "credentials", "idempotency", "jobs"],
+            surfaces=["errors", "credentials", "idempotency", "jobs", "mcp"],
         )
+    # O9b-3: POST /v1/mcp, served from the tool registry in `sieve/api/v1_tools.py`.
+    from sieve.api import v1_tools
+
+    v1_tools.mount(app)
 
 
 def after_routes(app: Any) -> None:

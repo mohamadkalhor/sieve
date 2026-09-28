@@ -483,6 +483,9 @@ def test_on_every_write_route_carries_the_wrapper(
         for route in all_routes(app)
         if route.path.startswith("/v1")
         and route.name != "v1_not_found"  # sieve's own JSON 404 catch-all
+        # the kit's MCP door: one JSON-RPC message, whose write tools carry their
+        # own `_idempotency_key` into the route they name
+        and route.path != "/v1/mcp"
         and (route.methods or set()) & {"POST", "PUT", "PATCH", "DELETE"}
     ]
     assert writes, "no write routes found: the walk is wrong, not the app"
