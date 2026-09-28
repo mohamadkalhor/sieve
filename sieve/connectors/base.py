@@ -20,6 +20,7 @@ import httpx
 
 from sieve.contracts import ComboResult, Connector, ConnectorTest, Reachable
 from sieve.inventory.openai_compat import capability_of
+from sieve.secrets import Secrets
 from sieve.sources.base import utcnow
 
 #: Long enough for a gateway that is thinking, short enough that an hourly run
@@ -31,7 +32,7 @@ class ConnectorError(RuntimeError):
     """A connector that could not be read or could not be written to.
 
     Its message is shown to a person and stored in `last_error`, so it names the
-    environment variable rather than the token, and the URL rather than a code.
+    secret *id* rather than the token, and the URL rather than a code.
     """
 
 
@@ -45,8 +46,22 @@ class Adapter:
     #: shipping nothing every hour.
     writes: bool = False
 
-    def __init__(self, connector: Connector, *, timeout: float | None = None) -> None:
+    #: whether this kind has a second credential beside its catalogue -- an
+    #: admin API with its own token. A kind that says no refuses `admin_secret`.
+    admin_api: bool = False
+
+    def __init__(
+        self,
+        connector: Connector,
+        *,
+        timeout: float | None = None,
+        secrets: Secrets | None = None,
+    ) -> None:
         self.connector = connector
+        #: the server's `[secrets.*]` table. An id means nothing without it, so
+        #: an adapter built without one has no credential at all rather than a
+        #: fallback that reads an environment variable somebody named.
+        self.secrets = secrets if secrets is not None else Secrets()
         raw = connector.options.get("timeout") if timeout is None else timeout
         self.timeout = float(raw if raw is not None else DEFAULT_TIMEOUT)
 
@@ -67,10 +82,22 @@ class Adapter:
         """The value of a named environment variable, or None. The only way in.
 
         Nothing reads a token from the database, from `sieve.toml` or from an
-        API body: a connector names the variable and the operator sets it, so a
-        database that leaks leaks a list of variable names.
+        API body: `sieve.toml` names the variable for a secret id, the connector
+        carries only the id, and the operator sets the value.
         """
         return os.environ.get(variable) if variable else None
+
+    def secret_env(self, secret_id: str | None) -> str | None:
+        """The environment variable a secret id names for *this* kind.
+
+        An id the config does not have, or one bound to other kinds, is not a
+        quiet `None`: it is the sentence somebody needs when the router answers
+        401, so it is raised and rendered as `ok: false` by `test()`.
+        """
+        problem = self.secrets.problem(secret_id, self.kind)
+        if problem:
+            raise ConnectorError(f"connector {self.name!r}: {problem}")
+        return self.secrets.env(secret_id, self.kind)
 
     # -- what a kind implements ------------------------------------------- #
 
@@ -140,10 +167,10 @@ class Adapter:
                 f"connector {self.name!r}: {type(exc).__name__} reaching {url}: {exc}"
             ) from exc
         if response.status_code in (401, 403):
-            named = self.connector.token_env or "no token_env is set"
+            named = self.connector.secret or "no secret is set"
             raise ConnectorError(
-                f"connector {self.name!r}: {url} refused the credentials ({named}); "
-                f"HTTP {response.status_code}"
+                f"connector {self.name!r}: {url} refused the credentials (secret "
+                f"{named!r}); HTTP {response.status_code}"
             )
         if response.status_code != 200:
             raise ConnectorError(f"connector {self.name!r}: HTTP {response.status_code} from {url}")

@@ -20,6 +20,7 @@ from sieve.config import Config
 from sieve.connectors.base import ConnectorError
 from sieve.connectors.registry import adapter_for
 from sieve.contracts import Chain, Connector, Decision, TargetResult
+from sieve.secrets import Secrets
 from sieve.store import Store
 from sieve.targets.ninerouter import chain_models, combo_name
 
@@ -57,14 +58,16 @@ def build_registry(cfg: Config, store: Store) -> Any:
     return registry
 
 
-def refresh(store: Store, connector: Connector, registry: Any) -> PullCount:
+def refresh(
+    store: Store, connector: Connector, registry: Any, secrets: Secrets | None = None
+) -> PullCount:
     """List one connector and store what it serves, matched to the catalogue.
 
     An id that cannot be matched confidently keeps `model_id` None and is listed
     for a person to alias. It is never guessed at, because a wrong match
     silently routes traffic to a different model.
     """
-    adapter = adapter_for(connector)
+    adapter = adapter_for(connector, secrets)
     try:
         found = adapter.reachable()
     except ConnectorError as exc:
@@ -104,6 +107,7 @@ def ship(
     chains: list[Chain],
     *,
     dry_run: bool = False,
+    secrets: Secrets | None = None,
 ) -> TargetResult:
     """Seat every chain on one connector, one combo per profile.
 
@@ -112,7 +116,7 @@ def ship(
     One profile failing does not stop the others: the reason is kept beside the
     profile it is about.
     """
-    adapter = adapter_for(connector)
+    adapter = adapter_for(connector, secrets)
     slug = slug_for_connector(store, connector)
     planned: dict[str, list[str]] = {}
     skipped: dict[str, str] = {}

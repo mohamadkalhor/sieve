@@ -203,7 +203,7 @@ def test_a_members_combos_carry_their_name_and_reach_only_their_router(
 
     seated: dict[str, StubRouter] = {}
 
-    def stub(connector: Connector) -> StubRouter:
+    def stub(connector: Connector, secrets: Any = None) -> StubRouter:
         return seated.setdefault(connector.name, StubRouter())
 
     monkeypatch.setattr(loop, "adapter_for", stub)

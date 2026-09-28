@@ -705,6 +705,8 @@ class Store:
             name=r["name"],
             kind=r["kind"],
             base_url=r["base_url"],
+            secret=r["secret"],
+            admin_secret=r["admin_secret"],
             token_env=r["token_env"],
             read=bool(r["read"]),
             write=bool(r["write"]),
@@ -757,9 +759,10 @@ class Store:
         """Insert one. A duplicate name raises, because a name addresses it."""
         with self.tx() as db:
             db.execute(
-                "INSERT INTO connectors (id, name, kind, base_url, token_env, read, write,"
-                " poll_minutes, last_pull_at, last_push_at, last_error, options, created_at,"
-                " owner_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO connectors (id, name, kind, base_url, secret, admin_secret,"
+                " token_env, read, write, poll_minutes, last_pull_at, last_push_at,"
+                " last_error, options, created_at, owner_id)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 self._connector_row(connector),
             )
         return connector
@@ -768,9 +771,10 @@ class Store:
         """Insert or replace by id. What the API's PUT writes."""
         with self.tx() as db:
             db.execute(
-                "INSERT OR REPLACE INTO connectors (id, name, kind, base_url, token_env,"
-                " read, write, poll_minutes, last_pull_at, last_push_at, last_error,"
-                " options, created_at, owner_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO connectors (id, name, kind, base_url, secret,"
+                " admin_secret, token_env, read, write, poll_minutes, last_pull_at,"
+                " last_push_at, last_error, options, created_at, owner_id)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 self._connector_row(connector),
             )
         return connector
@@ -782,6 +786,8 @@ class Store:
             c.name,
             c.kind,
             c.base_url,
+            c.secret,
+            c.admin_secret,
             c.token_env,
             1 if c.read else 0,
             1 if c.write else 0,

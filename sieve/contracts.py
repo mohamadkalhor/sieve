@@ -212,9 +212,13 @@ class Connector(_Model):
     the same facts as a row, so it can be added by URL, tested, and switched on
     for reading, for writing, or for both.
 
-    **It never holds a token.** `token_env` is the *name* of the environment
-    variable, exactly as a source names `key_env`. Nothing stores the value,
-    nothing serves it, and a database that leaks leaks a list of variable names.
+    **It never holds a token.** A connector carries `secret`, an *id* defined in
+    `[secrets.<id>]` in `sieve.toml` (`env = "GATEWAY_TOKEN", kinds =
+    ["ninerouter"]`); the file says which environment variable that id names and
+    which connector kinds may use it. Nothing stores the value, nothing serves
+    it, and a database that leaks leaks a list of ids that mean nothing off this
+    box. `token_env` is the pre-migration column: cleared, never set through the
+    API, and read by nothing.
     """
 
     id: str
@@ -222,6 +226,18 @@ class Connector(_Model):
     #: "openai_compat" | "ninerouter" -- see `sieve/connectors/registry.py`
     kind: str
     base_url: str
+    #: the id of the secret this connector reads, defined only in `[secrets.*]`
+    #: in `sieve.toml`. The API accepts an id and never a variable name.
+    secret: str | None = None
+    #: ninerouter's second credential -- the CLI token its admin API wants --
+    #: named the same way. Only a kind that has one may carry it.
+    admin_secret: str | None = None
+    #: legacy: the environment-variable name this connector used to carry.
+    #: legacy, and inert: the name of an environment variable a connector used to
+    #: carry. Nothing reads it -- an adapter resolves `secret` through
+    #: `[secrets.*]` instead -- and no response serves it. It is kept as a column
+    #: only so that `tools/migrate_connector_secrets.py` can still see the names
+    #: on a box that has not run it yet, and clear them when it does.
     token_env: str | None = None
     #: its ids join the inventory, so a profile may seat a model it serves
     read: bool = True
@@ -235,17 +251,13 @@ class Connector(_Model):
     #: do not look the same on a screen.
     last_error: str | None = None
     #: kind-specific, and every key *names* something rather than holding it:
-    #: `admin_token_env`, `timeout`.
+    #: `timeout`, and nothing else today.
     options: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime | None = None
     #: whose router this is (`users.id`). NULL on a box where nobody has signed
     #: in: a connector is never shared, because writing a combo to it spends
     #: somebody's token.
     owner_id: str | None = None
-
-    def token(self) -> str | None:
-        """The secret this connector needs, read from the environment only."""
-        return os.environ.get(self.token_env) if self.token_env else None
 
 
 class ConnectorTest(_Model):

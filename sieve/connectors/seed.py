@@ -5,6 +5,8 @@ to read and `[targets.gateway]` to write. Those blocks still work -- this is
 somebody's running machine and a rewrite that needs a config edit to keep
 serving is a rewrite that broke it -- but on the first start after this lands,
 they become a connector, and from then on the connector is what the loop uses.
+The variable names those blocks carry are resolved to secret ids here, because a
+connector names an id; see `from_toml`.
 
 Two rules keep the two worlds from doing the same work twice:
 
@@ -41,9 +43,18 @@ def new_id() -> str:
 
 
 def from_toml(cfg: Config) -> list[Connector]:
-    """The connectors the config describes, without touching the store."""
+    """The connectors the config describes, without touching the store.
+
+    A `[inventories.*] token_env` is a *name*, and a connector carries an id: the
+    name is looked up in `[secrets.*]` and becomes the id registered for it, or
+    it becomes nothing at all. A box that names a variable and never registers it
+    gets a connector with no credential, which `/test` reports as a missing
+    secret -- visibly, on the first start, rather than a token sent somewhere
+    nobody chose.
+    """
     made: list[Connector] = []
     at = datetime.now(UTC)
+    secrets = cfg.secret_registry
 
     # A ninerouter target first: it is the only kind that both reads and
     # writes, and an inventory of the same name is the same box described
@@ -55,23 +66,20 @@ def from_toml(cfg: Config) -> list[Connector]:
         base_url = str(target_cfg.url or (inventory.base_url if inventory else "") or "").strip()
         if not base_url:
             continue
-        options: dict[str, object] = {}
         admin = target_cfg.options.get("token_env")
-        if admin:
-            options["admin_token_env"] = str(admin)
         made.append(
             Connector(
                 id=new_id(),
                 name=name,
                 kind=NINEROUTER,
                 base_url=base_url,
-                token_env=inventory.token_env if inventory else None,
+                secret=secrets.id_for_env(inventory.token_env if inventory else None, NINEROUTER),
+                admin_secret=secrets.id_for_env(str(admin) if admin else None, NINEROUTER),
                 # Only what the TOML already did. A target Sieve wrote to and
                 # never read from does not start being read because of a
                 # migration nobody asked for.
                 read=inventory is not None,
                 write=True,
-                options=options,
                 created_at=at,
             )
         )
@@ -86,7 +94,7 @@ def from_toml(cfg: Config) -> list[Connector]:
                 name=name,
                 kind=OPENAI_COMPAT,
                 base_url=str(inventory.base_url),
-                token_env=inventory.token_env,
+                secret=secrets.id_for_env(inventory.token_env, OPENAI_COMPAT),
                 read=True,
                 write=False,
                 created_at=at,

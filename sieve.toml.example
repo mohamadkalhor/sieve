@@ -160,6 +160,36 @@ token_env = "GATEWAY_TOKEN"
 kind = "list"
 models = ["anthropic/claude-sonnet-5"]
 
+# --- secrets: the values, named here and nowhere else ------------------------
+#
+# A connector does not name an environment variable. It names an *id* from this
+# table, and this table -- edited on the box, never over the wire -- says which
+# variable holds the value. That is what makes a leaked database a list of ids:
+# `secret = "gateway"` means nothing off this machine, while the name
+# `GATEWAY_TOKEN` at least tells an attacker where to look.
+#
+# `kinds` is the binding: the connector kinds this id may be used with. An id
+# used by a kind it does not list is treated as missing, and `/test` says
+# "secret not allowed for kind".
+#
+# A connector pasted with a `*_env` key instead of an id is refused with a 422:
+# the API no longer accepts the name of a variable in any body, which is what
+# used to let anybody with `profiles:write` point a connector at a variable on
+# this box.
+
+[secrets.gateway]
+env = "GATEWAY_TOKEN"
+kinds = ["ninerouter", "openai_compat"]
+
+# 9router's second way in: the CLI token for its admin API, which is not the
+# same credential as the bearer key above and cannot be used in its place.
+[secrets.ninerouter_admin]
+env = "NINEROUTER_TOKEN"
+kinds = ["ninerouter"]
+
+# `[inventories.*]` and `[targets.*]` below are this file's own business and
+# still name variables directly: nothing serves them, so the name never travels.
+
 # --- targets: where chains go ----------------------------------------------
 
 [targets.out]

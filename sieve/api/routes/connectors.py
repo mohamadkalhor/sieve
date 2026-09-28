@@ -1,9 +1,14 @@
 """`/v1/connectors` — add a router at runtime, test it, switch it on.
 
 Seven routes and one rule: **a token never appears in a response**, because a
-connector never holds one. It holds `token_env`, the name of the environment
-variable the operator set, and the API answers `token_present` so a screen can
-say "that variable is not set in the service" without ever reading the value.
+connector never holds one. It holds `secret`, the id of an entry in
+`[secrets.<id>]` in `sieve.toml` -- the file that says which environment
+variable that id names and which connector kinds may use it -- and the API
+answers `token_present` so a screen can say "that variable is not set in the
+service" without ever reading the value. A body that names an environment
+variable instead (`token_env`, `admin_token_env`, anything ending in `_env`) is
+refused with a 422: a name is a pointer into this box's environment, and the
+API is not where that pointer gets set.
 
 Every GET is answered from the store and touches no network -- a list of
 routers should not be as slow as the slowest one, and a gateway that is down
@@ -15,7 +20,8 @@ scope, which the gate owner's role alone carries. A connector says which host a
 token this box holds is sent to, so a member or a viewer may tune their own
 profiles without being able to add, redirect or delete one. What a kind may
 carry in `options` is listed per kind below, and an option key a kind does not
-name is refused rather than stored and quietly ignored.
+name is refused rather than stored and quietly ignored -- `admin_secret` is a
+field of its own, because only a kind with an admin API has one.
 """
 
 from __future__ import annotations
@@ -27,7 +33,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from sieve.api.auth import Token
 from sieve.api.auth import require as require_scope
@@ -38,6 +44,7 @@ from sieve.connectors.loop import build_registry, refresh
 from sieve.connectors.registry import KINDS, adapter_for, kinds, writing_kinds
 from sieve.connectors.seed import seed_from_toml
 from sieve.contracts import Connector
+from sieve.secrets import Secrets, env_key_paths, refuse_environment_names
 from sieve.store import Store
 
 router = APIRouter(prefix="/v1/connectors", tags=["connectors"])
@@ -46,28 +53,34 @@ router = APIRouter(prefix="/v1/connectors", tags=["connectors"])
 #: stays boring, like a profile name.
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$", re.I)
 
-#: An environment variable name, not a secret. The point of the check is that
-#: somebody pasting the token itself into `token_env` is told so immediately,
-#: rather than storing a key in a database that was built never to hold one.
-_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
-
 #: The options a connector carries when its kind has not said otherwise. Every
 #: one of them *names* something. There is deliberately nowhere to put a value
-#: that has to stay secret.
+#: that has to stay secret -- a credential is named by `secret`, an id from
+#: `[secrets.*]`, and never carried here.
 OPTIONS = frozenset({"timeout"})
-
-#: The options each kind understands, by kind. `admin_token_env` is the
-#: ninerouter admin credential's variable name and means nothing to a
-#: read-only catalogue, so a key a kind does not name is refused rather than
-#: stored and quietly ignored.
-OPTIONS_PER_KIND: dict[str, frozenset[str]] = {
-    "ninerouter": OPTIONS | {"admin_token_env"},
-}
 
 
 def allowed_options(kind: str) -> frozenset[str]:
     """The option keys this kind understands. Kinds are free to say nothing."""
-    return OPTIONS_PER_KIND.get(kind, OPTIONS)
+    return OPTIONS
+
+
+def env_keys(raw: Any, path: str = "") -> list[str]:
+    """Every key in a body that names an environment variable, with its path.
+
+    Everywhere, not just at the top: `token_env`, `admin_token_env` inside
+    `options`, or a key somebody invented. A connector that carried a variable
+    name would send this box's token wherever a writer of that name pointed it,
+    so the answer is a refusal that quotes the key rather than a lesson in which
+    fields are checked. Shared with the bundle route and the seeder, so the rule
+    reads the same at every door.
+    """
+    return env_key_paths(raw, path)
+
+
+def _refuse_environment_names(raw: Any) -> Any:
+    """A pydantic `before` validator: a 422 naming every `*_env` key there is."""
+    return refuse_environment_names(raw)
 
 
 class ConnectorBody(BaseModel):
@@ -78,11 +91,18 @@ class ConnectorBody(BaseModel):
     name: str
     kind: str
     base_url: str
-    token_env: str | None = None
+    #: the id of a `[secrets.<id>]` entry; the value lives in the environment
+    #: variable that entry names and passes through this route without ever
+    #: being read.
+    secret: str | None = None
+    #: the second credential, for a kind whose admin API wants its own token
+    admin_secret: str | None = None
     read: bool = True
     write: bool = False
     poll_minutes: int = 60
     options: dict[str, Any] = Field(default_factory=dict)
+
+    _no_environment_names = model_validator(mode="before")(_refuse_environment_names)
 
 
 class ConnectorPatch(BaseModel):
@@ -93,26 +113,40 @@ class ConnectorPatch(BaseModel):
     name: str | None = None
     kind: str | None = None
     base_url: str | None = None
-    token_env: str | None = None
+    secret: str | None = None
+    admin_secret: str | None = None
     read: bool | None = None
     write: bool | None = None
     poll_minutes: int | None = None
     options: dict[str, Any] | None = None
 
+    _no_environment_names = model_validator(mode="before")(_refuse_environment_names)
 
-def row(connector: Connector) -> dict[str, Any]:
+
+def row(connector: Connector, secrets: Secrets | None = None) -> dict[str, Any]:
     """One connector as JSON: everything but the token, which it does not have.
 
-    `token_present` is the question a screen actually asks -- the variable is
-    named in the database and set (or not) in the service's environment, and
-    those two facts live in different places.
+    `token_present` is the question a screen actually asks -- the connector names
+    a secret id, the config file says which variable that id names, and the
+    service's environment decides whether it is set. Those facts live in three
+    places, and only the last one is a yes or no.
     """
+    registry = secrets if secrets is not None else Secrets()
     body = connector.model_dump(mode="json")
-    body["token_present"] = bool(connector.token_env and os.environ.get(connector.token_env))
-    admin = connector.options.get("admin_token_env")
-    if admin:
-        body["admin_token_present"] = bool(os.environ.get(str(admin)))
+    body.pop("token_env", None)
+    body["token_present"] = _present(registry, connector.secret, connector.kind)
+    body["admin_token_present"] = _present(registry, connector.admin_secret, connector.kind)
     return body
+
+
+def _present(secrets: Secrets, secret_id: str | None, kind: str) -> bool:
+    """Whether the variable this id names is set here, and the id is usable.
+
+    An id the config does not have, or one bound to other kinds, is not present:
+    the connector would send nothing, and a screen that said otherwise would be
+    lying about a credential.
+    """
+    return bool(os.environ.get(secrets.env(secret_id, kind) or ""))
 
 
 def connectors_of(request: Request) -> Store:
@@ -122,11 +156,17 @@ def connectors_of(request: Request) -> Store:
     return store
 
 
-def problem(body: ConnectorBody) -> tuple[int, str, str] | None:
+def secrets_of(request: Request) -> Secrets:
+    """This box's `[secrets.*]` table: the only thing an id resolves against."""
+    return config_of(request).secret_registry
+
+
+def problem(body: ConnectorBody, secrets: Secrets | None = None) -> tuple[int, str, str] | None:
     """Why this connector cannot be stored, or None.
 
     A (status, code, sentence) triple rather than a bare sentence: an option
-    key this kind does not understand is refused as 422 `bad_connector`, the
+    key this kind does not understand, and a secret id the config does not have
+    or does not allow for this kind, are refused as 422 `bad_connector`, the
     same status a schema violation gets, while everything else here is an
     ordinary 400 `bad_request`.
     """
@@ -159,16 +199,18 @@ def problem(body: ConnectorBody) -> tuple[int, str, str] | None:
             f"unknown option(s) {', '.join(unknown)} for kind {body.kind!r}; "
             f"it carries {', '.join(sorted(allowed))}",
         )
-    for field in ("token_env", "admin_token_env"):
-        named = body.token_env if field == "token_env" else body.options.get(field)
-        if named and not _ENV_NAME.match(str(named)):
-            return (
-                400,
-                "bad_request",
-                f"{field} is the NAME of an environment variable holding the token "
-                f"(like GATEWAY_TOKEN), not the token; {str(named)[:8]}... is not a "
-                "variable name",
-            )
+    if body.admin_secret and not KINDS[body.kind].admin_api:
+        return (
+            422,
+            "bad_connector",
+            f"admin_secret is the second credential of a kind with an admin API, "
+            f"and {body.kind!r} has none",
+        )
+    registry = secrets if secrets is not None else Secrets()
+    for field, secret_id in (("secret", body.secret), ("admin_secret", body.admin_secret)):
+        reason = registry.problem(secret_id, body.kind)
+        if reason:
+            return (422, "bad_connector", f"{field}: {reason}")
     return None
 
 
@@ -194,7 +236,8 @@ def found(store: Store, connector_id: str, owner_id: str | None = None) -> Conne
 
 @router.get("")
 def list_connectors(request: Request, _: Read = None) -> list[dict[str, Any]]:
-    return [row(c) for c in connectors_of(request).connectors(owner_of(request))]
+    secrets = secrets_of(request)
+    return [row(c, secrets) for c in connectors_of(request).connectors(owner_of(request))]
 
 
 @router.get("/{connector_id}")
@@ -202,7 +245,7 @@ def get_connector(request: Request, connector_id: str, _: Read = None) -> Any:
     connector = found(connectors_of(request), connector_id, owner_of(request))
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
-    return row(connector)
+    return row(connector, secrets_of(request))
 
 
 @router.get("/{connector_id}/models")
@@ -238,7 +281,8 @@ def create_connector(
     token: Annotated[Token, Depends(require_scope("admin"))],
 ) -> Any:
     store = connectors_of(request)
-    complaint = problem(body)
+    secrets = secrets_of(request)
+    complaint = problem(body, secrets)
     if complaint:
         return error(*complaint)
     owner_id = owner_of(request)
@@ -252,7 +296,7 @@ def create_connector(
     )
     store.add_connector(connector)
     events.publish("connector", {"connector": connector.name, "change": "created"})
-    return row(connector)
+    return row(connector, secrets)
 
 
 @router.put("/{connector_id}")
@@ -263,12 +307,15 @@ def update_connector(
     token: Annotated[Token, Depends(require_scope("admin"))],
 ) -> Any:
     store = connectors_of(request)
+    secrets = secrets_of(request)
     connector = found(store, connector_id, owner_of(request))
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
     changes = body.model_dump(exclude_none=True)
     merged = connector.model_copy(update=changes)
-    complaint = problem(ConnectorBody(**merged.model_dump(include=set(ConnectorBody.model_fields))))
+    complaint = problem(
+        ConnectorBody(**merged.model_dump(include=set(ConnectorBody.model_fields))), secrets
+    )
     if complaint:
         return error(*complaint)
     clash = store.connector_named(merged.name, owner_of(request))
@@ -276,7 +323,7 @@ def update_connector(
         return error(409, "conflict", f"a connector named {merged.name!r} already exists")
     store.put_connector(merged)
     events.publish("connector", {"connector": merged.name, "change": "updated"})
-    return row(merged)
+    return row(merged, secrets)
 
 
 @router.delete("/{connector_id}")
@@ -325,7 +372,7 @@ def test_connector(
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
     try:
-        outcome = adapter_for(connector).test()
+        outcome = adapter_for(connector, secrets_of(request)).test()
     except ConnectorError as exc:
         store.touch_connector(connector_id, error=str(exc))
         return {"ok": False, "models_count": 0, "error": str(exc)}
@@ -351,7 +398,7 @@ def pull_connector(
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
     try:
-        count = refresh(store, connector, build_registry(cfg, store))
+        count = refresh(store, connector, build_registry(cfg, store), cfg.secret_registry)
     except ConnectorError as exc:
         return error(502, "connector_unreachable", str(exc))
     events.publish("pull", {"connector": connector.name, "found": count.found})

@@ -8,11 +8,14 @@ a `POST`. Posting a name that exists collides with a UNIQUE constraint instead
 of updating it.
 
 **Two tokens, and they are not interchangeable.** The catalogue takes an
-ordinary bearer key in `token_env`; the admin API takes the CLI token 9router
-derives from its own machine id, in an `x-9r-cli-token` header, named by
-`admin_token_env`. The vocabulary of combo kinds, the managed `sieve-` prefix
-and the header itself are the target's, imported rather than restated, so the
-connector and the old `[targets.gateway]` path can never drift apart.
+ordinary bearer key, named by the connector's `secret`; the admin API takes the
+CLI token 9router derives from its own machine id, in an `x-9r-cli-token`
+header, named by `admin_secret` and falling back to `secret` for a router where
+one token does both. Both are *ids* resolved against `[secrets.*]` in
+`sieve.toml`; the connector never holds a variable name. The vocabulary of combo
+kinds, the managed `sieve-` prefix and the header itself are the target's,
+imported rather than restated, so the connector and the old `[targets.gateway]`
+path can never drift apart.
 """
 
 from __future__ import annotations
@@ -26,30 +29,34 @@ from sieve.connectors.openai_compat import OpenAICompatConnector
 from sieve.contracts import ComboResult
 from sieve.targets.ninerouter import CLI_TOKEN_HEADER, COMBOS_PATH, SERVICE_KIND
 
-#: Which option names the variable holding the admin token. Falls back to
-#: `token_env` for a router where one token does both.
-ADMIN_TOKEN_ENV = "admin_token_env"
-
 
 class NineRouterConnector(OpenAICompatConnector):
     kind = "ninerouter"
     writes = True
+    admin_api = True
 
     # -- the admin API ---------------------------------------------------- #
 
     @property
-    def admin_token_env(self) -> str | None:
-        named = self.connector.options.get(ADMIN_TOKEN_ENV) or self.connector.token_env
-        return str(named) if named else None
+    def admin_secret_id(self) -> str | None:
+        """The id the admin token is read through: its own, else the connector's."""
+        return self.connector.admin_secret or self.connector.secret
+
+    @property
+    def admin_variable(self) -> str | None:
+        """The variable holding the admin token, resolved for this kind."""
+        secret_id = self.admin_secret_id
+        return self.secret_env(secret_id) if secret_id else None
 
     def admin_headers(self) -> dict[str, str]:
-        token = self.env(self.admin_token_env)
+        secret_id = self.admin_secret_id
+        token = self.env(self.admin_variable)
         if not token:
-            named = self.admin_token_env or ADMIN_TOKEN_ENV
+            named = f"secret {secret_id!r}" if secret_id else "no admin secret is set"
             raise ConnectorError(
                 f"connector {self.name!r}: the 9router admin API answers Unauthorized "
-                f"without a token, and {named} is not set in this process. It wants the "
-                f"CLI token 9router derives from its own machine id, sent as "
+                f"without a token, and {named} has no value set in this process. It wants "
+                f"the CLI token 9router derives from its own machine id, sent as "
                 f"{CLI_TOKEN_HEADER}, not an API key in an authorization header."
             )
         return {CLI_TOKEN_HEADER: token, "content-type": "application/json"}
@@ -98,10 +105,11 @@ class NineRouterConnector(OpenAICompatConnector):
                 ok=False, error=f"{type(exc).__name__} writing {name} to {self.name}: {exc}"
             )
         if response.status_code in (401, 403):
+            named = self.admin_secret_id or "no admin secret is set"
             return ComboResult(
                 ok=False,
                 error=(
-                    f"9router refused {self.admin_token_env} writing {name}; "
+                    f"9router refused the admin token for secret {named!r} writing {name}; "
                     f"it wants its CLI token in {CLI_TOKEN_HEADER}"
                 ),
             )

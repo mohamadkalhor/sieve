@@ -1177,7 +1177,7 @@ def apply_profile(
     combos: list[str] = []
     for connector in store.connectors(owner_id):
         if connector.write:
-            outcome = ship(store, connector, [chain])
+            outcome = ship(store, connector, [chain], secrets=cfg.secret_registry)
             results.append(outcome)
             combos.extend(str(c) for c in (outcome.detail.get("combos") or []))
             log_applied(store, connector, [chain], token.name)

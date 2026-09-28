@@ -32,9 +32,21 @@ from sieve.connectors.openai_compat import OpenAICompatConnector
 from sieve.connectors.registry import adapter_for, kinds
 from sieve.connectors.seed import from_toml
 from sieve.contracts import Chain, Connector, InventoryConfig, TargetConfig
+from sieve.secrets import SecretConfig, Secrets
 from sieve.store import Store
 
 NOW = datetime(2026, 9, 13, tzinfo=UTC)
+
+#: This box's `[secrets.*]` table: ids, the variable each names, and the kinds
+#: each may be used with. A connector carries an id and nothing else, so this
+#: table is what turns one into a credential.
+SECRETS = Secrets(
+    {
+        "gateway": SecretConfig(env="GATEWAY_TOKEN", kinds=["openai_compat"]),
+        "router": SecretConfig(env="NINEROUTER_TOKEN", kinds=["ninerouter"]),
+        "router_admin": SecretConfig(env="NINEROUTER_ADMIN_TOKEN", kinds=["ninerouter"]),
+    }
+)
 
 #: The secret the stub demands. If this string ever reaches an API response or
 #: a stored row, the test that looks for it fails.
@@ -169,16 +181,19 @@ def test_reachable_keeps_what_the_router_published(router: str) -> None:
     assert plain.capability.tools is None
 
 
-def test_a_refused_token_names_the_variable_not_the_token(
+def test_a_refused_token_names_the_id_not_the_token(
     router: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     Router.bearer = SECRET
     monkeypatch.setenv("GATEWAY_TOKEN", "the-wrong-one")
-    outcome = OpenAICompatConnector(connector(router, token_env="GATEWAY_TOKEN")).test()
+    outcome = OpenAICompatConnector(connector(router, secret="gateway"), secrets=SECRETS).test()
     assert outcome.ok is False
     assert outcome.models_count == 0
-    assert "GATEWAY_TOKEN" in (outcome.error or "")
+    assert "gateway" in (outcome.error or "")
     assert "the-wrong-one" not in (outcome.error or "")
+    # The variable the id names is the config file's business. An error sentence
+    # is served to whoever may read connectors, so it does not carry it.
+    assert "GATEWAY_TOKEN" not in (outcome.error or "")
 
 
 def test_a_router_that_is_not_there_is_an_answer_not_a_crash() -> None:
@@ -199,14 +214,15 @@ def test_ninerouter_creates_then_updates_a_combo(
     router: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     Router.cli_token = SECRET
-    monkeypatch.setenv("NINEROUTER_TOKEN", SECRET)
+    monkeypatch.setenv("NINEROUTER_ADMIN_TOKEN", SECRET)
     adapter = NineRouterConnector(
         connector(
             router,
             kind="ninerouter",
             write=True,
-            options={"admin_token_env": "NINEROUTER_TOKEN"},
-        )
+            admin_secret="router_admin",
+        ),
+        secrets=SECRETS,
     )
 
     created = adapter.put_combo("sieve-coder", ["gw/a", "gw/b"])
@@ -228,13 +244,14 @@ def test_ninerouter_creates_then_updates_a_combo(
 def test_ninerouter_without_its_admin_token_says_which_one(router: str) -> None:
     Router.cli_token = SECRET
     adapter = NineRouterConnector(
-        connector(
-            router, kind="ninerouter", write=True, options={"admin_token_env": "NINEROUTER_TOKEN"}
-        )
+        connector(router, kind="ninerouter", write=True, admin_secret="router_admin"),
+        secrets=SECRETS,
     )
     outcome = adapter.put_combo("sieve-coder", ["gw/a"])
     assert outcome.ok is False
-    assert "NINEROUTER_TOKEN" in (outcome.error or "")
+    # The id, and never the variable it names: this sentence is served by the API.
+    assert "router_admin" in (outcome.error or "")
+    assert "NINEROUTER_ADMIN_TOKEN" not in (outcome.error or "")
     # Reading is a different credential and still works.
     assert adapter.test().ok is True
 
@@ -258,9 +275,11 @@ def test_the_registry_names_the_kinds(router: str) -> None:
 
 def test_the_store_round_trips_a_connector_and_never_a_token(tmp_path: Path) -> None:
     store = Store(tmp_path / "sieve.db")
-    made = store.add_connector(connector("http://box:20128", token_env="GATEWAY_TOKEN"))
+    made = store.add_connector(connector("http://box:20128", secret="gateway"))
     assert [c.id for c in store.connectors()] == [made.id]
     assert store.connector_named("gateway") is not None
+    held = store.connector(made.id)
+    assert held is not None and held.secret == "gateway"
 
     store.touch_connector(made.id, pulled_at=NOW, error="refused")
     held = store.connector(made.id)
@@ -298,6 +317,10 @@ def toml_config(tmp_path: Path) -> Config:
         root=tmp_path,
         store=StoreConfig(path=str(tmp_path / "sieve.db")),
         paths=Paths(profiles=str(tmp_path / "profiles")),
+        secrets={
+            "gateway": SecretConfig(env="GATEWAY_TOKEN", kinds=["ninerouter"]),
+            "ninerouter_admin": SecretConfig(env="NINEROUTER_TOKEN", kinds=["ninerouter"]),
+        },
         inventories={
             "gateway": InventoryConfig(
                 name="gateway",
@@ -331,8 +354,12 @@ def test_the_toml_gateway_becomes_one_connector(tmp_path: Path) -> None:
     assert gateway.kind == "ninerouter"
     assert gateway.read is True and gateway.write is True
     assert gateway.base_url == "http://127.0.0.1:20128"
-    assert gateway.token_env == "GATEWAY_TOKEN"
-    assert gateway.options["admin_token_env"] == "NINEROUTER_TOKEN"
+    # `token_env` in the TOML is a variable name; the connector carries the id
+    # that name is registered under, and never the name.
+    assert gateway.secret == "gateway"
+    assert gateway.admin_secret == "ninerouter_admin"
+    assert gateway.token_env is None
+    assert gateway.options == {}
 
     # A second gateway that is only ever read from.
     assert made["other"].read is True and made["other"].write is False
@@ -369,6 +396,10 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
         root=tmp_path,
         store=StoreConfig(path=str(tmp_path / "sieve.db")),
         paths=Paths(profiles=str(tmp_path / "profiles")),
+        secrets={
+            "gateway": SecretConfig(env="GATEWAY_TOKEN", kinds=["openai_compat"]),
+            "router_admin": SecretConfig(env="NINEROUTER_ADMIN_TOKEN", kinds=["ninerouter"]),
+        },
     )
     with TestClient(create_app(cfg)) as client:
         yield client
@@ -386,7 +417,7 @@ def test_the_api_adds_tests_pulls_and_forgets_a_connector(client: Any, router: s
             "name": "spare",
             "kind": "openai_compat",
             "base_url": router,
-            "token_env": "GATEWAY_TOKEN",
+            "secret": "gateway",
             "read": True,
         },
         headers=AUTH,
@@ -394,9 +425,11 @@ def test_the_api_adds_tests_pulls_and_forgets_a_connector(client: Any, router: s
     assert created.status_code == 200, created.text
     body = created.json()
     connector_id = body["id"]
-    assert body["token_env"] == "GATEWAY_TOKEN"
+    assert body["secret"] == "gateway"
     assert body["token_present"] is True
     assert SECRET not in created.text
+    # The variable the id names is not in the response either.
+    assert "GATEWAY_TOKEN" not in created.text
 
     listed = client.get("/v1/connectors")
     assert [c["name"] for c in listed.json()] == ["spare"]
@@ -444,11 +477,23 @@ def test_the_api_refuses_what_cannot_work(client: Any, router: str) -> None:
     assert refused.status_code == 400
     assert "ninerouter" in refused.json()["error"]["message"]
 
-    # The token itself, pasted where its variable name belongs. This is the
-    # mistake the whole design is trying to make impossible.
-    leaked = post(token_env=SECRET)
-    assert leaked.status_code == 400
-    assert "NAME of an environment variable" in leaked.json()["error"]["message"]
+    # The token itself, pasted where a secret id belongs. This is the mistake the
+    # whole design is trying to make impossible.
+    leaked = post(secret=SECRET)
+    assert leaked.status_code == 422
+    assert leaked.json()["error"]["code"] == "bad_connector"
+    assert "secret" in leaked.json()["error"]["message"]
+
+    # A variable *name* where the id belongs: the key itself is refused, with a
+    # sentence saying what to write instead. `_env` anywhere in a body, and in
+    # `options` as well as at the top.
+    named = post(token_env="ROUTER_TOKEN")
+    assert named.status_code == 422
+    assert named.json()["error"]["code"] == "bad_connector"
+    assert "token_env" in named.json()["error"]["message"]
+    nested = post(options={"admin_token_env": "ROUTER_TOKEN"})
+    assert nested.status_code == 422
+    assert nested.json()["error"]["code"] == "bad_connector"
 
     assert post(kind="telepathy").status_code == 400
     assert post(base_url="localhost:20128").status_code == 400
@@ -456,17 +501,17 @@ def test_the_api_refuses_what_cannot_work(client: Any, router: str) -> None:
     # An option key this kind does not name. A connector holds no secret
     # value, so there is nothing to smuggle here; the point is that a key
     # nobody reads is refused instead of stored and quietly ignored (A01:
-    # `admin_token_env` is ninerouter's, `timeout` is everybody's).
+    # `timeout` is everybody's, and a credential is a field of its own now).
     unknown = post(options={"token": SECRET})
     assert unknown.status_code == 422
     assert unknown.json()["error"]["code"] == "bad_connector"
     assert "timeout" in unknown.json()["error"]["message"]  # says what it does carry
-    # ...and it is ninerouter's own key, so that kind still carries it.
-    holds_it = post(
-        name="router", kind="ninerouter", options={"admin_token_env": "ROUTER_TOKEN"}
-    )
+
+    # The second credential belongs to the kind that has an admin API, and it is
+    # an id like any other: ninerouter's to keep, and not openai_compat's.
+    holds_it = post(name="router", kind="ninerouter", admin_secret="router_admin")
     assert holds_it.status_code == 200
-    borrowed = post(options={"admin_token_env": "ROUTER_TOKEN"})  # ...not on openai_compat
+    borrowed = post(admin_secret="router_admin")  # ...not on openai_compat
     assert borrowed.status_code == 422
     assert borrowed.json()["error"]["code"] == "bad_connector"
 
@@ -497,6 +542,7 @@ def test_apply_ships_through_the_connector_and_shadows_the_toml_target(
         root=tmp_path,
         store=StoreConfig(path=str(tmp_path / "sieve.db")),
         paths=Paths(profiles=str(tmp_path / "profiles")),
+        secrets={"ninerouter_admin": SecretConfig(env="NINEROUTER_TOKEN", kinds=["ninerouter"])},
         targets={
             "gateway": TargetConfig(
                 name="gateway",

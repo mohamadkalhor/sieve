@@ -311,8 +311,11 @@ export interface Recommendation {
  * config file into rows, so a person with a different router can add one from
  * the Connectors screen.
  *
- * No response ever carries a key: `token_env` is the *name* of an environment
- * variable, which is why it is safe to put on a page.
+ * No response ever carries a key, and no request may name one: `secret` is the
+ * *id* of an entry in `[secrets.<id>]` in the server's own `sieve.toml`, and the
+ * environment variable holding the value is named there and nowhere else. An id
+ * is safe on a page. The API refuses `token_env` and every other `*_env` key, so
+ * this screen cannot ask the server which of its variables holds a live token.
  */
 export type ConnectorKind = 'ninerouter' | 'openai_compat';
 
@@ -321,7 +324,10 @@ export interface ConnectorRow {
   name: string;
   kind: ConnectorKind;
   base_url: string;
-  token_env: string;
+  /** the `[secrets.<id>]` entry whose variable holds this connector's bearer */
+  secret: string | null;
+  /** the second credential, for a kind with an admin API of its own */
+  admin_secret: string | null;
   /** pull the model list from it */
   read: boolean;
   /** push routing decisions to it */
@@ -332,11 +338,11 @@ export interface ConnectorRow {
   /** whatever the last read or write failed with, verbatim */
   last_error: string | null;
   /**
-   * Whether the environment variable named by `token_env` actually holds
-   * something on the server. Never the value -- only whether there is one.
+   * Whether the variable the id names actually holds something on the server.
+   * Never the value -- only whether there is one.
    */
   token_present?: boolean;
-  /** the same question for the admin variable, when the connector names one */
+  /** the same question for the admin secret, when the connector names one */
   admin_token_present?: boolean;
 }
 
@@ -345,7 +351,8 @@ export interface ConnectorBody {
   name: string;
   kind: ConnectorKind;
   base_url: string;
-  token_env: string;
+  secret?: string | null;
+  admin_secret?: string | null;
   read: boolean;
   write: boolean;
   poll_minutes: number;

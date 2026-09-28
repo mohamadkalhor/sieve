@@ -23,7 +23,7 @@ class OpenAICompatConnector(Adapter):
         return base if base.endswith("/models") else f"{base}/v1/models"
 
     def headers(self) -> dict[str, str]:
-        token = self.env(self.connector.token_env)
+        token = self.env(self.secret_env(self.connector.secret))
         return {"authorization": f"Bearer {token}"} if token else {}
 
     def _entries(self) -> list[Any]:

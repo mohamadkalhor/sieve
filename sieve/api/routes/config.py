@@ -13,6 +13,7 @@ from sieve.api.auth import require as require_scope
 from sieve.api.routes.v1 import Read, config_of, error, store_of
 from sieve.axes import control as axis_control
 from sieve.config_bundle import (
+    ConfigBundle,
     apply_config,
     desired_config,
     diff,
@@ -22,6 +23,7 @@ from sieve.config_bundle import (
 )
 from sieve.connectors import seed_from_toml
 from sieve.profiles import control
+from sieve.secrets import EnvironmentNameError, Secrets
 
 router = APIRouter(prefix="/v1", tags=["config"])
 
@@ -50,6 +52,25 @@ def get_config(request: Request, _: Read = None) -> dict[str, Any]:
     return export_config(store, owner_id)
 
 
+def _unresolvable(bundle: ConfigBundle, secrets: Secrets) -> str | None:
+    """The first connector in a bundle whose secret id this box cannot resolve.
+
+    A bundle can arrive from a box with a `[secrets]` table this one does not
+    have -- the ids travel and the table does not -- so an id that does not
+    resolve here is refused on the way in, rather than stored as a connector
+    that will quietly send nothing.
+    """
+    for connector in bundle.connectors:
+        for field, secret_id in (
+            ("secret", connector.secret),
+            ("admin_secret", connector.admin_secret),
+        ):
+            reason = secrets.problem(secret_id, connector.kind)
+            if reason:
+                return f"connector {connector.name}: {field}: {reason}"
+    return None
+
+
 @router.put("/config")
 def put_config(
     request: Request,
@@ -63,8 +84,16 @@ def put_config(
     try:
         incoming = validate_config(body, store, set(cfg.sources), owner_id)
         target = desired_config(before, incoming, prune)
+    except EnvironmentNameError as exc:
+        # A body that names an environment variable is a connector problem
+        # (422), not an unreadable document (400): the document reads fine, and
+        # what is wrong with it is the credential it points at.
+        return error(422, "bad_connector", str(exc))
     except ValueError as exc:
         return error(400, "bad_config", str(exc))
+    refused = _unresolvable(incoming, cfg.secret_registry)
+    if refused:
+        return error(422, "bad_connector", refused)
     changes = diff(_indexed(before), _indexed(target))
     if touches_connectors(changes) and not token.allows("admin"):
         # Refused as a whole, not connector by connector: the rest of the

@@ -130,8 +130,22 @@ running. From then on a router is a **row**, not a file: you add one by URL over
 the API, test it, and switch it on for reading (its ids join the inventory),
 for writing (it is given a combo per profile), or for both.
 
-A connector never holds a token. It holds `token_env`, the *name* of the
-environment variable you set, exactly as a source names `key_env`.
+A connector never holds a token, and it does not name the variable holding one
+either. It carries `secret`, the *id* of a `[secrets.<id>]` entry in the
+server's own `sieve.toml`: that table says which environment variable the value
+lives in, and it is edited on the box and never over the wire. A database that
+leaks leaks ids that mean nothing anywhere else. The API refuses `token_env` and
+every other `*_env` key with a `422`.
+
+```toml
+[secrets.gateway]
+env   = "GATEWAY_TOKEN"
+kinds = ["ninerouter", "openai_compat"]   # the kinds this id may be used with
+
+[secrets.ninerouter_admin]
+env   = "NINEROUTER_TOKEN"
+kinds = ["ninerouter"]
+```
 
 ```bash
 curl -sX POST http://127.0.0.1:8110/v1/connectors \
@@ -139,24 +153,30 @@ curl -sX POST http://127.0.0.1:8110/v1/connectors \
     "name": "spare",
     "kind": "ninerouter",
     "base_url": "http://127.0.0.1:20128",
-    "token_env": "SPARE_GATEWAY_TOKEN",
+    "secret": "gateway",
+    "admin_secret": "ninerouter_admin",
     "read": true,
     "write": true,
-    "poll_minutes": 60,
-    "options": {"admin_token_env": "SPARE_NINEROUTER_TOKEN"}
+    "poll_minutes": 60
   }'
 ```
 
 ```json
 {
   "id": "9f2a1c7b40de", "name": "spare", "kind": "ninerouter",
-  "base_url": "http://127.0.0.1:20128", "token_env": "SPARE_GATEWAY_TOKEN",
+  "base_url": "http://127.0.0.1:20128", "secret": "gateway",
+  "admin_secret": "ninerouter_admin",
   "read": true, "write": true, "poll_minutes": 60,
   "last_pull_at": null, "last_push_at": null, "last_error": null,
-  "options": {"admin_token_env": "SPARE_NINEROUTER_TOKEN"},
+  "options": {},
   "token_present": true, "admin_token_present": true
 }
 ```
+
+An id whose `kinds` do not include the connector's kind is treated as missing,
+and `/test` says why: `secret not allowed for kind 'ninerouter': 'gateway' names
+openai_compat`. A row that still carries a variable name from before this
+landed is moved by `python tools/migrate_connector_secrets.py --db <copy>`.
 
 Then ask it whether it works. `POST /v1/connectors/{id}/test` is one of the two
 calls that leave the box — every `GET` is answered from the store, because a

@@ -34,6 +34,7 @@ from sieve.connectors import seed_from_toml
 from sieve.engine import RankingBusyError
 from sieve.profiles import control as profile_control
 from sieve.runs import Runner, Scheduler
+from sieve.secrets import REFUSAL
 from sieve.store import Store
 
 CONFIG_ENV = "SIEVE_CONFIG"
@@ -112,13 +113,41 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        # `loc`, `msg` and `type` -- and not the value the fault happened on.
+        # Pydantic hands back the offending input too, and a body that pasted a
+        # token where an id belongs would then be answered with that token. The
+        # shape of the fault is served; the value is not.
+        shape: list[dict[str, Any]] = [
+            {
+                "loc": list(fault.get("loc") or ()),
+                "msg": str(fault.get("msg") or ""),
+                "type": str(fault.get("type") or ""),
+            }
+            for fault in exc.errors()
+        ]
+        # A body that names an environment variable is refused by a model
+        # validator, and that refusal carries a sentence worth reading: it is a
+        # policy refusal, not a shape error, so it answers 422 `bad_connector`
+        # with the sentence rather than "the payload does not match the contract".
+        for fault in shape:
+            if REFUSAL in fault["msg"]:
+                return JSONResponse(
+                    status_code=422,
+                    content={
+                        "error": {
+                            "code": "bad_connector",
+                            "message": fault["msg"].split(REFUSAL, 1)[1],
+                            "detail": shape,
+                        }
+                    },
+                )
         return JSONResponse(
             status_code=422,
             content={
                 "error": {
                     "code": "invalid_body",
                     "message": "the payload does not match the contract",
-                    "detail": exc.errors(),
+                    "detail": shape,
                 }
             },
         )

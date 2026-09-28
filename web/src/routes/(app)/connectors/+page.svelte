@@ -6,9 +6,11 @@
    * router was not the one in the example could not add it without a shell on
    * the box. Every field here is that same data, editable from the page.
    *
-   * Nothing on this screen ever shows a key. `token_env` is the *name* of an
-   * environment variable; the value it holds stays on the server and is never
-   * part of a response.
+   * Nothing on this screen ever shows a key, and nothing here can name one: a
+   * connector carries the *id* of a `[secrets.<id>]` entry in the server's own
+   * `sieve.toml`, and the environment variable holding the value is named there
+   * and never travels. The API refuses `token_env` outright, so this screen
+   * cannot ask the server which of its variables holds a live token.
    */
   import {
     api,
@@ -35,7 +37,7 @@
     name: '',
     kind: 'ninerouter',
     base_url: '',
-    token_env: '',
+    secret: '',
     read: true,
     write: false,
     poll_minutes: 60
@@ -125,7 +127,7 @@
       name: row.name,
       kind: row.kind,
       base_url: row.base_url,
-      token_env: row.token_env,
+      secret: row.secret ?? '',
       read: row.read,
       write: row.write,
       poll_minutes: row.poll_minutes
@@ -160,7 +162,7 @@
       ...form,
       name: form.name.trim(),
       base_url: form.base_url.trim().replace(/\/$/, ''),
-      token_env: form.token_env.trim(),
+      secret: form.secret?.trim() ?? '',
       poll_minutes: Number(form.poll_minutes)
     };
 
@@ -397,9 +399,12 @@
       </label>
 
       <label class="wide">
-        <span>Token env</span>
-        <input class="mono" bind:value={form.token_env} placeholder="MY_ROUTER_KEY" autocomplete="off" />
-        <small>name of the environment variable that holds the key</small>
+        <span>Secret id</span>
+        <input class="mono" bind:value={form.secret} placeholder="gateway" autocomplete="off" />
+        <small>
+          the <code>[secrets.&lt;id&gt;]</code> entry in the server's sieve.toml that names the
+          environment variable holding the key
+        </small>
       </label>
 
       <label>
@@ -446,8 +451,9 @@
 
 <h1>Connectors</h1>
 <p class="lede">
-  The gateways Sieve reads models from, and writes routing back to. Keys are never held here —
-  only the name of the environment variable that holds one.
+  The gateways Sieve reads models from, and writes routing back to. Keys are never held here — a
+  connector names a <code>[secrets.&lt;id&gt;]</code> entry in the server's own config, and the
+  environment variable that entry names holds the key.
 </p>
 
 {#if !session.signedIn}
@@ -485,7 +491,7 @@
     error={null}
     title={absent ? 'Nothing to configure yet' : 'No connectors yet'}
     hint={'A connector is a gateway Sieve talks to: it reads the model list from one, and can push the routing it decides back to it. ' +
-      'Add one with its base URL and the name of the environment variable that holds its key — the key itself never leaves the server.'}
+      'Add one with its base URL and the id of a [secrets.<id>] entry in the server config — the key itself never leaves the server.'}
   />
 {:else}
   <ul class="rows">
@@ -496,8 +502,11 @@
           <span class="name">{row.name}</span>
           <Chip label="kind" value={kindLabel(row.kind)} />
           <span class="url mono" title={row.base_url}>{row.base_url}</span>
-          <span class="env mono" title="name of the environment variable that holds the key">
-            {row.token_env || '—'}
+          <span
+            class="env mono"
+            title="the [secrets.<id>] entry in the server config that names the key"
+          >
+            {row.secret || '—'}
           </span>
         </div>
 
@@ -524,19 +533,19 @@
             <span class="saving">saving…</span>
           {/if}
           <!--
-            Whether the key is there, never what it is. The name of the
-            variable is in the title, so a blank one can be found on the box.
+            Whether the key is there, never what it is. The id is in the title,
+            so the entry to look at on the box can be found.
           -->
           <span
             class="key"
             class:held={row.token_present}
-            title={row.token_env
+            title={row.secret
               ? row.token_present
-                ? `${row.token_env} is set on the server`
-                : `${row.token_env} is empty or unset on the server`
-              : 'no environment variable named for this connector'}
+                ? `the variable [secrets.${row.secret}] names is set on the server`
+                : `the variable [secrets.${row.secret}] names is empty or unset on the server`
+              : 'no secret named for this connector'}
           >
-            key {row.token_env ? (row.token_present ? 'set' : 'missing') : 'none'}
+            key {row.secret ? (row.token_present ? 'set' : 'missing') : 'none'}
           </span>
           {#if row.admin_token_present !== undefined}
             <span

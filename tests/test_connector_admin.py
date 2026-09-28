@@ -63,7 +63,14 @@ ROOT = {"authorization": "Bearer root-secret"}
 
 SPARE = {"name": "spare", "kind": "openai_compat", "base_url": "http://127.0.0.1:1"}
 #: The same connector as a bundle carries it: every field, spelled out.
-BUNDLED = {**SPARE, "token_env": None, "read": True, "write": False, "poll_minutes": 60}
+BUNDLED = {
+    **SPARE,
+    "secret": None,
+    "admin_secret": None,
+    "read": True,
+    "write": False,
+    "poll_minutes": 60,
+}
 
 
 class FakeReply:

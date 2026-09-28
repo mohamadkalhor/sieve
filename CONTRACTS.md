@@ -106,7 +106,9 @@ class Connector(BaseModel):     # a router, as data: added at runtime, not edite
     id: str; name: str
     kind: str                   # "openai_compat" | "ninerouter"
     base_url: str
-    token_env: str | None = None    # the NAME of the variable holding the token, never the token
+    secret: str | None = None   # the ID of a [secrets.<id>] entry in sieve.toml -- never the token,
+    admin_secret: str | None = None  # and never the name of a variable either; the config file says
+                                # which variable an id names, and the API refuses every `*_env` key
     read: bool = True           # its ids join the inventory
     write: bool = False         # it is given the chains, one combo per profile
     poll_minutes: int = 60
@@ -115,6 +117,9 @@ class Connector(BaseModel):     # a router, as data: added at runtime, not edite
     last_error: str | None = None   # the last sentence it failed with; cleared by a success
     options: dict[str, Any] = {}    # kind-specific, and every key names something; per kind below
     created_at: datetime | None = None
+    # `token_env` is still a column, and inert: an old row keeps it until
+    # `tools/migrate_connector_secrets.py` moves the name to an id and clears it.
+    # Nothing reads it, and no response carries it.
 
 class ConnectorTest(BaseModel):     # POST /v1/connectors/{id}/test; 200 even when the router is down
     ok: bool; models_count: int = 0; error: str | None = None
@@ -270,8 +275,9 @@ never changes the chain.
 Tables: `models`, `aliases`, `observations` (append-only, unique on
 `(model_id, source, field, observed_at)`), `prices`, `reachable` (carrying the
 `connector_id` that served each row), `connectors` (id, name, kind, base_url,
-token_env, read, write, poll_minutes, last_pull_at, last_push_at, last_error,
-options — never a token), `snapshots`
+secret, admin_secret, read, write, poll_minutes, last_pull_at, last_push_at,
+last_error, options — never a token, and never the name of the variable one is
+in: an id and nothing more), `snapshots`
 (one row per engine run: id, at, source rows counted), `rankings` (JSON per
 profile per snapshot), `chains` (current per profile), `decisions`
 (append-only), `telemetry` (append-only, pruned after 30 days), `tokens`
@@ -288,6 +294,7 @@ profile per snapshot), `chains` (current per profile), `decisions`
 [sources.manual]      enabled = true    dir = "data/observations"
 [inventories.gateway] kind = "openai_compat"  base_url = "http://localhost:20128"  token_env = "GATEWAY_TOKEN"
 [inventories.pinned]  kind = "list"           models = ["anthropic/claude-sonnet-5"]
+[secrets.gateway]     env = "GATEWAY_TOKEN"   kinds = ["ninerouter","openai_compat"]   # what a connector's `secret` names
 [targets.out]         kind = "file"           dir = "out"
 [schedule]   pull = "hourly"  evaluate = "hourly"   # deprecated, read by nothing
 ```

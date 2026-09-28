@@ -14,11 +14,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sieve.axes import control as axis_control
 from sieve.contracts import SHIP_DEFAULT, Axis, Connector, Modality, Profile, ProfileSettings
 from sieve.profiles import control
+from sieve.secrets import ID as SECRET_ID
+from sieve.secrets import refuse_environment_names
 from sieve.store import Store
 
 VERSION = 1
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$", re.I)
-_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 
 
 class StrictModel(BaseModel):
@@ -36,7 +37,13 @@ class ConnectorBundle(StrictModel):
     name: str
     kind: str
     base_url: str
-    token_env: str | None = None
+    #: the id of a `[secrets.<id>]` entry in `sieve.toml`. A bundle carries ids,
+    #: never names: the file that resolves an id into an environment variable
+    #: lives on the box the bundle is imported into, and a bundle that named the
+    #: variable instead would be asking a foreign box to trust a foreign name.
+    secret: str | None = None
+    #: the second credential, for a kind whose admin API has its own token
+    admin_secret: str | None = None
     read: bool = True
     write: bool = False
     poll_minutes: int = Field(default=60, ge=1)
@@ -56,7 +63,9 @@ def export_config(store: Store, owner_id: str | None = None) -> dict[str, Any]:
 
     Unscoped, this was the widest leak in the API: a single GET handed back
     every person's profiles, their connectors' base URLs and the names of the
-    environment variables holding their tokens.
+    environment variables holding their tokens. It carries secret *ids* now --
+    the table that resolves an id into a variable lives in `sieve.toml`, on the
+    box, and does not travel.
     """
     profiles: list[dict[str, Any]] = []
     for profile in control.profiles(store, owner_id, shared=False):
@@ -76,7 +85,8 @@ def export_config(store: Store, owner_id: str | None = None) -> dict[str, Any]:
             "name": item.name,
             "kind": item.kind,
             "base_url": item.base_url,
-            "token_env": item.token_env,
+            "secret": item.secret,
+            "admin_secret": item.admin_secret,
             "read": item.read,
             "write": item.write,
             "poll_minutes": item.poll_minutes,
@@ -96,6 +106,7 @@ def export_config(store: Store, owner_id: str | None = None) -> dict[str, Any]:
 def validate_config(
     raw: dict[str, Any], store: Store, source_names: set[str], owner_id: str | None = None
 ) -> ConfigBundle:
+    refuse_environment_names(raw)
     try:
         bundle = ConfigBundle.model_validate(raw)
     except ValidationError as exc:
@@ -149,10 +160,20 @@ def validate_config(
             raise ValueError(f"connector {connector.name}: base_url must be an http(s) URL")
         if connector.kind not in {"openai_compat", "ninerouter"}:
             raise ValueError(f"unknown connector kind {connector.kind!r}")
-        if connector.token_env and not _ENV_NAME.match(connector.token_env):
+        if connector.admin_secret and connector.kind != "ninerouter":
             raise ValueError(
-                f"connector {connector.name}: token_env must name an environment variable"
+                f"connector {connector.name}: admin_secret is the second credential "
+                f"of a kind with an admin API, and {connector.kind!r} has none"
             )
+        for key, secret_id in (
+            ("secret", connector.secret),
+            ("admin_secret", connector.admin_secret),
+        ):
+            if secret_id and not SECRET_ID.match(secret_id):
+                raise ValueError(
+                    f"connector {connector.name}: {key} must be the id of an entry "
+                    "in [secrets] in sieve.toml"
+                )
     return bundle
 
 
@@ -335,9 +356,9 @@ def apply_config(
                     **item,
                 )
             db.execute(
-                "INSERT OR REPLACE INTO connectors(id,name,kind,base_url,token_env,read,write,"
-                "poll_minutes,last_pull_at,last_push_at,last_error,options,created_at,owner_id) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO connectors(id,name,kind,base_url,secret,admin_secret,"
+                "token_env,read,write,poll_minutes,last_pull_at,last_push_at,last_error,"
+                "options,created_at,owner_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 Store._connector_row(connector),
             )
         if target.get("_prune"):

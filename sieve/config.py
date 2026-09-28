@@ -1,7 +1,8 @@
 """`sieve.toml` (CONTRACTS section 5), resolved into typed config.
 
 Secrets are never read from this file: a source names the environment
-variable that holds its key, and nothing else.
+variable that holds its key, and a connector names a `[secrets.<id>]` entry
+that names that variable -- ids and names, never a value.
 """
 
 from __future__ import annotations
@@ -10,9 +11,10 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sieve.contracts import InventoryConfig, Modality, SourceConfig, TargetConfig
+from sieve.secrets import ID, SecretConfig, Secrets
 
 DEFAULT_CONFIG = "sieve.toml"
 
@@ -58,6 +60,16 @@ class Config(BaseModel):
     sources: dict[str, SourceConfig] = Field(default_factory=dict)
     inventories: dict[str, InventoryConfig] = Field(default_factory=dict)
     targets: dict[str, TargetConfig] = Field(default_factory=dict)
+    #: `[secrets.<id>]`: the server-side registry of secret ids. A connector
+    #: carries one of these ids, and this file -- edited on the box, never over
+    #: the wire -- is the only place that says which variable it names and which
+    #: connector kinds may use it.
+    secrets: dict[str, SecretConfig] = Field(default_factory=dict)
+
+    @property
+    def secret_registry(self) -> Secrets:
+        """The `[secrets.*]` table, as the connectors ask for it."""
+        return Secrets(self.secrets)
 
     # -- resolved paths ------------------------------------------------- #
 
@@ -145,6 +157,20 @@ def load_config(path: str | Path | None = None, *, root: Path | None = None) -> 
             options={k: v for k, v in body.items() if k not in known},
         )
 
+    secrets: dict[str, SecretConfig] = {}
+    for name, body in _section(raw, "secrets").items():
+        if not ID.match(name):
+            raise ValueError(
+                f"[secrets.{name}] is not a usable secret id: letters, digits, "
+                "hyphen and underscore, up to 64 characters"
+            )
+        try:
+            secrets[name] = SecretConfig(**body)
+        except TypeError as exc:
+            raise ValueError(f"[secrets.{name}]: {exc}") from exc
+        except ValidationError as exc:
+            raise ValueError(f"[secrets.{name}]: {exc}") from exc
+
     return Config(
         root=base,
         store=StoreConfig(**_section(raw, "store")),
@@ -154,6 +180,7 @@ def load_config(path: str | Path | None = None, *, root: Path | None = None) -> 
         sources=sources,
         inventories=inventories,
         targets=targets,
+        secrets=secrets,
     )
 
 
