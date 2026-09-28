@@ -572,6 +572,8 @@ def mount(app: Any, config: Any) -> None:
         for route in app.router.routes
         if not (isinstance(route, APIRoute) and route.path == "/v1/guide")
     ]
+    if os.environ.get("APP_ENV", "").strip().lower() == "dev":
+        _mount_crash(app)
     guide_path = _ROOT / "OPERATING.md"
     if guide_path.is_file():
         kit.guide.mount(
@@ -581,6 +583,30 @@ def mount(app: Any, config: Any) -> None:
             version=__version__,
             surfaces=["errors", "credentials", "idempotency"],
         )
+
+
+#: The conformance suite's `--boom-path`: a route that raises, so §3.3's "a 500
+#: carries the envelope and never the exception" can be checked over HTTP.
+CRASH_PATH = "/v1/_crash"
+
+
+def _mount_crash(app: Any) -> None:
+    """`GET /v1/_crash`, under `APP_ENV=dev` only (never on the box)."""
+
+    def crash() -> None:
+        raise RuntimeError("conformance boom: this text must never reach the caller")
+
+    app.add_api_route(CRASH_PATH, crash, methods=["GET"], include_in_schema=False)
+    # Registered last; the /v1 catch-all would answer first, so move it ahead.
+    routes = app.router.routes
+    routes.insert(_first_catch_all(routes), routes.pop())
+
+
+def _first_catch_all(routes: list[Any]) -> int:
+    for index, route in enumerate(routes):
+        if "{" in getattr(route, "path", "") and getattr(route, "path", "").startswith("/v1/{"):
+            return index
+    return len(routes)
 
 
 def _wrap_writes(app: Any, store: Any) -> None:

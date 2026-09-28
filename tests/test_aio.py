@@ -546,3 +546,19 @@ def test_on_the_probes_apply_needs_no_idempotency_key(on: TestClient) -> None:
     """sieve-probe posts /v1/profiles/{name}/apply without a key every 15 min."""
     answer = on.post("/v1/profiles/nope/apply", json={}, headers=BOX)
     assert answer.json().get("error", {}).get("code") != "idempotency_key_required"
+
+
+def test_the_crash_route_exists_only_under_app_env_dev(
+    box: Config, seats: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The conformance suite's boom path is a dev-only route, never the box's."""
+    monkeypatch.setenv("AGENT_V1", "1")
+    monkeypatch.delenv("APP_ENV", raising=False)
+    with TestClient(create_app(box)) as client:
+        assert client.get(aio.CRASH_PATH, headers=BOX).status_code == 404
+    monkeypatch.setenv("APP_ENV", "dev")
+    with TestClient(create_app(box), raise_server_exceptions=False) as client:
+        answer = client.get(aio.CRASH_PATH, headers=BOX)
+        assert answer.status_code == 500
+        assert "boom" not in answer.text
+        assert answer.json()["error"]["code"] == "server_error"
