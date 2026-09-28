@@ -562,3 +562,22 @@ def test_the_crash_route_exists_only_under_app_env_dev(
         assert answer.status_code == 500
         assert "boom" not in answer.text
         assert answer.json()["error"]["code"] == "server_error"
+
+
+def test_on_a_v1_miss_is_the_kits_envelope_with_a_request_id(on: TestClient) -> None:
+    answer = on.get("/v1/no-such-route", headers=BOX)
+    assert answer.status_code == 404
+    assert set(answer.json()["error"]) >= {"code", "message", "request_id"}
+
+
+def test_on_the_wrong_method_is_a_405_with_allow(on: TestClient) -> None:
+    answer = on.get("/v1/apply", headers=BOX)
+    assert answer.status_code == 405
+    assert answer.json()["error"]["code"] == "method_not_allowed"
+    assert "POST" in answer.headers.get("allow", "")
+
+
+def test_off_a_v1_miss_is_sieves_own_404(off: TestClient) -> None:
+    answer = off.get("/v1/no-such-route")
+    assert answer.status_code == 404
+    assert answer.json() == {"error": {"code": "not_found", "message": "no /v1/no-such-route endpoint"}}

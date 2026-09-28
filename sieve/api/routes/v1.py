@@ -15,7 +15,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from sieve.api.auth import Token, actor_for, owner_of_request, require_read
 from sieve.api.auth import require as require_scope
@@ -1345,16 +1345,30 @@ def recommend(
     return {"profile": profile, "models": models, "computed_at": found.computed_at}
 
 
+class ApplyBody(BaseModel):
+    """What `POST /v1/apply` reads: which profiles, and optionally which targets.
+
+    Typed so the spec says what the route takes (an agent, and the conformance
+    suite, read the body's properties off it); `extra="allow"` keeps every body
+    a caller sends today valid.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    profiles: list[str] | None = None
+    targets: Any = None
+
+
 @router.post("/apply")
 def post_apply(
     request: Request,
-    body: Annotated[dict[str, Any], Body()],
+    payload: Annotated[ApplyBody, Body()],
     token: Annotated[Token, Depends(require_scope("apply"))],
 ) -> Any:
     cfg, store = config_of(request), store_of(request)
     owner_id = owner_of(request)
-    wanted = body.get("profiles") or []
-    targets = body.get("targets") or None
+    wanted = payload.profiles or []
+    targets = payload.targets or None
     chains = [c for c in store.chains(owner_id) if not wanted or c.profile in wanted]
     if not chains:
         return error(404, "not_found", "no computed chains to apply; run sieve plan --store")

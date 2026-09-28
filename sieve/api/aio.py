@@ -572,6 +572,7 @@ def mount(app: Any, config: Any) -> None:
         for route in app.router.routes
         if not (isinstance(route, APIRoute) and route.path == "/v1/guide")
     ]
+    _envelope_the_catch_all(app)
     if os.environ.get("APP_ENV", "").strip().lower() == "dev":
         _mount_crash(app)
     guide_path = _ROOT / "OPERATING.md"
@@ -583,6 +584,60 @@ def mount(app: Any, config: Any) -> None:
             version=__version__,
             surfaces=["errors", "credentials", "idempotency"],
         )
+
+
+def _envelope_the_catch_all(app: Any) -> None:
+    """sieve's `/v1/{path}` catch-all, answering in the kit's words.
+
+    The catch-all exists so a /v1 miss is JSON and never the SPA shell. With the
+    kit on, its answer has to be §3.3's: the envelope with a `request_id`, and a
+    405 (not 404) when the path is a route under another method.
+    """
+    routes = app.router.routes
+    for index, route in enumerate(routes):
+        if isinstance(route, APIRoute) and route.name == "v1_not_found":
+            routes[index] = _rebuilt(route, _kit_miss(app))
+            return
+
+
+def _kit_miss(app: Any) -> Callable[..., Any]:
+    from starlette.routing import Match
+
+    async def v1_not_found(request: Request, path: str) -> None:
+        kit = _kit()
+        scope = dict(request.scope)
+        allowed: set[str] = set()
+        for route in _answering_routes(app):
+            if getattr(route, "name", "") == "v1_not_found":
+                continue
+            match, _ = route.matches(scope)
+            if match is Match.PARTIAL:
+                allowed |= set(getattr(route, "methods", None) or ())
+        if allowed:
+            # Starlette's own exception: the kit's handler keeps its `Allow`
+            # header and writes the §3.3 envelope around it.
+            from starlette.exceptions import HTTPException
+
+            raise HTTPException(405, headers={"Allow": ", ".join(sorted(allowed))})
+        raise kit.errors.APIError(404, "not_found", f"no /v1/{path} endpoint")
+
+    return v1_not_found
+
+
+def _answering_routes(app: Any) -> list[Any]:
+    """Every concrete route, walking into included routers (FastAPI 0.141)."""
+    found: list[Any] = []
+
+    def walk(routes: Any) -> None:
+        for route in routes:
+            inner = getattr(route, "original_router", None)
+            if inner is not None:
+                walk(inner.routes)
+            else:
+                found.append(route)
+
+    walk(app.router.routes)
+    return found
 
 
 #: The conformance suite's `--boom-path`: a route that raises, so §3.3's "a 500
