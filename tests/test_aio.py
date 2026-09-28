@@ -301,7 +301,8 @@ def test_on_a_write_without_the_scope_is_not_allowed(
 
 def test_on_a_write_with_the_scope_reaches_the_route(on: TestClient) -> None:
     """The rule lets it through; what the route then says is sieve's business."""
-    answer = on.post("/v1/apply", json={}, headers=BOX)
+    # /v1/apply is a run: it needs an Idempotency-Key (§3.4) before anything else.
+    answer = on.post("/v1/apply", json={}, headers={**BOX, "Idempotency-Key": "reach-1"})
     assert answer.status_code == 404
     assert answer.json()["error"]["code"] == "not_found"
 
@@ -310,7 +311,9 @@ def test_on_a_dropped_role_demotes_the_key(
     on: TestClient, seats: Store, _gate: GateStub, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """§3.1: the key holds `admin`, gate now says this owner is a viewer."""
-    secret, _ = secret_for(seats, ADA, {"admin"})
+    # `read` survives the demotion: a key left with no scope at all is refused
+    # as bad_key (401) by the kit, and this test is about the 403.
+    secret, _ = secret_for(seats, ADA, {"read", "admin"})
     # The key is honoured as admin while gate still says owner...
     assert on.delete("/v1/connectors/nope", headers=auth_header(secret)).status_code == 404
 
@@ -419,7 +422,8 @@ def test_on_a_body_over_the_cap_is_refused(on: TestClient) -> None:
 def test_on_a_body_that_does_not_match_the_contract_is_the_kits_envelope(
     on: TestClient,
 ) -> None:
-    answer = on.post("/v1/outcomes", json={"nonsense": True}, headers=BOX)
+    # FEED holds `telemetry`, which /v1/outcomes demands before it reads a body.
+    answer = on.post("/v1/outcomes", json={"nonsense": True}, headers=FEED)
     assert answer.status_code == 422
     assert answer.json()["error"]["code"] == "invalid_body"
 
@@ -526,7 +530,7 @@ def test_on_a_members_telemetry_key_is_capped(
     on: TestClient, seats: Store, _gate: GateStub
 ) -> None:
     """Only the owner reports outcomes: a member's key loses the scope."""
-    secret, _ = secret_for(seats, ADA, {"telemetry"})
+    secret, _ = secret_for(seats, ADA, {"read", "telemetry"})
     _gate._body = {
         "user_id": 18, "email": ADA, "name": "Ada", "role": "member",
         "status": "active", "app": "sieve",
