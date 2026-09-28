@@ -30,10 +30,25 @@ gateway rather than an editor.
 | `set_weights`, `set_policy` | `profiles:write` |
 | `report_outcome` | `telemetry` |
 | `apply` | `apply` |
+| `list_models`, `leaderboard`, `status`, `list_runs`, `export_config` | — |
 
 `explain` is `get_ranking` reduced to why the leader leads: the gap to #2, the
 per-axis contributions, the confidence, and the smallest single weight change
 that would flip them.
+
+## The hosted door: `POST /v1/mcp`
+
+With `AGENT_V1` on, the API itself serves the same tools at `POST /v1/mcp`
+(stateless MCP over HTTP, one JSON-RPC message per request). There is no
+`SIEVE_TOKEN` there: every call runs as the API key that made the request, and
+each tool is one `/v1` route with that route's scope (`tools/list` publishes the
+route as `x-aio-route`). `apply` needs an `_idempotency_key`. For `set_weights`
+the arguments after `name` are the weights themselves (`{"name": "coder",
+"quality": 0.6, "cost": 0.4}`) and for `set_ship` it is `ship`. `status` and
+`export_config` take an optional `sections` (comma-separated top-level keys).
+With `AGENT_V1` off the path is not there.
+
+`sieve mcp` above is the local door and keeps `SIEVE_TOKEN` as its own bearer.
 
 ## How it is wired
 
