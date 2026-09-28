@@ -323,3 +323,30 @@ def test_a_chain_is_served_to_the_person_who_owns_it(box: Config) -> None:
         assert mine.status_code == 200
         assert mine.json()["primary"] == "openai/gpt-5-6-sol"
         assert client.get("/v1/chains/judge", headers=auth(bo_secret)).status_code == 404
+
+
+def test_a_token_whose_owner_row_is_gone_mints_as_a_viewer(box: Config) -> None:
+    """No owner record is not an owner record.
+
+    `owner` carries admin since A01, so the fallback when `owners.by_id` finds
+    nothing has to be the smallest role, not the largest: a token left behind
+    by a deleted user must not be able to hand itself admin.
+    """
+    store, _boss, _ada, _bo = seats(box)
+    _token, orphan_secret = script_tokens.mint(
+        store, "no-such-user", "orphan", {"read", "profiles:write"}
+    )
+    store.close()
+
+    with TestClient(create_app(box)) as client:
+        refused = client.post(
+            "/v1/tokens", json={"name": "climb", "scopes": ["admin"]}, headers=auth(orphan_secret)
+        )
+        assert refused.status_code == 403
+        assert refused.json()["error"]["code"] == "scope_refused"
+
+        # A viewer scope still mints: the seat is small, not dead.
+        small = client.post(
+            "/v1/tokens", json={"name": "small", "scopes": ["read"]}, headers=auth(orphan_secret)
+        )
+        assert small.status_code == 201

@@ -82,7 +82,11 @@ def post_token(
     if owner_id is None:
         return error(409, "no_identity", "nobody has signed in on this box yet")
     who = owners.by_id(store_of(request), owner_id)
-    allowed = set(ROLE_SCOPES.get(who.role if who else "owner", frozenset())) | {"telemetry"}
+    # A token whose owner row is gone mints as a viewer, never as an owner:
+    # "owner" carries admin, and a missing record must not grant more than the
+    # seat the token was made for. Refusing outright would strand a token that
+    # still works for reading, so the fallback is the smallest role there is.
+    allowed = set(ROLE_SCOPES.get(who.role if who else "viewer", frozenset())) | {"telemetry"}
     wanted = set(body.get("scopes") or ["read"])
     if not wanted <= allowed:
         return error(
