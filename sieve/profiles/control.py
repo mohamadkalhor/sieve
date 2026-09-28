@@ -69,7 +69,19 @@ def readable(store: Store, owner_id: str | None) -> tuple[str, tuple[Any, ...]]:
 
 
 def seed(store: Store, directory: Any, owner_id: str | None = None) -> None:
-    """Import the shipped profiles once, into a store that holds none of theirs."""
+    """Import the shipped profiles once, into a store that holds none of theirs.
+
+    A call with no owner on a box that has one -- `sieve check` from a shell, a
+    script -- seeds as the owner, the way `owner_identity` answers such a call.
+    Seeding it as "nobody" wrote a second, unowned copy of every profile, and
+    the owner, who reads the whole box, then saw every seat twice.
+    """
+    if owner_id is None:
+        from sieve import owners
+
+        boss = owners.owner(store)
+        if boss is not None:
+            owner_id = boss.id
     clause, args = mine(owner_id)
     if store.db.execute(f"SELECT 1 FROM profiles WHERE {clause} LIMIT 1", args).fetchone():
         return
