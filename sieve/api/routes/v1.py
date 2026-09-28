@@ -1874,10 +1874,11 @@ def _pull_source(
     except (LookupError, ImportError) as exc:
         return error(501, "not_built", str(exc))
     job = job or uuid.uuid4().hex[:12]
+    retryable = snapshot is not None  # a job's derived id: an attempt may repeat
     result = source.pull(source_cfg, http_client())
     snapshot = store.new_snapshot(source_rows=len(result.observations), sid=snapshot)
     store.upsert_models(result.models)
-    added = store.add_observations(result.observations, snapshot=snapshot)
+    added = store.add_observations(result.observations, snapshot=snapshot, replace=retryable)
     intake = store.add_prices(result.prices)
     warnings = list(result.warnings)
     warnings += [
