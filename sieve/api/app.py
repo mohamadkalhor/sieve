@@ -68,10 +68,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.runner = Runner(cfg, app.state.store, reap_orphans=True)
     app.state.scheduler = Scheduler(app.state.runner)
     app.state.scheduler.start()
+    # §3.5's job pool, with the surface on: its own thread(s), its own lock at
+    # `<data dir>/aio.lock`, and the restart rule for rows a kill left behind.
+    # Nothing at all with `AGENT_V1` off.
+    aio.start_jobs(app)
     try:
         yield
     finally:
         app.state.scheduler.stop()
+        aio.stop_jobs(app)
         app.state.store.close()
 
 
