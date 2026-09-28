@@ -167,6 +167,26 @@ def secret_for(store: Store, email: str, scopes: set[str]) -> tuple[str, str]:
     return secret, token.id
 
 
+def all_routes(app: Any) -> list[APIRoute]:
+    """Every APIRoute the app answers with, including those of included routers.
+
+    FastAPI 0.141 keeps an included router as one `_IncludedRouter` entry in
+    `app.routes` that reads its `original_router` lazily; walk into those.
+    """
+    found: list[APIRoute] = []
+
+    def walk(routes: Any) -> None:
+        for route in routes:
+            inner = getattr(route, "original_router", None)
+            if inner is not None:
+                walk(inner.routes)
+            elif isinstance(route, APIRoute):
+                found.append(route)
+
+    walk(app.routes)
+    return found
+
+
 def auth_header(secret: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {secret}"}
 
@@ -207,7 +227,7 @@ def test_off_a_write_needs_no_idempotency_key(off: TestClient) -> None:
 def test_off_a_bad_bearer_is_sieves_own_word(off: TestClient) -> None:
     answer = off.post("/v1/apply", json={}, headers=auth_header("sv_not-a-real-token"))
     assert answer.status_code == 401
-    assert answer.json()["error"]["code"] == "unauthenticated"
+    assert answer.json()["error"]["code"] == "unauthorized"
 
 
 def test_off_the_kit_is_not_mounted(off: TestClient) -> None:
@@ -418,7 +438,8 @@ def test_on_a_write_leaves_an_audit_row(on: TestClient, box: Config) -> None:
         .fetchall()
     )
     assert rows, "a write left no audit row"
-    assert any(row[1] == "POST" and "tokens" in (row[2] or "") for row in rows)
+    # `action` is "<METHOD> <route template>" (agentkit.audit)
+    assert any((row[1] or "").startswith("POST ") and "tokens" in row[1] for row in rows)
 
 
 def test_on_the_kit_file_sits_beside_the_store_and_never_the_cwd(
@@ -455,9 +476,9 @@ def test_on_every_write_route_carries_the_wrapper(
     app = create_app(box)
     writes = [
         route
-        for route in app.routes
-        if isinstance(route, APIRoute)
-        and route.path.startswith("/v1")
+        for route in all_routes(app)
+        if route.path.startswith("/v1")
+        and route.name != "v1_not_found"  # sieve's own JSON 404 catch-all
         and (route.methods or set()) & {"POST", "PUT", "PATCH", "DELETE"}
     ]
     assert writes, "no write routes found: the walk is wrong, not the app"
@@ -472,8 +493,8 @@ def test_on_the_run_routes_are_the_ones_that_do_work(
     app = create_app(box)
     marked = {
         route.path_format
-        for route in app.routes
-        if isinstance(route, APIRoute) and getattr(route.endpoint, RUN_MARK, False)
+        for route in all_routes(app)
+        if getattr(route.endpoint, RUN_MARK, False)
     }
     assert marked == set(aio.RUN_ROUTES)
 

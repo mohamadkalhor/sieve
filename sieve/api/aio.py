@@ -24,6 +24,7 @@ the caller is told when they are refused.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import sys
 from dataclasses import dataclass
@@ -31,7 +32,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
 from fastapi import Request
-from fastapi.routing import APIRoute, request_response
+from fastapi.routing import APIRoute
 
 from sieve import __version__
 from sieve import owners
@@ -589,22 +590,89 @@ def _wrap_writes(app: Any, store: Any) -> None:
     is what makes a key required on a run, replays an answered call, and refuses
     a key reused with a different body -- and a route added later gets it by
     being a write under `/v1`, which is the property that matters.
+
+    FastAPI (0.141 on this box) no longer copies an included router's routes
+    into `app.router.routes`: each `include_router` leaves one `_IncludedRouter`
+    that reads the *module-level* router's routes lazily. Wrapping those in place
+    would wrap them for every app built from the same modules -- including an
+    app with `AGENT_V1` off, which must stay exactly as it was. So each included
+    router is replaced, for this app only, by a copy whose write routes carry
+    the wrapper. The wrapper also adds a `request` parameter to the endpoint's
+    signature, which only a route *built* from the wrapper picks up, so the copy
+    is built with `add_api_route` rather than patched. The copy also leaves out
+    sieve's own `/v1/guide`: the kit mounts its guide at the same path.
     """
-    kit = _kit()
-    prefix = str(kit.errors.PREFIX)
-    for route in list(app.router.routes):
-        if not isinstance(route, APIRoute) or not route.path.startswith(prefix):
+    routes = app.router.routes
+    for index, entry in enumerate(list(routes)):
+        original = getattr(entry, "original_router", None)
+        if original is not None:
+            copy = _copy_router(original, store)
+            context = dataclasses.replace(entry.include_context, included_router=copy)
+            routes[index] = type(entry)(original_router=copy, include_context=context)
+        elif isinstance(entry, APIRoute) and _is_v1_write(entry):
+            # An older FastAPI that flattened the routes: rebuild this one route.
+            routes[index] = _rebuilt(entry, _wrapped(entry, store))
+
+
+def _is_v1_write(route: APIRoute) -> bool:
+    prefix = str(_kit().errors.PREFIX)
+    return route.path.startswith(prefix) and bool((route.methods or set()) & WRITE_METHODS)
+
+
+def _wrapped(route: APIRoute, store: Any) -> Callable[..., Any]:
+    """The route's endpoint under the kit's idempotency wrapper (once)."""
+    endpoint = route.endpoint
+    if getattr(endpoint, WRAPPED, False):
+        return endpoint
+    required = route.path_format in RUN_ROUTES
+    wrapped = store.idempotent(required=required)(endpoint)
+    setattr(wrapped, WRAPPED, True)
+    if required:
+        _kit().limits.run_route(wrapped)
+    return wrapped
+
+
+def _route_kwargs(route: APIRoute) -> dict[str, Any]:
+    """Everything `add_api_route` accepts that the route already carries."""
+    import inspect
+
+    from fastapi import APIRouter
+
+    wanted = inspect.signature(APIRouter.add_api_route).parameters
+    return {
+        name: getattr(route, name)
+        for name in wanted
+        if name not in {"self", "path", "endpoint"} and hasattr(route, name)
+    }
+
+
+def _rebuilt(route: APIRoute, endpoint: Callable[..., Any]) -> APIRoute:
+    from fastapi import APIRouter
+
+    holder = APIRouter()
+    holder.add_api_route(route.path, endpoint, **_route_kwargs(route))
+    return holder.routes[-1]
+
+
+def _copy_router(original: Any, store: Any) -> Any:
+    """A per-app copy of `original`: write routes wrapped, sieve's guide dropped."""
+    from fastapi import APIRouter
+
+    copy = APIRouter()
+    for route in original.routes:
+        if getattr(route, "original_router", None) is not None:
+            copy.routes.append(
+                type(route)(
+                    original_router=_copy_router(route.original_router, store),
+                    include_context=route.include_context,
+                )
+            )
             continue
-        if not (route.methods or set()) & WRITE_METHODS:
+        if not isinstance(route, APIRoute):
+            copy.routes.append(route)
             continue
-        endpoint = route.endpoint
-        if getattr(endpoint, WRAPPED, False):
+        if route.path == "/v1/guide":
             continue
-        required = route.path_format in RUN_ROUTES
-        wrapped = store.idempotent(required=required)(endpoint)
-        setattr(wrapped, WRAPPED, True)
-        if required:
-            kit.limits.run_route(wrapped)
-        route.endpoint = wrapped
-        route.dependant.call = wrapped
-        route.app = request_response(route.get_route_handler())
+        endpoint = _wrapped(route, store) if _is_v1_write(route) else route.endpoint
+        copy.add_api_route(route.path, endpoint, **_route_kwargs(route))
+    return copy
