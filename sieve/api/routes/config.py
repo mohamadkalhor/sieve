@@ -22,6 +22,7 @@ from sieve.config_bundle import (
     validate_config,
 )
 from sieve.connectors import seed_from_toml
+from sieve.pinned import AllowedHosts
 from sieve.profiles import control
 from sieve.secrets import EnvironmentNameError, Secrets
 
@@ -71,6 +72,21 @@ def _unresolvable(bundle: ConfigBundle, secrets: Secrets) -> str | None:
     return None
 
 
+def _unreachable(bundle: ConfigBundle, hosts: AllowedHosts) -> str | None:
+    """The first connector in a bundle whose host this box may not call.
+
+    A bundle travels between boxes and carries whatever `base_url` it was built
+    with; `[connectors.hosts]` is local, and the list here is not the list
+    there. A host this box did not name is refused on the way in with the same
+    422 the connector routes answer, so the two doors into the same table agree.
+    """
+    for connector in bundle.connectors:
+        reason = hosts.problem(connector.kind, connector.base_url)
+        if reason:
+            return f"connector {connector.name}: {reason}"
+    return None
+
+
 @router.put("/config")
 def put_config(
     request: Request,
@@ -91,6 +107,9 @@ def put_config(
         return error(422, "bad_connector", str(exc))
     except ValueError as exc:
         return error(400, "bad_config", str(exc))
+    unreachable = _unreachable(incoming, cfg.allowed_hosts)
+    if unreachable:
+        return error(422, "host_not_allowed", unreachable)
     refused = _unresolvable(incoming, cfg.secret_registry)
     if refused:
         return error(422, "bad_connector", refused)

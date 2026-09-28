@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sieve.contracts import InventoryConfig, Modality, SourceConfig, TargetConfig
+from sieve.pinned import AllowedHosts, normalize_entry
 from sieve.secrets import ID, SecretConfig, Secrets
 
 DEFAULT_CONFIG = "sieve.toml"
@@ -49,6 +50,21 @@ class ScheduleConfig(BaseModel):
     evaluate: str = "hourly"
 
 
+class ConnectorConfig(BaseModel):
+    """`[connectors]`: where a connector kind may be pointed.
+
+    A connector's `base_url` is a host somebody typed, so it is data, not
+    config. This is the config side of the check: `hosts` names, per kind, the
+    `host:port` that kind may call, and everything else is refused on the way in
+    (see `sieve/pinned.py` for the second half of the rule, the address that is
+    actually dialled).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    #: kind -> entries written as `host:port`, e.g. ["127.0.0.1:20128"]
+    hosts: dict[str, list[str]] = Field(default_factory=dict)
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -65,11 +81,19 @@ class Config(BaseModel):
     #: the wire -- is the only place that says which variable it names and which
     #: connector kinds may use it.
     secrets: dict[str, SecretConfig] = Field(default_factory=dict)
+    #: `[connectors.hosts]`: the `host:port` each connector kind may be pointed
+    #: at. Empty is a real answer: nothing is allowed until the box says so.
+    connectors: ConnectorConfig = Field(default_factory=ConnectorConfig)
 
     @property
     def secret_registry(self) -> Secrets:
         """The `[secrets.*]` table, as the connectors ask for it."""
         return Secrets(self.secrets)
+
+    @property
+    def allowed_hosts(self) -> AllowedHosts:
+        """The `[connectors.hosts]` table, as the routes and connectors ask for it."""
+        return AllowedHosts(self.connectors.hosts)
 
     # -- resolved paths ------------------------------------------------- #
 
@@ -171,6 +195,17 @@ def load_config(path: str | Path | None = None, *, root: Path | None = None) -> 
         except ValidationError as exc:
             raise ValueError(f"[secrets.{name}]: {exc}") from exc
 
+    hosts: dict[str, list[str]] = {}
+    for kind, entries in _section(_section(raw, "connectors"), "hosts").items():
+        if not isinstance(entries, list):
+            raise ValueError(
+                f"[connectors.hosts] {kind} must be a list of host:port entries"
+            )
+        try:
+            hosts[kind] = [normalize_entry(entry) for entry in entries]
+        except ValueError as exc:
+            raise ValueError(f"[connectors.hosts] {kind}: {exc}") from exc
+
     return Config(
         root=base,
         store=StoreConfig(**_section(raw, "store")),
@@ -181,6 +216,7 @@ def load_config(path: str | Path | None = None, *, root: Path | None = None) -> 
         inventories=inventories,
         targets=targets,
         secrets=secrets,
+        connectors=ConnectorConfig(hosts=hosts),
     )
 
 

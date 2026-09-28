@@ -187,6 +187,27 @@ kinds = ["ninerouter", "openai_compat"]
 env = "NINEROUTER_TOKEN"
 kinds = ["ninerouter"]
 
+# --- connectors: where a stored base_url may point --------------------------
+#
+# A connector is a row in the database that this box calls out to, carrying a
+# credential somebody put there. Its `base_url` is data, so it is judged
+# against this table: a connector whose host is not listed for its kind is
+# refused on the way in (422 `host_not_allowed`, from `/v1/connectors` and from
+# a bundle import alike) and never stored. The list is also the exception that
+# lets the gateway on this box be reached at all -- loopback is otherwise
+# refused, which is the point: an empty table means no connector can reach
+# `127.0.0.1` or a private address, and the cloud metadata service cannot be
+# reached whatever is written here.
+#
+# Entries are exactly `host:port` -- no scheme, no path. The name is resolved
+# once per call, every address it answers with is judged, and the request goes
+# to that address with the hostname kept for the Host header and for TLS, so a
+# name that changes its answer between the check and the call reaches nothing.
+#
+# [connectors.hosts]
+# openai_compat = ["127.0.0.1:20128", "localhost:20128"]
+# ninerouter = ["127.0.0.1:20128"]
+
 # `[inventories.*]` and `[targets.*]` below are this file's own business and
 # still name variables directly: nothing serves them, so the name never travels.
 

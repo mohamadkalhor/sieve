@@ -44,6 +44,7 @@ from sieve.connectors.loop import build_registry, refresh
 from sieve.connectors.registry import KINDS, adapter_for, kinds, writing_kinds
 from sieve.connectors.seed import seed_from_toml
 from sieve.contracts import Connector
+from sieve.pinned import AllowedHosts
 from sieve.secrets import Secrets, env_key_paths, refuse_environment_names
 from sieve.store import Store
 
@@ -161,14 +162,24 @@ def secrets_of(request: Request) -> Secrets:
     return config_of(request).secret_registry
 
 
-def problem(body: ConnectorBody, secrets: Secrets | None = None) -> tuple[int, str, str] | None:
+def problem(
+    body: ConnectorBody,
+    secrets: Secrets | None = None,
+    hosts: AllowedHosts | None = None,
+) -> tuple[int, str, str] | None:
     """Why this connector cannot be stored, or None.
 
     A (status, code, sentence) triple rather than a bare sentence: an option
-    key this kind does not understand, and a secret id the config does not have
-    or does not allow for this kind, are refused as 422 `bad_connector`, the
-    same status a schema violation gets, while everything else here is an
-    ordinary 400 `bad_request`.
+    key this kind does not understand, a secret id the config does not have
+    or does not allow for this kind, and a `base_url` whose host is not in
+    `[connectors.hosts]` for this kind, are refused as 422, the same status a
+    schema violation gets, while everything else here is an ordinary 400
+    `bad_request`.
+
+    The host check is here, on the way in, because a connector row is a door
+    out of this box: what is refused never gets stored, and what is stored was
+    named by the operator in `sieve.toml` rather than typed by whoever holds a
+    token of either scope.
     """
     if not _NAME.match(body.name):
         return (
@@ -181,6 +192,11 @@ def problem(body: ConnectorBody, secrets: Secrets | None = None) -> tuple[int, s
         return (400, "bad_request", f"no connector kind {body.kind!r}; have {', '.join(kinds())}")
     if not re.match(r"^https?://", body.base_url.strip()):
         return (400, "bad_request", f"base_url must be an http(s) URL, not {body.base_url!r}")
+    host_problem = (hosts if hosts is not None else AllowedHosts()).problem(
+        body.kind, body.base_url
+    )
+    if host_problem:
+        return (422, "host_not_allowed", host_problem)
     if body.write and not KINDS[body.kind].writes:
         return (
             400,
@@ -282,7 +298,7 @@ def create_connector(
 ) -> Any:
     store = connectors_of(request)
     secrets = secrets_of(request)
-    complaint = problem(body, secrets)
+    complaint = problem(body, secrets, config_of(request).allowed_hosts)
     if complaint:
         return error(*complaint)
     owner_id = owner_of(request)
@@ -314,7 +330,9 @@ def update_connector(
     changes = body.model_dump(exclude_none=True)
     merged = connector.model_copy(update=changes)
     complaint = problem(
-        ConnectorBody(**merged.model_dump(include=set(ConnectorBody.model_fields))), secrets
+        ConnectorBody(**merged.model_dump(include=set(ConnectorBody.model_fields))),
+        secrets,
+        config_of(request).allowed_hosts,
     )
     if complaint:
         return error(*complaint)
@@ -372,7 +390,8 @@ def test_connector(
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
     try:
-        outcome = adapter_for(connector, secrets_of(request)).test()
+        cfg = config_of(request)
+        outcome = adapter_for(connector, secrets_of(request), cfg.allowed_hosts).test()
     except ConnectorError as exc:
         store.touch_connector(connector_id, error=str(exc))
         return {"ok": False, "models_count": 0, "error": str(exc)}
@@ -398,7 +417,9 @@ def pull_connector(
     if connector is None:
         return error(404, "not_found", f"no connector {connector_id!r}")
     try:
-        count = refresh(store, connector, build_registry(cfg, store), cfg.secret_registry)
+        count = refresh(
+            store, connector, build_registry(cfg, store), cfg.secret_registry, cfg.allowed_hosts
+        )
     except ConnectorError as exc:
         return error(502, "connector_unreachable", str(exc))
     events.publish("pull", {"connector": connector.name, "found": count.found})
