@@ -11,13 +11,17 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from sieve.api.app import create_app
 from sieve.config import Config
+from sieve.contracts import Chain
+from sieve.store import Store
 from tests.test_api_acceptance import workspace  # noqa: F401  (the fixture)
 
 REPO = Path(__file__).resolve().parent.parent
@@ -76,7 +80,7 @@ def _diff(a: Any, b: Any, path: str = "") -> str | None:
     return None if a == b else f"{path}: {a!r} != {b!r}"
 
 
-def _capture(client: TestClient) -> dict[str, Any]:
+def _capture(client: TestClient, cfg: Config) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for url in CALLS:
         r = client.get(url, headers=AUTH)
@@ -87,12 +91,25 @@ def _capture(client: TestClient) -> dict[str, Any]:
             for item in body["items"]:
                 item["aliases"] = sorted(item["aliases"])
         out[url] = {"status": r.status_code, "body": body}
+    # the other branch of /v1/recommend: a profile that has shipped a chain
+    store = Store(cfg.db_path)
+    store.put_chain(
+        Chain(
+            profile="coder",
+            computed_at=datetime(2026, 9, 1, 10, 0, tzinfo=UTC),
+            primary="google/gemini-3.8-flash",
+            fallbacks=["openai/gpt-5-6-sol"],
+            local={"google/gemini-3.8-flash": ["google/gemini-3-8-flash"]},
+        )
+    )
+    store.close()
+    for url in ("/v1/recommend?profile=coder&n=2", "/v1/recommend?profile=coder&n=1"):
+        r = client.get(url, headers=AUTH)
+        out["shipped:" + url] = {"status": r.status_code, "body": _scrub(r.json())}
     return out
 
 
 def _seed_run(cfg: Config) -> None:
-    from sieve.store import Store
-
     store = Store(cfg.db_path)
     store.db.execute(
         "INSERT INTO runs(id,step,requested_by,started,finished,ok,summary) VALUES(?,?,?,?,?,?,?)",
@@ -106,13 +123,29 @@ def _seed_run(cfg: Config) -> None:
 def test_bodies_match_golden(workspace: Config) -> None:  # noqa: F811
     _seed_run(workspace)
     with TestClient(create_app(workspace)) as client:
-        got = _capture(client)
+        got = _capture(client, workspace)
     if os.environ.get("SIEVE_REGEN_GOLDEN") == "1":
         GOLDEN.write_text(json.dumps(got, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     want = json.loads(GOLDEN.read_text(encoding="utf-8"))
-    for url in CALLS:
+    for url in got:
         assert got[url]["status"] == want[url]["status"], url
         assert _diff(want[url]["body"], got[url]["body"]) is None, (
             url,
             _diff(want[url]["body"], got[url]["body"]),
         )
+
+
+def test_openapi_builds_and_names_the_models(  # noqa: F811
+    workspace: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AGENT_V1", "1")
+    with TestClient(create_app(workspace)) as client:
+        r = client.get("/v1/openapi.json")
+        assert r.status_code == 200, r.text[:300]
+        spec = r.json()
+    for path in ("/v1/leaderboard", "/v1/status", "/v1/models", "/v1/recommend", "/v1/runs", "/v1/config"):
+        op = spec["paths"][path]["get"]
+        schema = op["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema != {}, path
+        inner = schema.get("items", schema)
+        assert "$ref" in inner or "properties" in inner, (path, schema)
