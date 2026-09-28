@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sieve.api.app import create_app
-from sieve.config import Config, Paths, StoreConfig
+from sieve.config import Config, ConnectorConfig, Paths, StoreConfig
 from sieve.contracts import Connector, Observation, SourceConfig
 from sieve.store import Store
 
@@ -30,6 +30,10 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
         store=StoreConfig(path="sieve.db"),
         paths=Paths(axes=str(axes), profiles=str(profiles)),
         sources={"aa_llm": SourceConfig(name="aa_llm", modalities=["llm"])},
+        # The bundle travels with a connector's `base_url`; `[connectors.hosts]`
+        # stays on the box. This one is a placeholder nobody calls, so the box
+        # names it to let the document through -- an unnamed host is a 422.
+        connectors=ConnectorConfig(hosts={"openai_compat": ["127.0.0.1:9999"]}),
     )
     store = Store(cfg.db_path)
     now = datetime.now(UTC)

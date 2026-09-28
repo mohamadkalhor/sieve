@@ -33,8 +33,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sieve.api.app import create_app
-from sieve.config import Config, Paths, StoreConfig
+from sieve.config import Config, ConnectorConfig, Paths, StoreConfig
 from sieve.contracts import Connector
+from sieve.pinned import host_port
 from sieve.secrets import SecretConfig
 from sieve.store import Store
 
@@ -104,7 +105,7 @@ def router() -> Any:
 
 
 @pytest.fixture
-def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
+def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, router: str) -> Config:
     monkeypatch.setenv("SIEVE_TOKENS", TOKENS)
     monkeypatch.setenv("GATEWAY_TOKEN", SECRET)
     return Config(
@@ -115,6 +116,17 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
             "gateway": SecretConfig(env="GATEWAY_TOKEN", kinds=["openai_compat"]),
             "router_admin": SecretConfig(env="NINEROUTER_ADMIN_TOKEN", kinds=["ninerouter"]),
         },
+        # The stub's port is only known once the fixture has started it, and
+        # `[connectors.hosts]` is an exact `host:port` list with no wildcards.
+        # Port 1 is in it because a bundle test names a spare connector nobody
+        # ever calls: the host list gates where this box may *go*, and landing a
+        # row is a different question from reaching it.
+        connectors=ConnectorConfig(
+            hosts={
+                kind: [host_port(router), "127.0.0.1:1"]
+                for kind in ("openai_compat", "ninerouter")
+            }
+        ),
     )
 
 

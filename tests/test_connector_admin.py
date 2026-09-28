@@ -37,7 +37,7 @@ from fastapi.testclient import TestClient
 
 from sieve.api import auth
 from sieve.api.app import create_app
-from sieve.config import Config, Paths, StoreConfig
+from sieve.config import Config, ConnectorConfig, Paths, StoreConfig
 from sieve.contracts import SourceConfig
 
 REPO = Path(__file__).resolve().parent.parent
@@ -136,6 +136,11 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
         store=StoreConfig(path=str(tmp_path / "sieve.db")),
         paths=Paths(axes=str(axes), profiles=str(profiles)),
         sources={"aa_llm": SourceConfig(name="aa_llm", modalities=["llm"])},
+        # `[connectors.hosts]`: both spares below sit on loopback ports nothing
+        # listens on, so the owner's `test` fails on the socket instead of on
+        # the list. A host that is not named here is a 422 before it is a
+        # request, which is the whole point of the table.
+        connectors=ConnectorConfig(hosts={"openai_compat": ["127.0.0.1:1", "127.0.0.1:2"]}),
     )
 
 

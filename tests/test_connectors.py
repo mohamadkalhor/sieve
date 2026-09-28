@@ -24,7 +24,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sieve.api.app import create_app
-from sieve.config import Config, Paths, StoreConfig
+from sieve.config import Config, ConnectorConfig, Paths, StoreConfig
 from sieve.connectors import seed_from_toml
 from sieve.connectors.base import ConnectorError
 from sieve.connectors.ninerouter import NineRouterConnector
@@ -32,6 +32,7 @@ from sieve.connectors.openai_compat import OpenAICompatConnector
 from sieve.connectors.registry import adapter_for, kinds
 from sieve.connectors.seed import from_toml
 from sieve.contracts import Chain, Connector, InventoryConfig, TargetConfig
+from sieve.pinned import AddressRefused, AllowedHosts, host_port
 from sieve.secrets import SecretConfig, Secrets
 from sieve.store import Store
 
@@ -140,6 +141,11 @@ def router() -> Any:
         server.server_close()
 
 
+def allowed(url: str, kind: str = "openai_compat") -> AllowedHosts:
+    """The `[connectors.hosts]` entry an adapter needs to reach a test's stub."""
+    return AllowedHosts({kind: [host_port(url)]})
+
+
 def connector(base_url: str, **over: Any) -> Connector:
     body: dict[str, Any] = {
         "id": "c1",
@@ -160,7 +166,7 @@ def connector(base_url: str, **over: Any) -> Connector:
 
 
 def test_openai_compat_lists_and_tests(router: str) -> None:
-    adapter = OpenAICompatConnector(connector(router))
+    adapter = OpenAICompatConnector(connector(router), hosts=allowed(router))
     assert adapter.list_models() == [e["id"] for e in CATALOGUE]
 
     outcome = adapter.test()
@@ -170,7 +176,7 @@ def test_openai_compat_lists_and_tests(router: str) -> None:
 
 
 def test_reachable_keeps_what_the_router_published(router: str) -> None:
-    rows = OpenAICompatConnector(connector(router)).reachable()
+    rows = OpenAICompatConnector(connector(router), hosts=allowed(router)).reachable()
     first = next(r for r in rows if r.local_id == "oc-go/glm-5.3")
     assert first.inventory == "gateway"
     assert first.capability.context_window == 200000
@@ -186,7 +192,10 @@ def test_a_refused_token_names_the_id_not_the_token(
 ) -> None:
     Router.bearer = SECRET
     monkeypatch.setenv("GATEWAY_TOKEN", "the-wrong-one")
-    outcome = OpenAICompatConnector(connector(router, secret="gateway"), secrets=SECRETS).test()
+    adapter = OpenAICompatConnector(
+        connector(router, secret="gateway"), secrets=SECRETS, hosts=allowed(router)
+    )
+    outcome = adapter.test()
     assert outcome.ok is False
     assert outcome.models_count == 0
     assert "gateway" in (outcome.error or "")
@@ -199,7 +208,10 @@ def test_a_refused_token_names_the_id_not_the_token(
 def test_a_router_that_is_not_there_is_an_answer_not_a_crash() -> None:
     # Port 1 is reserved and nothing listens on it; the connection is refused
     # rather than hanging.
-    outcome = OpenAICompatConnector(connector("http://127.0.0.1:1"), timeout=1.0).test()
+    adapter = OpenAICompatConnector(
+        connector("http://127.0.0.1:1"), timeout=1.0, hosts=allowed("http://127.0.0.1:1")
+    )
+    outcome = adapter.test()
     assert outcome.ok is False
     assert "gateway" in (outcome.error or "")
 
@@ -223,6 +235,7 @@ def test_ninerouter_creates_then_updates_a_combo(
             admin_secret="router_admin",
         ),
         secrets=SECRETS,
+        hosts=allowed(router, "ninerouter"),
     )
 
     created = adapter.put_combo("sieve-coder", ["gw/a", "gw/b"])
@@ -246,6 +259,7 @@ def test_ninerouter_without_its_admin_token_says_which_one(router: str) -> None:
     adapter = NineRouterConnector(
         connector(router, kind="ninerouter", write=True, admin_secret="router_admin"),
         secrets=SECRETS,
+        hosts=allowed(router, "ninerouter"),
     )
     outcome = adapter.put_combo("sieve-coder", ["gw/a"])
     assert outcome.ok is False
@@ -257,7 +271,9 @@ def test_ninerouter_without_its_admin_token_says_which_one(router: str) -> None:
 
 
 def test_a_combo_with_no_models_is_refused(router: str) -> None:
-    adapter = NineRouterConnector(connector(router, kind="ninerouter", write=True))
+    adapter = NineRouterConnector(
+        connector(router, kind="ninerouter", write=True), hosts=allowed(router, "ninerouter")
+    )
     assert adapter.put_combo("sieve-coder", []).ok is False
 
 
@@ -299,7 +315,7 @@ def test_the_store_round_trips_a_connector_and_never_a_token(tmp_path: Path) -> 
 def test_inventory_rows_carry_the_connector(tmp_path: Path, router: str) -> None:
     store = Store(tmp_path / "sieve.db")
     made = store.add_connector(connector(router))
-    rows = OpenAICompatConnector(made).reachable()
+    rows = OpenAICompatConnector(made, hosts=allowed(router)).reachable()
     store.set_reachable(made.name, rows, connector_id=made.id)
 
     assert len(store.reachable_for(made.id)) == len(CATALOGUE)
@@ -389,7 +405,7 @@ TOKENS = "ops:read,profiles:write,apply,admin,telemetry:s3cret"
 
 
 @pytest.fixture
-def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, router: str) -> Any:
     monkeypatch.setenv("SIEVE_TOKENS", TOKENS)
     monkeypatch.setenv("GATEWAY_TOKEN", SECRET)
     cfg = Config(
@@ -400,6 +416,13 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
             "gateway": SecretConfig(env="GATEWAY_TOKEN", kinds=["openai_compat"]),
             "router_admin": SecretConfig(env="NINEROUTER_ADMIN_TOKEN", kinds=["ninerouter"]),
         },
+        # The stub is on a loopback port a test cannot write down in advance, so
+        # the box's own list of reachable hosts is built from the fixture.
+        # Without it `[connectors.hosts]` is empty and every one of these
+        # connectors is a 422 before it is a request.
+        connectors=ConnectorConfig(
+            hosts={kind: [host_port(router)] for kind in ("openai_compat", "ninerouter")}
+        ),
     )
     with TestClient(create_app(cfg)) as client:
         yield client
@@ -543,6 +566,7 @@ def test_apply_ships_through_the_connector_and_shadows_the_toml_target(
         store=StoreConfig(path=str(tmp_path / "sieve.db")),
         paths=Paths(profiles=str(tmp_path / "profiles")),
         secrets={"ninerouter_admin": SecretConfig(env="NINEROUTER_TOKEN", kinds=["ninerouter"])},
+        connectors=ConnectorConfig(hosts={"ninerouter": [host_port(router)]}),
         targets={
             "gateway": TargetConfig(
                 name="gateway",
