@@ -20,6 +20,11 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sieve.api.auth import Token, actor_for, owner_of_request, require_read
 from sieve.api.auth import require as require_scope
 from sieve.api.sse import events
+from sieve.api.v1_models import (
+    ModelsPage,
+    Recommendation,
+    StatusResponse,
+)
 from sieve.axes import control as axis_control
 from sieve.config import Config
 from sieve.contracts import (
@@ -343,7 +348,7 @@ def delete_axis(
     return {"deleted": name, "profiles_zeroed": users}
 
 
-@router.get("/models")
+@router.get("/models", response_model=ModelsPage)
 def get_models(
     request: Request,
     modality: Modality | None = None,
@@ -505,7 +510,7 @@ def get_model_card(request: Request, id: str, modality: Modality, _: Read = None
 # --------------------------------------------------------------------------- #
 
 
-@router.get("/profiles")
+@router.get("/profiles", response_model=list[Profile])
 def get_profiles(request: Request, modality: Modality | None = None, _: Read = None) -> Any:
     cfg = config_of(request)
     store = store_of(request)
@@ -603,7 +608,7 @@ def get_seats(request: Request, _: Read = None) -> list[dict[str, Any]]:
     return rows
 
 
-@router.get("/profiles/{name}")
+@router.get("/profiles/{name}", response_model=Profile)
 def get_profile(request: Request, name: str, _: Read = None) -> Any:
     cfg = config_of(request)
     profile = load_profile(cfg, name, store_of(request), owner_of(request))
@@ -1283,7 +1288,7 @@ def ranking_for(request: Request, profile: str) -> Ranking | JSONResponse:
     return computed
 
 
-@router.get("/rankings/{profile}")
+@router.get("/rankings/{profile}", response_model=Ranking)
 def get_ranking(request: Request, profile: str, _: Read = None) -> Any:
     return ranking_for(request, profile)
 
@@ -1294,7 +1299,7 @@ def get_chain(request: Request, profile: str, _: Read = None) -> Any:
     return chain or error(404, "not_found", f"no chain for {profile!r}; run sieve plan --store")
 
 
-@router.get("/recommend")
+@router.get("/recommend", response_model=Recommendation)
 def recommend(
     request: Request,
     profile: str,
@@ -1587,7 +1592,7 @@ def get_decisions(
     return store_of(request).decisions(profile=profile, kind=kind, since=since, limit=limit)
 
 
-@router.get("/status")
+@router.get("/status", response_model=StatusResponse)
 def get_status(request: Request, _: Read = None) -> dict[str, Any]:
     """When Sieve last looked, and how often it looks. Cheap enough for every page.
 
