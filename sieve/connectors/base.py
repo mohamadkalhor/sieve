@@ -20,6 +20,7 @@ import httpx
 
 from sieve.contracts import ComboResult, Connector, ConnectorTest, Reachable
 from sieve.inventory.openai_compat import capability_of
+from sieve.pinned import AddressRefused, AllowedHosts, HostNotAllowed, pinned_client
 from sieve.secrets import Secrets
 from sieve.sources.base import utcnow
 
@@ -56,12 +57,18 @@ class Adapter:
         *,
         timeout: float | None = None,
         secrets: Secrets | None = None,
+        hosts: AllowedHosts | None = None,
     ) -> None:
         self.connector = connector
         #: the server's `[secrets.*]` table. An id means nothing without it, so
         #: an adapter built without one has no credential at all rather than a
         #: fallback that reads an environment variable somebody named.
         self.secrets = secrets if secrets is not None else Secrets()
+        #: the server's `[connectors.hosts]`: the `host:port` this kind may be
+        #: pointed at. Built without one, the list is empty -- a public host is
+        #: still reachable, a loopback or private one is not, and that is the
+        #: way round that fails safe for a caller who forgot to pass it.
+        self.hosts = hosts if hosts is not None else AllowedHosts()
         raw = connector.options.get("timeout") if timeout is None else timeout
         self.timeout = float(raw if raw is not None else DEFAULT_TIMEOUT)
 
@@ -70,6 +77,24 @@ class Adapter:
     @property
     def name(self) -> str:
         return self.connector.name
+
+    @property
+    def allowed(self) -> list[str]:
+        """The `host:port` entries `[connectors.hosts]` allows *this* kind."""
+        return self.hosts.allowed(self.kind)
+
+    def client(self, url: str) -> httpx.Client:
+        """A client for `url`, pinned to the address this call just checked.
+
+        The name is resolved here rather than by the socket layer, so the
+        address that was judged is the address that is dialled. Both refusals
+        arrive as a `ConnectorError`: the caller is a person reading a screen,
+        and `test()` renders it as the sentence it is.
+        """
+        try:
+            return pinned_client(url, self.allowed, self.timeout)
+        except (HostNotAllowed, AddressRefused) as exc:
+            raise ConnectorError(f"connector {self.name!r}: {exc}") from exc
 
     @property
     def base(self) -> str:
@@ -159,9 +184,15 @@ class Adapter:
     # -- http ------------------------------------------------------------- #
 
     def get_json(self, url: str, headers: dict[str, str]) -> Any:
-        """One GET, with every failure rendered as a `ConnectorError`."""
+        """One GET, with every failure rendered as a `ConnectorError`.
+
+        Through `client()`, so the name is resolved and checked once and the
+        socket goes to that address rather than to whatever the name says the
+        second time it is asked.
+        """
         try:
-            response = httpx.get(url, headers=headers, timeout=self.timeout)
+            with self.client(url) as client:
+                response = client.get(url, headers=headers)
         except httpx.HTTPError as exc:
             raise ConnectorError(
                 f"connector {self.name!r}: {type(exc).__name__} reaching {url}: {exc}"

@@ -578,7 +578,12 @@ def apply_targets(
                 continue
             try:
                 outcome = ship(
-                    owned, connector, chains, dry_run=dry_run, secrets=cfg.secret_registry
+                    owned,
+                    connector,
+                    chains,
+                    dry_run=dry_run,
+                    secrets=cfg.secret_registry,
+                    hosts=cfg.allowed_hosts,
                 )
             except ConnectorError as exc:
                 results.append(TargetResult(target=name, error=str(exc)))

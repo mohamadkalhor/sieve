@@ -201,7 +201,9 @@ def _refresh_inventories(
     failures = 0
     for connector in wanted_connectors:
         try:
-            count = refresh(store, connector, registry, cfg.secret_registry)
+            count = refresh(
+                store, connector, registry, cfg.secret_registry, cfg.allowed_hosts
+            )
         except ConnectorError as exc:  # a gateway being down is not a crash
             _out(f"{connector.name}: {exc}")
             failures += 1

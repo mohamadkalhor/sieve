@@ -13,6 +13,7 @@ from sieve.connectors.base import Adapter, ConnectorError
 from sieve.connectors.ninerouter import NineRouterConnector
 from sieve.connectors.openai_compat import OpenAICompatConnector
 from sieve.contracts import Connector
+from sieve.pinned import AllowedHosts
 from sieve.secrets import Secrets
 
 KINDS: dict[str, type[Adapter]] = {
@@ -29,14 +30,22 @@ def writing_kinds() -> list[str]:
     return sorted(name for name, cls in KINDS.items() if cls.writes)
 
 
-def adapter_for(connector: Connector, secrets: Secrets | None = None) -> Adapter:
+def adapter_for(
+    connector: Connector,
+    secrets: Secrets | None = None,
+    hosts: AllowedHosts | None = None,
+) -> Adapter:
     """The adapter for one connector, or a refusal naming the kinds there are.
 
     `secrets` is the server's `[secrets.*]` table, the only thing that turns the
     connector's secret id into an environment variable. Without it the adapter
     has no credential at all -- which is what a caller with no config should get.
+
+    `hosts` is the server's `[connectors.hosts]` table, the only thing that says
+    a `base_url` may be called. Without it the adapter has an empty list: a
+    public host still answers, a loopback or private one does not.
     """
     cls = KINDS.get(connector.kind)
     if cls is None:
         raise ConnectorError(f"no connector kind {connector.kind!r}; have {', '.join(kinds())}")
-    return cls(connector, secrets=secrets)
+    return cls(connector, secrets=secrets, hosts=hosts)

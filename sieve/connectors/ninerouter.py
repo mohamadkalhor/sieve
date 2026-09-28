@@ -92,12 +92,13 @@ class NineRouterConnector(OpenAICompatConnector):
             payload = {"name": name, "kind": SERVICE_KIND, "models": ordered_ids}
             combo_id = held.get(name)
             url = f"{self.base}{COMBOS_PATH}"
-            if combo_id:
-                response = httpx.put(
-                    f"{url}/{combo_id}", json=payload, headers=headers, timeout=self.timeout
-                )
-            else:
-                response = httpx.post(url, json=payload, headers=headers, timeout=self.timeout)
+            # Through `client()`, like every other call: the write leaves the
+            # box too, so it goes to the address that was checked.
+            with self.client(url) as client:
+                if combo_id:
+                    response = client.put(f"{url}/{combo_id}", json=payload, headers=headers)
+                else:
+                    response = client.post(url, json=payload, headers=headers)
         except ConnectorError as exc:
             return ComboResult(ok=False, error=str(exc))
         except httpx.HTTPError as exc:
