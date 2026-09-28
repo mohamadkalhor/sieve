@@ -25,13 +25,16 @@ the caller is told when they are refused.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
+import secrets
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
 from fastapi import Request
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 
 from sieve import __version__
@@ -50,6 +53,8 @@ _VENDOR = _ROOT / "_vendor"
 AGENT_V1_ENV = "AGENT_V1"
 _ON = frozenset({"1", "on", "true", "yes", "enabled"})
 
+_log = logging.getLogger(__name__)
+
 
 def agent_v1() -> bool:
     """Is the kit's rule the one this box answers with?
@@ -67,9 +72,11 @@ class _Kit:
 
     audit: Any
     auth: Any
+    cursor: Any
     errors: Any
     guide: Any
     idem: Any
+    jobs: Any
     limits: Any
 
 
@@ -90,17 +97,21 @@ def _kit() -> _Kit:
             sys.path.insert(0, vendored)
         import agentkit.audit as audit
         import agentkit.auth as kit_auth
+        import agentkit.cursor as cursor
         import agentkit.errors as errors
         import agentkit.guide as guide
         import agentkit.idem as idem
+        import agentkit.jobs as jobs
         import agentkit.limits as limits
 
         _KIT = _Kit(
             audit=audit,
             auth=kit_auth,
+            cursor=cursor,
             errors=errors,
             guide=guide,
             idem=idem,
+            jobs=jobs,
             limits=limits,
         )
     return _KIT
@@ -496,11 +507,19 @@ WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 #: repo (probe_chain.py:164) and the card forbids changing a caller outside it.
 #: Requiring a key there would turn a live hourly caller into a 400. A key sent
 #: to those routes is still honoured and replayed -- the kit's wrapper is on
-#: every write -- it is only *required* on the three below.
+#: every write -- it is only *required* on the four below.
+#:
+#: `/v1/jobs` is §3.5's own submit, and it is a run route by the kit's marking
+#: rather than by this module's: `jobs.router` puts `run_route` on it (a queued
+#: job is work) and wraps it with a *required* key in the same store, so the
+#: route is listed here to keep this tuple the whole truth about which `/v1`
+#: routes do work. Nothing in `_wrap_writes` matches it: the kit's routes are
+#: included after that pass, and they are never wrapped twice.
 RUN_ROUTES = (
     "/v1/apply",
     "/v1/runs/{step}",
     "/v1/sources/{name}/pull",
+    "/v1/jobs",
 )
 
 #: The note this module leaves on a route it has already wrapped, so mounting
@@ -546,6 +565,171 @@ def _aio_db(config: Any) -> str:
     return str(directory / "aio.db")
 
 
+# -- §3.5's jobs ----------------------------------------------------------- #
+
+#: How long a clean stop waits for handlers before it hands their rows back as
+#: `interrupted` (checkpointed, so not an attempt). A pull is one source over
+#: the network; a stop that waits longer than this is a box being killed, and
+#: the restart rule re-queues whatever was in flight.
+SHUTDOWN_GRACE = 5.0
+
+
+class JobFailed(Exception):  # noqa: N818  (the name the kit's `_finish` answers to)
+    """A handler's own refusal: the job ends `failed` with *this* code.
+
+    The kit writes a handler that raises as `handler_error` plus the exception's
+    type, which is right for a bug and wrong for an answer the app means to give
+    -- `not_built` for a source whose plugin has not landed, `store_busy` when
+    another writer holds the store. A handler raises this instead, and `_Jobs`
+    writes the code and the sentence it carries.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = str(code)
+        self.message = str(message)
+
+    @classmethod
+    def of(cls, answer: Any) -> JobFailed:
+        """The same refusal one of `/v1`'s helpers answered as a JSONResponse."""
+        try:
+            import json
+
+            body = json.loads(bytes(answer.body).decode("utf-8"))
+            named = body["error"]
+            return cls(str(named.get("code") or "bad_request"), str(named.get("message") or ""))
+        except Exception:
+            return cls("bad_request", "the answer to that call could not be read")
+
+
+class _KeepsTheCode:
+    """The kit's store, with one addition: a `JobFailed` keeps its code.
+
+    Only the error a failed row carries is changed, and only when the handler
+    named one (`ctx.failure`, set by `sieve.api.v1_jobs.register`'s wrapper);
+    every state transition, guard and claim check is the kit's own `_finish`.
+    """
+
+    def _finish(
+        self, job: Any, ctx: Any = None, *, result: Any = None, error: Any = None
+    ) -> bool:
+        failure = getattr(ctx, "failure", None) if ctx is not None else None
+        if error is not None and isinstance(failure, dict):
+            error = dict(failure)
+        return super()._finish(job, ctx, result=result, error=error)  # type: ignore[misc]
+
+
+def _jobs_class() -> Any:
+    """The kit's `Jobs`, with `_KeepsTheCode` in front of it.
+
+    Composed when it is first needed rather than at import: a `class` statement
+    reads its base then, and this module must not read `_vendor/` at all while
+    `AGENT_V1` is off.
+    """
+    return type("_Jobs", (_KeepsTheCode, _kit().jobs.Jobs), {})
+
+
+def _jobs_key() -> bytes:
+    """§3.6's key for the job list's cursors.
+
+    `jobs.router` wants it when the routes are wired, which is when the surface
+    is on -- and with no `AIO_CURSOR_KEY` outside `APP_ENV=dev` there is no key
+    to give it. Then the list gets a random key for this process: paging a job
+    list is not worth refusing to start an API for, and a cursor from before a
+    restart is refused rather than misread.
+    """
+    try:
+        return bytes(_kit().cursor.key_from_env())
+    except Exception:
+        _log.warning("AIO_CURSOR_KEY is not set: job list cursors do not survive a restart")
+        return secrets.token_bytes(32)
+
+
+def jobs_for(app: Any) -> Any:
+    """§3.5's store for this app: the pool, its routes and this app's kinds.
+
+    Per app, like `auth_config(app)` and `limits_for(app)`: two apps in one
+    process must not share a pool or each other's registered kinds, and the
+    tests build one app per test.
+    """
+    found = getattr(app.state, "aio_jobs", None)
+    if found is None:
+        found = _jobs_class()(
+            _aio_db(getattr(app.state, "aio_config", None)),
+            key=_jobs_key(),
+            audit=getattr(app.state, "aio_audit", None),
+        )
+        from sieve.api import v1_jobs
+
+        v1_jobs.register(app, found)
+        app.state.aio_jobs = found
+    return found
+
+
+def submit(
+    request: Request, principal: Any, kind: str, payload: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Queue one job for a typed route, the way the kit's own `POST /v1/jobs` does.
+
+    §3.4's seam included: the idempotency row names the job inside the insert's
+    own transaction, so a replay answers this job and never queues a second.
+    """
+    store = jobs_for(request.app)
+    claim = getattr(request.state, "idem", None)
+    job = store.submit(
+        principal,
+        kind,
+        dict(payload),
+        before_queue=(
+            None if claim is None else (lambda job_id: claim.set_job(job_id, db=store.connection))
+        ),
+    )
+    return job.submitted()
+
+
+def submit_pull(request: Request, source: str, *, force: bool = False) -> JSONResponse:
+    """`POST /v1/sources/{name}/pull` with the kit on: a 202 and a job.
+
+    The body is the kit's own `submitted()` answer -- `{"job": {"id", "status",
+    "poll"}}` -- so a pull is polled exactly like every other job of §3.5.
+    """
+    from sieve.api import v1_jobs
+
+    principal = getattr(request.state, "principal", None)
+    if principal is None:
+        raise _refuse(401, "sign_in")
+    return JSONResponse(
+        status_code=202,
+        content=submit(request, principal, v1_jobs.PULL, {"source": source, "force": bool(force)}),
+    )
+
+
+def start_jobs(app: Any) -> None:
+    """Take `aio.lock`, apply §3.5's restart rule, start the pool.
+
+    Only with the surface on: with it off there is no `/v1` to submit a job
+    through, so an idle pool and its lock would be work nothing could ask for.
+    A second process on the same data directory is refused by the lock; that is
+    logged, not fatal, because the API it would take down has nothing to do
+    with jobs.
+    """
+    if not agent_v1():
+        return
+    store = jobs_for(app)
+    try:
+        store.startup()
+        store.start()
+    except _kit().jobs.Locked as exc:
+        _log.error("agent jobs are not running in this process: %s", exc)
+
+
+def stop_jobs(app: Any) -> None:
+    """A clean stop: running rows become `interrupted` and run again later."""
+    store = getattr(app.state, "aio_jobs", None)
+    if store is not None and store.locked:
+        store.shutdown(grace=SHUTDOWN_GRACE)
+
+
 def mount(app: Any, config: Any) -> None:
     """Put the kit on `app` -- and nothing at all when `AGENT_V1` is off.
 
@@ -562,8 +746,27 @@ def mount(app: Any, config: Any) -> None:
     # which the credential rule leaves there, so both see who this was.
     app.add_middleware(kit.limits.BodyCap)
     aio_db = _aio_db(config)
-    kit.audit.mount(app, kit.audit.Audit(aio_db))
-    _wrap_writes(app, kit.idem.Idempotency(aio_db))
+    # What the app is and where its kit file is, for the parts of the kit built
+    # per app rather than once: `auth_config`, `limits_for` and `jobs_for`.
+    app.state.aio_config = config
+    audit_store = kit.audit.Audit(aio_db)
+    app.state.aio_audit = audit_store
+    kit.audit.mount(app, audit_store)
+    idem_store = kit.idem.Idempotency(aio_db)
+    _wrap_writes(app, idem_store)
+    # §3.5's four `/v1/jobs` routes. Included *after* `_wrap_writes`, so the
+    # kit's own submit route is not wrapped a second time by this app's
+    # idempotency store -- `jobs.router` already wrapped it, in that same row.
+    jobs_router = kit.jobs.router(
+        jobs_for(app), auth_config(app), limits=limits_for(app), idem=idem_store
+    )
+    app.include_router(jobs_router)
+    # The kit wrapped its own write routes, and the note this module reads to
+    # mean "already under §3.4's rule" goes on them here: a route that says so
+    # is never wrapped again, and every `/v1` write really is accounted for.
+    for route in jobs_router.routes:
+        if isinstance(route, APIRoute) and _is_v1_write(route):
+            setattr(route.endpoint, WRAPPED, True)
     # sieve's own `/v1/guide` is the same document the kit serves; with the kit
     # on, the kit's route is the one that answers, so the older one comes out
     # rather than shadowing it (FastAPI answers with the first match).
@@ -579,8 +782,12 @@ def mount(app: Any, config: Any) -> None:
             guide_path,
             LLMS_TEXT,
             version=__version__,
-            surfaces=["errors", "credentials", "idempotency"],
+            surfaces=["errors", "credentials", "idempotency", "jobs", "mcp"],
         )
+    # O9b-3: POST /v1/mcp, served from the tool registry in `sieve/api/v1_tools.py`.
+    from sieve.api import v1_tools
+
+    v1_tools.mount(app)
 
 
 def after_routes(app: Any) -> None:

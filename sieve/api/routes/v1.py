@@ -20,6 +20,11 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sieve.api.auth import Token, actor_for, owner_of_request, require_read
 from sieve.api.auth import require as require_scope
 from sieve.api.sse import events
+from sieve.api.v1_models import (
+    ModelsPage,
+    Recommendation,
+    StatusResponse,
+)
 from sieve.axes import control as axis_control
 from sieve.config import Config
 from sieve.contracts import (
@@ -51,11 +56,13 @@ from sieve.scoring.health import health as health_of
 from sieve.scoring.health import health_series
 from sieve.scoring.pulse import pulse as pulse_of
 from sieve.store import Store
+from sieve.storelock import StoreBusy, store_lock
 
 router = APIRouter(prefix="/v1")
 
 Read = Annotated[Token | None, Depends(require_read())]
-Auth = Annotated[str | None, Header()]
+# Not in the spec: the credential is the layer's, not an argument (§3.9's parity check)
+Auth = Annotated[str | None, Header(include_in_schema=False)]
 
 
 # --------------------------------------------------------------------------- #
@@ -105,9 +112,15 @@ def visible_or_404(found: Any, kind: str, name: str) -> JSONResponse | None:
     return None
 
 
-def error(status: int, code: str, message: str, **extra: Any) -> JSONResponse:
+def error(
+    status: int, code: str, message: str, *, retry_after: int | None = None, **extra: Any
+) -> JSONResponse:
+    """The one error body shape. `retry_after` is a header, never a body key."""
+    headers = {"Retry-After": str(retry_after)} if retry_after is not None else None
     return JSONResponse(
-        status_code=status, content={"error": {"code": code, "message": message}, **extra}
+        status_code=status,
+        content={"error": {"code": code, "message": message}, **extra},
+        headers=headers,
     )
 
 
@@ -336,7 +349,7 @@ def delete_axis(
     return {"deleted": name, "profiles_zeroed": users}
 
 
-@router.get("/models")
+@router.get("/models", response_model=ModelsPage)
 def get_models(
     request: Request,
     modality: Modality | None = None,
@@ -498,7 +511,7 @@ def get_model_card(request: Request, id: str, modality: Modality, _: Read = None
 # --------------------------------------------------------------------------- #
 
 
-@router.get("/profiles")
+@router.get("/profiles", response_model=list[Profile])
 def get_profiles(request: Request, modality: Modality | None = None, _: Read = None) -> Any:
     cfg = config_of(request)
     store = store_of(request)
@@ -596,7 +609,7 @@ def get_seats(request: Request, _: Read = None) -> list[dict[str, Any]]:
     return rows
 
 
-@router.get("/profiles/{name}")
+@router.get("/profiles/{name}", response_model=Profile)
 def get_profile(request: Request, name: str, _: Read = None) -> Any:
     cfg = config_of(request)
     profile = load_profile(cfg, name, store_of(request), owner_of(request))
@@ -1276,9 +1289,37 @@ def ranking_for(request: Request, profile: str) -> Ranking | JSONResponse:
     return computed
 
 
-@router.get("/rankings/{profile}")
+@router.get("/rankings/{profile}", response_model=Ranking)
 def get_ranking(request: Request, profile: str, _: Read = None) -> Any:
     return ranking_for(request, profile)
+
+
+def explanation(ranking: dict[str, Any]) -> dict[str, Any]:
+    """A ranking reduced to why the leader leads."""
+    ranked = [r for r in ranking.get("ranks", []) if r.get("position")]
+    if not ranked:
+        return {"profile": ranking.get("profile"), "explanation": "nothing ranked yet"}
+    top = ranked[0]
+    runner = ranked[1] if len(ranked) > 1 else None
+    return {
+        "profile": ranking.get("profile"),
+        "leader": top["model_id"],
+        "final": top["final"],
+        "gap": (top["final"] - runner["final"]) if runner else None,
+        "runner_up": runner["model_id"] if runner else None,
+        "contributions": top.get("axes", []),
+        "confidence": top.get("confidence"),
+        "flip": top.get("flip"),
+    }
+
+
+@router.get("/rankings/{profile}/explain")
+def get_ranking_explanation(request: Request, profile: str, _: Read = None) -> Any:
+    """Why #1 leads: contributions, coverage, the gap to #2 and the flip line."""
+    found = ranking_for(request, profile)
+    if isinstance(found, JSONResponse):
+        return found
+    return explanation(found.model_dump(mode="json"))
 
 
 @router.get("/chains/{profile}")
@@ -1287,7 +1328,7 @@ def get_chain(request: Request, profile: str, _: Read = None) -> Any:
     return chain or error(404, "not_found", f"no chain for {profile!r}; run sieve plan --store")
 
 
-@router.get("/recommend")
+@router.get("/recommend", response_model=Recommendation)
 def recommend(
     request: Request,
     profile: str,
@@ -1372,9 +1413,15 @@ def post_apply(
     chains = [c for c in store.chains(owner_id) if not wanted or c.profile in wanted]
     if not chains:
         return error(404, "not_found", "no computed chains to apply; run sieve plan --store")
-    results = apply_targets(
-        cfg, chains, targets=targets, dry_run=False, actor=token.name, store=store
-    )
+    try:
+        # Applying writes a decision row per profile and a chain per target: the
+        # same rows the planner's own `--store` run writes, so the same lock.
+        with store_lock(cfg):
+            results = apply_targets(
+                cfg, chains, targets=targets, dry_run=False, actor=token.name, store=store
+            )
+    except StoreBusy as busy:
+        return error(503, "store_busy", str(busy), retry_after=2)
     events.publish("apply", {"targets": [r.target for r in results], "actor": token.name})
     return results
 
@@ -1382,6 +1429,17 @@ def post_apply(
 # --------------------------------------------------------------------------- #
 # telemetry, decisions, sources, inventory
 # --------------------------------------------------------------------------- #
+
+
+class TelemetryBatch(BaseModel):
+    """`POST /v1/telemetry/batch`: the same events, wrapped in an object.
+
+    MCP hands a tool's arguments to a route as a JSON object, and
+    `POST /v1/telemetry` takes a bare list, so the `report_outcome` tool needs
+    a door that takes `{"events": [...]}`. Same rule, same scope, same rows.
+    """
+
+    events: list[TelemetryEvent]
 
 
 @router.post("/telemetry")
@@ -1401,6 +1459,20 @@ def post_telemetry(
     CONTRACTS section 4: telemetry is pruned to 30 days, and a write is the
     natural moment -- the table only grows when someone is writing to it.
     """
+    return _accept_telemetry(request, body)
+
+
+@router.post("/telemetry/batch")
+def post_telemetry_batch(
+    request: Request,
+    body: TelemetryBatch,
+    token: Annotated[Token, Depends(require_scope("telemetry"))],
+) -> dict[str, int]:
+    """Accept call outcomes as `{"events": [...]}`; answers as `POST /v1/telemetry`."""
+    return _accept_telemetry(request, body.events)
+
+
+def _accept_telemetry(request: Request, body: list[TelemetryEvent]) -> dict[str, int]:
     store = store_of(request)
 
     canonical: dict[str, str] = {}
@@ -1574,8 +1646,24 @@ def get_decisions(
     return store_of(request).decisions(profile=profile, kind=kind, since=since, limit=limit)
 
 
-@router.get("/status")
-def get_status(request: Request, _: Read = None) -> dict[str, Any]:
+def only_sections(body: dict[str, Any], sections: str | None) -> Any:
+    """`body` narrowed to the comma-separated top-level keys in `sections`.
+
+    An agent-facing filter: nothing asks for it today, so an answer with no
+    `sections` is the body it always was. A narrowed answer skips the response
+    model (it would refuse a body with keys missing), so it goes out as JSON.
+    """
+    if not sections:
+        return body
+    wanted = {part.strip() for part in sections.split(",") if part.strip()}
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(jsonable_encoder({k: v for k, v in body.items() if k in wanted}))
+
+
+@router.get("/status", response_model=StatusResponse)
+def get_status(request: Request, sections: str | None = None, _: Read = None) -> Any:
     """When Sieve last looked, and how often it looks. Cheap enough for every page.
 
     Three times, because they answer different questions and collapse badly:
@@ -1636,7 +1724,7 @@ def get_status(request: Request, _: Read = None) -> dict[str, Any]:
     # here so they can stop showing a token box to somebody already signed in;
     # `/v1/me` (AMS-28) will answer the same question in more detail.
     signed_in = gate_identity(request)
-    return {
+    body = {
         "pulled_at": pulled_at.isoformat() if pulled_at else None,
         "ran_at": ran_at.isoformat() if isinstance(ran_at, datetime) else ran_at,
         "schedule": runs_module.cadence_of(schedules),
@@ -1659,6 +1747,7 @@ def get_status(request: Request, _: Read = None) -> dict[str, Any]:
             else None
         ),
     }
+    return only_sections(body, sections)
 
 
 @router.get("/sources")
@@ -1739,15 +1828,57 @@ def post_pull(
         return error(404, "not_found", f"no source {name!r}")
     if not source_cfg.enabled and not force:
         return error(409, "source_disabled", f"source {name!r} is disabled; use force=true to pull")
+    # With the kit on, this is a job: a source that takes minutes to answer is a
+    # 202 and a row to poll, not a request held open. The read-only guard above
+    # stays here -- a caller asking for a source that does not exist, or one that
+    # is off, is told so now rather than by a job that fails a moment later.
+    from sieve.api import aio
+
+    if aio.agent_v1():
+        return aio.submit_pull(request, name, force=force)
+    try:
+        with store_lock(cfg):
+            return _pull_source(cfg, store, name, source_cfg, token)
+    except StoreBusy as busy:
+        # A waiting writer is not a failure of this request: whatever holds the
+        # store is doing this same work, and saying so beats a 500.
+        return error(503, "store_busy", str(busy), retry_after=2)
+
+
+def _pull_source(
+    cfg: Any,
+    store: Any,
+    name: str,
+    source_cfg: Any,
+    token: Any,
+    *,
+    snapshot: str | None = None,
+    job: str | None = None,
+) -> Any:
+    """One source, pulled and written -- its caller holds the store lock.
+
+    The write is what the lock is for: `added` and the price intake are decided
+    from what the store held a moment ago, so a second pull interleaving here
+    folds the same row into two sources. The read is inside the lock as well,
+    because the snapshot it is filed under has to be the state it read.
+
+    `snapshot` and `job` are a job's: the pull it runs is the same pull, filed
+    under an id derived from the job so a retried attempt writes the same row
+    again. Left out, both are minted here, which is the route's own call.
+    """
+    from sieve import plugins
+    from sieve.http import client as http_client
+
     try:
         source = plugins.load(plugins.SOURCES, name)
     except (LookupError, ImportError) as exc:
         return error(501, "not_built", str(exc))
-    job = uuid.uuid4().hex[:12]
+    job = job or uuid.uuid4().hex[:12]
+    retryable = snapshot is not None  # a job's derived id: an attempt may repeat
     result = source.pull(source_cfg, http_client())
-    snapshot = store.new_snapshot(source_rows=len(result.observations))
+    snapshot = store.new_snapshot(source_rows=len(result.observations), sid=snapshot)
     store.upsert_models(result.models)
-    added = store.add_observations(result.observations, snapshot=snapshot)
+    added = store.add_observations(result.observations, snapshot=snapshot, replace=retryable)
     intake = store.add_prices(result.prices)
     warnings = list(result.warnings)
     warnings += [

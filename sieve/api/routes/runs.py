@@ -21,6 +21,7 @@ from sieve import runs as runs_module
 from sieve.api.auth import Token
 from sieve.api.auth import require as require_scope
 from sieve.api.routes.v1 import Read, config_of, error, store_of
+from sieve.api.v1_models import RunRow
 
 router = APIRouter(prefix="/v1", tags=["runs"])
 
@@ -89,7 +90,7 @@ def put_schedule(
 # --------------------------------------------------------------------------- #
 
 
-@router.get("/runs")
+@router.get("/runs", response_model=list[RunRow])
 def get_runs(
     request: Request,
     limit: int = Query(default=20, ge=1, le=200),

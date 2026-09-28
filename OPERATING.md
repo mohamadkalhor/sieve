@@ -59,4 +59,4 @@ Set the `cc/` price multiplier to 0.1:
 {"cost_multipliers":{"cc":0.1}}
 ```
 
-The guide is also served as Markdown at `GET /v1/guide` and as MCP resource `sieve://operating-guide`.
+The guide is also served as Markdown at `GET /v1/guide` and as MCP resource `sieve://operating-guide`. With the kit on, `POST /v1/mcp` serves the same tools as MCP (each one is a `/v1` route, called with your own API key); `sieve mcp` on your own machine keeps `SIEVE_TOKEN` as its bearer.

@@ -354,11 +354,24 @@ class Store:
     # observations and prices (append-only)
     # ------------------------------------------------------------------ #
 
-    def add_observations(self, obs: Iterable[Observation], snapshot: str | None = None) -> int:
+    def add_observations(
+        self, obs: Iterable[Observation], snapshot: str | None = None, replace: bool = False
+    ) -> int:
         """Insert observations. A repeat of the same measurement is ignored,
-        never overwritten; a new `observed_at` is a new row."""
+        never overwritten; a new `observed_at` is a new row.
+
+        `replace` is for a snapshot whose id is derived, so a retried attempt
+        names the snapshot the first attempt wrote. Sources stamp `observed_at`
+        with the time of the pull, so the retry's rows are new rows under the
+        natural key and would sit beside the first attempt's, one snapshot
+        holding every measurement twice. With `replace`, the snapshot's earlier
+        rows go first, inside the same transaction as the insert: the attempt
+        that finishes is the one the snapshot holds.
+        """
         added = 0
         with self.tx() as db:
+            if replace and snapshot is not None:
+                db.execute("DELETE FROM observations WHERE snapshot = ?", (snapshot,))
             for o in obs:
                 cur = db.execute(
                     "INSERT OR IGNORE INTO observations (model_id, modality, source, field,"
@@ -837,14 +850,32 @@ class Store:
     # snapshots, rankings, chains
     # ------------------------------------------------------------------ #
 
-    def new_snapshot(self, source_rows: int = 0, detail: dict[str, Any] | None = None) -> str:
-        sid = uuid.uuid4().hex[:12]
+    def new_snapshot(
+        self, source_rows: int = 0, detail: dict[str, Any] | None = None, sid: str | None = None
+    ) -> str:
+        """One snapshot row: a fresh id, or the id its caller names.
+
+        `sid` is for work that can be attempted twice -- the pull a job runs.
+        Its id is derived from (source, job id), so a retry writes the row it
+        wrote the first time instead of leaving a second snapshot of the same
+        work for `latest_snapshot` to choose between.
+        """
+        if sid is None:
+            sid = uuid.uuid4().hex[:12]
+            with self.tx() as db:
+                db.execute(
+                    "INSERT INTO snapshots (id, at, source_rows, detail) VALUES (?,?,?,?)",
+                    (sid, _iso(now()), source_rows, json.dumps(detail or {})),
+                )
+            return sid
         with self.tx() as db:
             db.execute(
-                "INSERT INTO snapshots (id, at, source_rows, detail) VALUES (?,?,?,?)",
-                (sid, _iso(now()), source_rows, json.dumps(detail or {})),
+                "INSERT INTO snapshots (id, at, source_rows, detail) VALUES (?,?,?,?)"
+                " ON CONFLICT(id) DO UPDATE SET at=excluded.at,"
+                " source_rows=excluded.source_rows, detail=excluded.detail",
+                (str(sid), _iso(now()), source_rows, json.dumps(detail or {})),
             )
-        return sid
+        return str(sid)
 
     def latest_snapshot(self) -> str | None:
         row = self.db.execute("SELECT id FROM snapshots ORDER BY at DESC LIMIT 1").fetchone()

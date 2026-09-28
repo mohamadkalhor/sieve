@@ -4,6 +4,11 @@ The tools of PLAN section 7, one to one with the API. Every tool delegates to
 the `/v1` layer over an in-process ASGI transport carrying `SIEVE_TOKEN`, so
 scopes, validation and the decision log are exactly the API's -- there is no
 second code path to keep in step.
+
+This is the local door: a process on the caller's own machine, which keeps
+`SIEVE_TOKEN` as its one bearer. The hosted door is `POST /v1/mcp`, served by
+the kit from the same tool names (`sieve/api/v1_tools.py`), where each call
+carries the caller's own API key instead.
 """
 
 from __future__ import annotations
@@ -80,10 +85,9 @@ TOOLS: dict[str, dict[str, Any]] = {
     "explain": {
         "description": "Why #1 leads: contributions, coverage and the smallest weight flip.",
         "method": "GET",
-        "path": "/v1/rankings/{profile}",
+        "path": "/v1/rankings/{profile}/explain",
         "schema": {"profile": {"type": "string"}},
         "required": ["profile"],
-        "explain": True,
     },
     "report_outcome": {
         "description": "Report call outcomes back as telemetry. Needs the telemetry scope.",
@@ -92,6 +96,48 @@ TOOLS: dict[str, dict[str, Any]] = {
         "body": "events",
         "schema": {"events": {"type": "array", "items": {"type": "object"}}},
         "required": ["events"],
+    },
+    "list_models": {
+        "description": "One page of the catalogue, optionally for one modality.",
+        "method": "GET",
+        "path": "/v1/models",
+        "query": ["modality", "reachable", "q", "limit", "cursor"],
+        "schema": {
+            "modality": {"type": "string"},
+            "reachable": {"type": "boolean"},
+            "q": {"type": "string"},
+            "limit": {"type": "integer", "default": 100},
+            "cursor": {"type": "string"},
+        },
+    },
+    "leaderboard": {
+        "description": "The ranking for one modality, best first.",
+        "method": "GET",
+        "path": "/v1/leaderboard",
+        "query": ["modality", "metric"],
+        "schema": {"modality": {"type": "string"}, "metric": {"type": "string"}},
+        "required": ["modality"],
+    },
+    "status": {
+        "description": "When Sieve last pulled and ran, and what is scheduled.",
+        "method": "GET",
+        "path": "/v1/status",
+        "query": ["sections"],
+        "schema": {"sections": {"type": "string"}},
+    },
+    "list_runs": {
+        "description": "The most recent runs of the loop's steps.",
+        "method": "GET",
+        "path": "/v1/runs",
+        "query": ["limit", "step"],
+        "schema": {"limit": {"type": "integer", "default": 20}, "step": {"type": "string"}},
+    },
+    "export_config": {
+        "description": "This account's configuration as a bundle (no secrets).",
+        "method": "GET",
+        "path": "/v1/config",
+        "query": ["sections"],
+        "schema": {"sections": {"type": "string"}},
     },
     "apply": {
         "description": "Write the current chains to their targets. Needs the apply scope.",
@@ -147,32 +193,11 @@ class Bridge:
         except ValueError:
             payload = {"error": {"code": "bad_response", "message": response.text[:400]}}
 
-        if spec.get("explain") and isinstance(payload, dict) and payload.get("ranks"):
-            return _explanation(payload)
         return payload
 
 
-def _explanation(ranking: dict[str, Any]) -> dict[str, Any]:
-    """`explain` is `get_ranking` reduced to why the leader leads."""
-    ranked = [r for r in ranking.get("ranks", []) if r.get("position")]
-    if not ranked:
-        return {"profile": ranking.get("profile"), "explanation": "nothing ranked yet"}
-    top = ranked[0]
-    runner = ranked[1] if len(ranked) > 1 else None
-    return {
-        "profile": ranking.get("profile"),
-        "leader": top["model_id"],
-        "final": top["final"],
-        "gap": (top["final"] - runner["final"]) if runner else None,
-        "runner_up": runner["model_id"] if runner else None,
-        "contributions": top.get("axes", []),
-        "confidence": top.get("confidence"),
-        "flip": top.get("flip"),
-    }
-
-
 def build_server(bridge: Bridge | None = None) -> Any:
-    """An `MCPServer` carrying the ten tools of PLAN section 7."""
+    """An `MCPServer` carrying the ten tools of PLAN section 7, and five reads."""
     from mcp.server.mcpserver import MCPServer
 
     from sieve import __version__
@@ -227,6 +252,33 @@ def build_server(bridge: Bridge | None = None) -> Any:
         """Report call outcomes back as telemetry. Needs the telemetry scope."""
         return await hub.call("report_outcome", {"events": events})
 
+    async def list_models(
+        modality: str | None = None,
+        reachable: bool | None = None,
+        q: str | None = None,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> Any:
+        """One page of the catalogue, optionally for one modality."""
+        args = {"modality": modality, "reachable": reachable, "q": q, "limit": limit, "cursor": cursor}
+        return await hub.call("list_models", args)
+
+    async def leaderboard(modality: str, metric: str | None = None) -> Any:
+        """The ranking for one modality, best first."""
+        return await hub.call("leaderboard", {"modality": modality, "metric": metric})
+
+    async def status(sections: str | None = None) -> Any:
+        """When Sieve last pulled and ran, and what is scheduled."""
+        return await hub.call("status", {"sections": sections})
+
+    async def list_runs(limit: int = 20, step: str | None = None) -> Any:
+        """The most recent runs of the loop's steps."""
+        return await hub.call("list_runs", {"limit": limit, "step": step})
+
+    async def export_config(sections: str | None = None) -> Any:
+        """This account's configuration as a bundle (no secrets)."""
+        return await hub.call("export_config", {"sections": sections})
+
     async def apply(profiles: list[str] | None = None, targets: list[str] | None = None) -> Any:
         """Write the current chains to their targets. Needs the apply scope."""
         return await hub.call("apply", {"profiles": profiles, "targets": targets})
@@ -253,6 +305,11 @@ def build_server(bridge: Bridge | None = None) -> Any:
         explain,
         report_outcome,
         apply,
+        list_models,
+        leaderboard,
+        status,
+        list_runs,
+        export_config,
     ):
         server.add_tool(fn, name=fn.__name__, description=(fn.__doc__ or "").strip())
 
