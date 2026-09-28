@@ -51,6 +51,7 @@ from sieve.scoring.health import health as health_of
 from sieve.scoring.health import health_series
 from sieve.scoring.pulse import pulse as pulse_of
 from sieve.store import Store
+from sieve.storelock import StoreBusy, store_lock
 
 router = APIRouter(prefix="/v1")
 
@@ -105,9 +106,15 @@ def visible_or_404(found: Any, kind: str, name: str) -> JSONResponse | None:
     return None
 
 
-def error(status: int, code: str, message: str, **extra: Any) -> JSONResponse:
+def error(
+    status: int, code: str, message: str, *, retry_after: int | None = None, **extra: Any
+) -> JSONResponse:
+    """The one error body shape. `retry_after` is a header, never a body key."""
+    headers = {"Retry-After": str(retry_after)} if retry_after is not None else None
     return JSONResponse(
-        status_code=status, content={"error": {"code": code, "message": message}, **extra}
+        status_code=status,
+        content={"error": {"code": code, "message": message}, **extra},
+        headers=headers,
     )
 
 
@@ -1372,9 +1379,15 @@ def post_apply(
     chains = [c for c in store.chains(owner_id) if not wanted or c.profile in wanted]
     if not chains:
         return error(404, "not_found", "no computed chains to apply; run sieve plan --store")
-    results = apply_targets(
-        cfg, chains, targets=targets, dry_run=False, actor=token.name, store=store
-    )
+    try:
+        # Applying writes a decision row per profile and a chain per target: the
+        # same rows the planner's own `--store` run writes, so the same lock.
+        with store_lock(cfg):
+            results = apply_targets(
+                cfg, chains, targets=targets, dry_run=False, actor=token.name, store=store
+            )
+    except StoreBusy as busy:
+        return error(503, "store_busy", str(busy), retry_after=2)
     events.publish("apply", {"targets": [r.target for r in results], "actor": token.name})
     return results
 
@@ -1739,6 +1752,26 @@ def post_pull(
         return error(404, "not_found", f"no source {name!r}")
     if not source_cfg.enabled and not force:
         return error(409, "source_disabled", f"source {name!r} is disabled; use force=true to pull")
+    try:
+        with store_lock(cfg):
+            return _pull_source(cfg, store, name, source_cfg, token)
+    except StoreBusy as busy:
+        # A waiting writer is not a failure of this request: whatever holds the
+        # store is doing this same work, and saying so beats a 500.
+        return error(503, "store_busy", str(busy), retry_after=2)
+
+
+def _pull_source(cfg: Any, store: Any, name: str, source_cfg: Any, token: Any) -> Any:
+    """One source, pulled and written -- its caller holds the store lock.
+
+    The write is what the lock is for: `added` and the price intake are decided
+    from what the store held a moment ago, so a second pull interleaving here
+    folds the same row into two sources. The read is inside the lock as well,
+    because the snapshot it is filed under has to be the state it read.
+    """
+    from sieve import plugins
+    from sieve.http import client as http_client
+
     try:
         source = plugins.load(plugins.SOURCES, name)
     except (LookupError, ImportError) as exc:

@@ -13,6 +13,7 @@ import io
 import json
 import sys
 from collections.abc import Sequence
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ from sieve.http import client as http_client
 from sieve.http import fixtures_enabled
 from sieve.runs import STEPS as RUN_STEPS
 from sieve.store import Store
+from sieve.storelock import StoreBusy, store_lock
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -84,7 +86,25 @@ def _out(text: str = "") -> None:
 
 
 def cmd_pull(args: argparse.Namespace) -> int:
+    """Pull every named source, under the store's writer lock (card O9b).
+
+    A pull writes snapshots, observations and prices for as long as it takes to
+    talk to every source -- which is exactly the window the API's own pull and
+    the hourly `sieve run` used to interleave with it. A pull that cannot have
+    the store within `SIEVE_STORE_LOCK_WAIT` writes nothing and says so through
+    the exit code: a timer that skipped a pull and a timer that pulled nothing
+    new must not look the same in the log.
+    """
     cfg = _config(args)
+    try:
+        with store_lock(cfg):
+            return _pull_now(cfg, args)
+    except StoreBusy as busy:
+        _out(f"pull: {busy}")
+        return EXIT_ERROR
+
+
+def _pull_now(cfg: Config, args: argparse.Namespace) -> int:
     store = Store(cfg.db_path)
     http = http_client()
     # The gateway blocks of sieve.toml become connectors on the first run after
@@ -551,7 +571,16 @@ def _print_ranking(ranking: Any, *, limit: int) -> None:
 def cmd_plan(args: argparse.Namespace) -> int:
     cfg = _config(args)
     profiles = _profiles(cfg, args.profile)
-    result = run(cfg, profiles=profiles, dry_run=args.dry_run)
+    # `--dry-run` writes no chain and no decision, so it takes no lock: somebody
+    # looking at what would be planned must not be refused because a pull is
+    # running -- and WAL is what lets them read while it is.
+    lock = nullcontext() if args.dry_run else store_lock(cfg)
+    try:
+        with lock:
+            result = run(cfg, profiles=profiles, dry_run=args.dry_run)
+    except StoreBusy as busy:
+        _out(f"plan: {busy}")
+        return EXIT_ERROR
     for chain in result.chains:
         _out(f"{chain.profile}: {chain.primary} -> {', '.join(chain.fallbacks) or '(none)'}")
     for decision in result.decisions:
@@ -588,9 +617,17 @@ def cmd_run(args: argparse.Namespace) -> int:
         return EXIT_ERROR
     runner = Runner(cfg, store, config_path=args.config)
     try:
-        run, outcome = runner.run_now(args.step, args.actor, run_id=args.run_id)
+        # The steps write the store. The lock is what makes the scheduler inside
+        # the service and a `sieve run` typed at a shell take turns rather than
+        # interleave; the run row itself is written outside it on purpose, so a
+        # run that could not start is still visible on the board.
+        with store_lock(cfg):
+            run, outcome = runner.run_now(args.step, args.actor, run_id=args.run_id)
     except RunBusyError as busy:
         _out(f"a run is already going ({busy.run_id}); nothing started")
+        return EXIT_ERROR
+    except StoreBusy as busy:
+        _out(f"run: {busy}")
         return EXIT_ERROR
     _out(f"{run.step}: {outcome.summary}  [run {run.id}]")
     if outcome.error:
@@ -616,6 +653,15 @@ def cmd_run_legacy(args: argparse.Namespace) -> int:
       identical in the log.
     """
     cfg = _config(args)
+    try:
+        with store_lock(cfg):
+            return _run_legacy_now(cfg, args)
+    except StoreBusy as busy:
+        _out(f"run: {busy}")
+        return EXIT_ERROR
+
+
+def _run_legacy_now(cfg: Config, args: argparse.Namespace) -> int:
     store = Store(cfg.db_path)
     started = datetime.now(UTC)
 
