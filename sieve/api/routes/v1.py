@@ -1752,6 +1752,14 @@ def post_pull(
         return error(404, "not_found", f"no source {name!r}")
     if not source_cfg.enabled and not force:
         return error(409, "source_disabled", f"source {name!r} is disabled; use force=true to pull")
+    # With the kit on, this is a job: a source that takes minutes to answer is a
+    # 202 and a row to poll, not a request held open. The read-only guard above
+    # stays here -- a caller asking for a source that does not exist, or one that
+    # is off, is told so now rather than by a job that fails a moment later.
+    from sieve.api import aio
+
+    if aio.agent_v1():
+        return aio.submit_pull(request, name, force=force)
     try:
         with store_lock(cfg):
             return _pull_source(cfg, store, name, source_cfg, token)
@@ -1761,13 +1769,26 @@ def post_pull(
         return error(503, "store_busy", str(busy), retry_after=2)
 
 
-def _pull_source(cfg: Any, store: Any, name: str, source_cfg: Any, token: Any) -> Any:
+def _pull_source(
+    cfg: Any,
+    store: Any,
+    name: str,
+    source_cfg: Any,
+    token: Any,
+    *,
+    snapshot: str | None = None,
+    job: str | None = None,
+) -> Any:
     """One source, pulled and written -- its caller holds the store lock.
 
     The write is what the lock is for: `added` and the price intake are decided
     from what the store held a moment ago, so a second pull interleaving here
     folds the same row into two sources. The read is inside the lock as well,
     because the snapshot it is filed under has to be the state it read.
+
+    `snapshot` and `job` are a job's: the pull it runs is the same pull, filed
+    under an id derived from the job so a retried attempt writes the same row
+    again. Left out, both are minted here, which is the route's own call.
     """
     from sieve import plugins
     from sieve.http import client as http_client
@@ -1776,9 +1797,9 @@ def _pull_source(cfg: Any, store: Any, name: str, source_cfg: Any, token: Any) -
         source = plugins.load(plugins.SOURCES, name)
     except (LookupError, ImportError) as exc:
         return error(501, "not_built", str(exc))
-    job = uuid.uuid4().hex[:12]
+    job = job or uuid.uuid4().hex[:12]
     result = source.pull(source_cfg, http_client())
-    snapshot = store.new_snapshot(source_rows=len(result.observations))
+    snapshot = store.new_snapshot(source_rows=len(result.observations), sid=snapshot)
     store.upsert_models(result.models)
     added = store.add_observations(result.observations, snapshot=snapshot)
     intake = store.add_prices(result.prices)
