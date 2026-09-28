@@ -183,6 +183,86 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 }
 
 /* -------------------------------------------------------------------------- */
+/* a pull, whether the server answers it or queues it                          */
+/* -------------------------------------------------------------------------- */
+
+/** What a finished pull says: the shape the route has always answered with. */
+export interface PullResult {
+  job: string;
+  source: string;
+  added: number;
+  warnings: string[];
+  /** only from a queued pull: the snapshot the job wrote */
+  snapshot?: string;
+}
+
+/** How a queued pull is waited for. Both are for tests; the defaults are real. */
+export interface PullPolling {
+  pollMs?: number;
+  /** stop waiting after this long; the pull itself carries on server-side */
+  timeoutMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+interface JobRow {
+  id: string;
+  status: string;
+  result?: PullResult | null;
+  error?: { code?: string; message?: string } | null;
+}
+
+const FINISHED = new Set(['succeeded', 'failed', 'cancelled']);
+
+/**
+ * `POST /v1/sources/{name}/pull`. With the agent kit off the route pulls in the
+ * request and answers 200 with the result. With it on the pull is a job: the
+ * route answers 202 `{ job: { id, status, poll } }`, and this polls
+ * `GET /v1/jobs/{id}` until the job is finished and hands back the job's
+ * result -- the same shape a 200 carries -- so a screen cannot tell which it got.
+ */
+async function pullSource(
+  name: string,
+  o: (RequestOptions & PullPolling) | undefined
+): Promise<Result<PullResult>> {
+  const { pollMs = 1000, timeoutMs = 10 * 60 * 1000, sleep, ...options } = o ?? {};
+  const wait = sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  const first = await request<PullResult | { job: { id: string; status: string } }>(
+    `/v1/sources/${encodeURIComponent(name)}/pull`,
+    { ...options, method: 'POST' }
+  );
+  if (!first.ok) return first;
+  const queued = first.value.job;
+  if (typeof queued === 'string') return ok(first.value as PullResult);
+
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const polled = await request<{ job: JobRow }>(`/v1/jobs/${encodeURIComponent(queued.id)}`, {
+      fetch: options.fetch,
+      token: options.token,
+      signal: options.signal
+    });
+    if (!polled.ok) return polled;
+    const row = polled.value.job;
+    if (FINISHED.has(row.status)) {
+      if (row.status === 'succeeded' && row.result) return ok(row.result);
+      return fail({
+        code: row.error?.code ?? row.status,
+        message: row.error?.message ?? `the pull ${row.status}`,
+        status: 200
+      });
+    }
+    if (Date.now() >= deadline) {
+      return fail({
+        code: 'pull_pending',
+        message: 'the pull is still running; it will finish on its own',
+        status: 202
+      });
+    }
+    await wait(pollMs);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* the endpoints the screens use                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -1015,11 +1095,7 @@ export const api = {
   apply: (profiles: string[], o?: RequestOptions) =>
     request<TargetResult[]>('/v1/apply', { ...o, method: 'POST', body: { profiles } }),
 
-  pull: (name: string, o?: RequestOptions) =>
-    request<{ job: string; source: string; added: number; warnings: string[] }>(
-      `/v1/sources/${encodeURIComponent(name)}/pull`,
-      { ...o, method: 'POST' }
-    ),
+  pull: (name: string, o?: RequestOptions & PullPolling) => pullSource(name, o),
 
   alias: (alias: string, model_id: string, modality: Modality, o?: RequestOptions) =>
     request<{ alias: string; model_id: string }>('/v1/aliases', {
