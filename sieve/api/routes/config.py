@@ -10,7 +10,7 @@ from fastapi.responses import PlainTextResponse
 
 from sieve.api.auth import Token, owner_of_request
 from sieve.api.auth import require as require_scope
-from sieve.api.routes.v1 import Read, config_of, error, store_of
+from sieve.api.routes.v1 import Read, config_of, error, only_sections, store_of
 from sieve.axes import control as axis_control
 from sieve.config_bundle import (
     ConfigBundle,
@@ -48,9 +48,9 @@ def _ready(request: Request) -> tuple[Any, Any, str | None]:
 
 
 @router.get("/config")
-def get_config(request: Request, _: Read = None) -> dict[str, Any]:
+def get_config(request: Request, sections: str | None = None, _: Read = None) -> dict[str, Any]:
     _, store, owner_id = _ready(request)
-    return export_config(store, owner_id)
+    return only_sections(export_config(store, owner_id), sections)
 
 
 def _unresolvable(bundle: ConfigBundle, secrets: Secrets) -> str | None:

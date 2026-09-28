@@ -334,7 +334,7 @@ def require(scope: str):  # type: ignore[no-untyped-def]
     refusal is the kit's envelope. Off -- the default -- nothing below changes.
     """
 
-    def dependency(request: Request, authorization: str | None = Header(default=None)) -> Token:
+    def dependency(request: Request, authorization: str | None = Header(default=None, include_in_schema=False)) -> Token:
         if aio.agent_v1():
             return aio.require_scope(request, scope)
         secret = bearer(authorization)
@@ -357,6 +357,9 @@ def require(scope: str):  # type: ignore[no-untyped-def]
         request.state.owner_id = token.owner_id
         return token
 
+    # The kit's parity check (`agentkit.mcp.check_parity`) reads the scope a route
+    # demands off this mark, in the kit's words. Inert with `AGENT_V1` off.
+    setattr(dependency, "__aio_scope__", aio.KIT_SCOPES.get(scope, scope))
     return dependency
 
 
@@ -370,7 +373,7 @@ def require_read():  # type: ignore[no-untyped-def]
     """
 
     def dependency(
-        request: Request, authorization: str | None = Header(default=None)
+        request: Request, authorization: str | None = Header(default=None, include_in_schema=False)
     ) -> Token | None:
         if aio.agent_v1():
             return aio.read_identity(request)
@@ -404,6 +407,8 @@ def require_read():  # type: ignore[no-untyped-def]
         request.state.owner_id = token.owner_id
         return token
 
+    # Read: what a route with no scope of its own is marked as (see `require`).
+    setattr(dependency, "__aio_scope__", "read")
     return dependency
 
 

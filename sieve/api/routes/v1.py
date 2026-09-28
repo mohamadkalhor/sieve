@@ -56,7 +56,8 @@ from sieve.storelock import StoreBusy, store_lock
 router = APIRouter(prefix="/v1")
 
 Read = Annotated[Token | None, Depends(require_read())]
-Auth = Annotated[str | None, Header()]
+# Not in the spec: the credential is the layer's, not an argument (§3.9's parity check)
+Auth = Annotated[str | None, Header(include_in_schema=False)]
 
 
 # --------------------------------------------------------------------------- #
@@ -1288,6 +1289,34 @@ def get_ranking(request: Request, profile: str, _: Read = None) -> Any:
     return ranking_for(request, profile)
 
 
+def explanation(ranking: dict[str, Any]) -> dict[str, Any]:
+    """A ranking reduced to why the leader leads."""
+    ranked = [r for r in ranking.get("ranks", []) if r.get("position")]
+    if not ranked:
+        return {"profile": ranking.get("profile"), "explanation": "nothing ranked yet"}
+    top = ranked[0]
+    runner = ranked[1] if len(ranked) > 1 else None
+    return {
+        "profile": ranking.get("profile"),
+        "leader": top["model_id"],
+        "final": top["final"],
+        "gap": (top["final"] - runner["final"]) if runner else None,
+        "runner_up": runner["model_id"] if runner else None,
+        "contributions": top.get("axes", []),
+        "confidence": top.get("confidence"),
+        "flip": top.get("flip"),
+    }
+
+
+@router.get("/rankings/{profile}/explain")
+def get_ranking_explanation(request: Request, profile: str, _: Read = None) -> Any:
+    """Why #1 leads: contributions, coverage, the gap to #2 and the flip line."""
+    found = ranking_for(request, profile)
+    if isinstance(found, JSONResponse):
+        return found
+    return explanation(found.model_dump(mode="json"))
+
+
 @router.get("/chains/{profile}")
 def get_chain(request: Request, profile: str, _: Read = None) -> Any:
     chain = store_of(request).chain(profile, owner_of(request))
@@ -1397,6 +1426,17 @@ def post_apply(
 # --------------------------------------------------------------------------- #
 
 
+class TelemetryBatch(BaseModel):
+    """`POST /v1/telemetry/batch`: the same events, wrapped in an object.
+
+    MCP hands a tool's arguments to a route as a JSON object, and
+    `POST /v1/telemetry` takes a bare list, so the `report_outcome` tool needs
+    a door that takes `{"events": [...]}`. Same rule, same scope, same rows.
+    """
+
+    events: list[TelemetryEvent]
+
+
 @router.post("/telemetry")
 def post_telemetry(
     request: Request,
@@ -1414,6 +1454,20 @@ def post_telemetry(
     CONTRACTS section 4: telemetry is pruned to 30 days, and a write is the
     natural moment -- the table only grows when someone is writing to it.
     """
+    return _accept_telemetry(request, body)
+
+
+@router.post("/telemetry/batch")
+def post_telemetry_batch(
+    request: Request,
+    body: TelemetryBatch,
+    token: Annotated[Token, Depends(require_scope("telemetry"))],
+) -> dict[str, int]:
+    """Accept call outcomes as `{"events": [...]}`; answers as `POST /v1/telemetry`."""
+    return _accept_telemetry(request, body.events)
+
+
+def _accept_telemetry(request: Request, body: list[TelemetryEvent]) -> dict[str, int]:
     store = store_of(request)
 
     canonical: dict[str, str] = {}
@@ -1587,8 +1641,22 @@ def get_decisions(
     return store_of(request).decisions(profile=profile, kind=kind, since=since, limit=limit)
 
 
+def only_sections(body: dict[str, Any], sections: str | None) -> dict[str, Any]:
+    """`body` narrowed to the comma-separated top-level keys in `sections`.
+
+    An agent-facing filter: nothing asks for it today, so an answer with no
+    `sections` is the body it always was.
+    """
+    if not sections:
+        return body
+    wanted = {part.strip() for part in sections.split(",") if part.strip()}
+    return {key: value for key, value in body.items() if key in wanted}
+
+
 @router.get("/status")
-def get_status(request: Request, _: Read = None) -> dict[str, Any]:
+def get_status(
+    request: Request, sections: str | None = None, _: Read = None
+) -> dict[str, Any]:
     """When Sieve last looked, and how often it looks. Cheap enough for every page.
 
     Three times, because they answer different questions and collapse badly:
@@ -1649,7 +1717,7 @@ def get_status(request: Request, _: Read = None) -> dict[str, Any]:
     # here so they can stop showing a token box to somebody already signed in;
     # `/v1/me` (AMS-28) will answer the same question in more detail.
     signed_in = gate_identity(request)
-    return {
+    body = {
         "pulled_at": pulled_at.isoformat() if pulled_at else None,
         "ran_at": ran_at.isoformat() if isinstance(ran_at, datetime) else ran_at,
         "schedule": runs_module.cadence_of(schedules),
@@ -1672,6 +1740,7 @@ def get_status(request: Request, _: Read = None) -> dict[str, Any]:
             else None
         ),
     }
+    return only_sections(body, sections)
 
 
 @router.get("/sources")
