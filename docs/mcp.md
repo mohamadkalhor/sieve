@@ -23,14 +23,23 @@ gateway rather than an editor.
 
 ## The tools
 
-| tool | scope needed |
-|---|---|
-| `list_profiles`, `get_profile` | — |
-| `get_ranking`, `explain`, `recommend`, `evaluate` | — |
-| `set_weights`, `set_policy` | `profiles:write` |
-| `report_outcome` | `telemetry` |
-| `apply` | `apply` |
-| `list_models`, `leaderboard`, `status`, `list_runs`, `export_config` | — |
+| tool | scope needed | what it does |
+|---|---|---|
+| `list_profiles` | — | every profile, optionally one modality |
+| `get_profile` | — | one profile by name |
+| `set_weights` | `profiles:write` | replace a profile's axis weights |
+| `set_ship` | `profiles:write` | a profile's `ship` settings |
+| `evaluate` | — | rank a profile and show the chain, storing nothing |
+| `recommend` | — | the top `n` models for a profile |
+| `get_ranking` | — | the stored ranking of a profile |
+| `explain` | — | why the leader leads, and the smallest change that flips it |
+| `report_outcome` | `telemetry` | append outcomes (`ok`, `status`, `latency_ms`) |
+| `apply` | `apply` | rank, ship and write the combo on each target |
+| `list_models` | — | the model catalog, filtered |
+| `leaderboard` | — | one modality's models by a metric |
+| `status` | — | the box's status, optionally `sections` |
+| `list_runs` | — | recent runs, optionally by `step` |
+| `export_config` | — | the config as JSON, optionally `sections` |
 
 `explain` is `get_ranking` reduced to why the leader leads: the gap to #2, the
 per-axis contributions, the confidence, and the smallest single weight change

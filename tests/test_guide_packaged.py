@@ -46,6 +46,19 @@ def test_the_wheel_would_carry_the_guide() -> None:
     assert packages == ["sieve"]
 
 
+def test_mcp_doc_lists_every_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`docs/mcp.md`'s table is the only list of the hosted tools; a tool the
+    registry serves but the doc does not name is a tool nobody calls."""
+    monkeypatch.setenv("AGENT_V1", "1")
+    from sieve.api import v1_tools
+
+    names = sorted(tool.name for tool in v1_tools.registry().tools())
+    assert len(names) == 15
+    doc = (REPO / "docs" / "mcp.md").read_text()
+    for name in names:
+        assert f"`{name}`" in doc, f"docs/mcp.md does not list {name}"
+
+
 def test_every_route_the_guide_names_exists(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """The guide is the only context an arriving agent has: every route it
     names has to be a route the box answers. `AGENT_V1=1`, because that is the
