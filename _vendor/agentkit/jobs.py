@@ -79,7 +79,10 @@ work was stopped, so the job says so. ``error.code`` is always
 ``"interrupted"`` for the attempt cap and ``"handler_error"`` for a handler that
 raised -- with the exception's *type* only, never its message, because §3.3
 refuses to hand an exception's words to a caller and a job's error is answered
-to one.
+to one. A handler that wants its failure to keep its *own* code raises
+:class:`JobFailed` ``(code, message, detail=None)``: the row's error is then
+``{"code": code, "message": message}`` (plus ``"detail"`` when given), the words
+being the handler's own and therefore its to hand out.
 
 **The single-process invariant, enforced.** :meth:`Jobs.startup` takes an
 exclusive ``fcntl.flock`` on ``<data dir>/aio.lock`` and refuses to start
@@ -142,6 +145,7 @@ __all__ = [
     "WORKERS_ENV",
     "HandlerContext",
     "Job",
+    "JobFailed",
     "Jobs",
     "Kind",
     "Locked",
@@ -417,6 +421,41 @@ class ProcessLock:
     def __exit__(self, *exc: Any) -> bool:
         self.release()
         return False
+
+
+class JobFailed(Exception):
+    """Raised by a handler to fail its job with an error code of its own.
+
+    Any other exception ends the job ``failed`` with ``handler_error`` and the
+    exception's *type* (§3.3 keeps a raised exception's words from a caller).
+    ``JobFailed`` is the deliberate case: the code, the message and the optional
+    JSON ``detail`` are written by the handler for the caller to read, so the
+    row keeps them (``store_busy``, ``not_found``, ...). The cancel rule is
+    unchanged: a cancel that arrived before any reported effect still ends the
+    job ``cancelled``.
+    """
+
+    def __init__(self, code: str, message: str, detail: Any = None) -> None:
+        if not isinstance(code, str) or not code.strip():
+            raise ValueError("JobFailed needs a non-empty code")
+        if not isinstance(message, str):
+            raise ValueError("JobFailed needs a message that is text")
+        if detail is not None:
+            try:
+                _json(detail)
+            except Exception as exc:  # noqa: BLE001 -- any encoder failure
+                raise ValueError("JobFailed detail must be JSON") from exc
+        super().__init__(code, message)
+        self.code = code
+        self.message = message
+        self.detail = detail
+
+    def as_error(self) -> dict[str, Any]:
+        """The error a failed job's row and poll carry."""
+        out: dict[str, Any] = {"code": self.code, "message": self.message}
+        if self.detail is not None:
+            out["detail"] = self.detail
+        return out
 
 
 @dataclass(frozen=True)
@@ -1628,12 +1667,15 @@ def _result_of(value: Any) -> tuple[Any, Any]:
     return result, None
 
 
-def _error_of(exc: BaseException) -> dict[str, str]:
+def _error_of(exc: BaseException) -> dict[str, Any]:
     """The error of a failed job: the exception's type, never its message.
 
     §3.3 refuses to hand an exception's words to a caller, and a job's error is
-    answered to one; the traceback goes to the log, where it belongs.
+    answered to one; the traceback goes to the log, where it belongs. The one
+    exception is :class:`JobFailed`, whose words the handler chose to give.
     """
+    if isinstance(exc, JobFailed):
+        return exc.as_error()
     return {"code": "handler_error", "type": type(exc).__name__}
 
 

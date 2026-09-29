@@ -542,7 +542,7 @@ def check_parity(app: Any, registry: Registry) -> list[str]:
             ("output", _model_schema(tool.output_model), _route_output(operation, defs)),
         )
         for label, wanted, have in pairs:
-            if wanted != have:
+            if _comparable(wanted) != _comparable(have):
                 out.append(
                     f"{tool.name}: the {label} schema of the tool and of "
                     f"{tool.method} {path} differ: tool {_short(wanted)} vs "
@@ -555,6 +555,38 @@ def check_parity(app: Any, registry: Registry) -> list[str]:
                 f"{tool.method} {path} demands "
                 f"{sorted(scopes) if scopes else 'no scope'}"
             )
+    return out
+
+
+def _comparable(node: Any) -> Any:
+    """A schema as parity compares it: the spellings that mean nothing are gone.
+
+    Three pairs of spellings say the same thing, and the two sides (pydantic's
+    schema, FastAPI's OpenAPI) do not agree on which they write:
+
+    * ``"default": null`` -- FastAPI leaves it out, pydantic writes it; an
+      optional field already reads as null when omitted;
+    * ``"properties": {}`` -- a tool that takes no arguments is the empty
+      object, and a route that takes none has no ``properties`` at all;
+    * ``"additionalProperties": true`` -- what an object says by default.
+
+    Only comparison sees this: what ``tools/list`` publishes keeps every word.
+    """
+    if not isinstance(node, dict):
+        if isinstance(node, list):
+            return [_comparable(part) for part in node]
+        return node
+    out: dict[str, Any] = {}
+    for key, value in node.items():
+        if key == "properties" and isinstance(value, dict):
+            if value:
+                out[key] = {name: _comparable(sub) for name, sub in value.items()}
+            continue
+        if key == "default" and value is None:
+            continue
+        if key == "additionalProperties" and value is True:
+            continue
+        out[key] = _comparable(value)
     return out
 
 

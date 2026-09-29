@@ -10,6 +10,7 @@ minute is a row to poll rather than a request held open.
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -91,7 +92,21 @@ def _pulled(
                 cfg, store, name, source_cfg, actor, snapshot=sid, job=job_id
             )
     except StoreBusy as busy:
-        raise aio.JobFailed("store_busy", str(busy)) from busy
+        raise _failed("store_busy", str(busy)) from busy
+
+
+def _failed(code: str, message: str) -> Exception:
+    """The kit's `JobFailed`: the job ends `failed` with this code and sentence."""
+    return aio._kit().jobs.JobFailed(code, message)
+
+
+def _refusal(answer: Any) -> Exception:
+    """The same refusal one of `/v1`'s helpers answered as a JSONResponse."""
+    try:
+        named = json.loads(bytes(answer.body).decode("utf-8"))["error"]
+        return _failed(str(named.get("code") or "bad_request"), str(named.get("message") or ""))
+    except Exception:
+        return _failed("bad_request", "the answer to that call could not be read")
 
 
 def handler(app: Any, jobs: Any) -> Callable[[Any], dict[str, Any]]:
@@ -102,16 +117,16 @@ def handler(app: Any, jobs: Any) -> Callable[[Any], dict[str, Any]]:
         cfg = getattr(app.state, "config", None)
         store = getattr(app.state, "store", None)
         if cfg is None or store is None:
-            raise aio.JobFailed("store_busy", "this process is shutting down")
+            raise _failed("store_busy", "this process is shutting down")
         name, force = _asked_for(ctx)
         source_cfg = cfg.sources.get(name)
         # The route answers 404 and 409 before queuing, so these are the same
         # two refusals for a job submitted through the kit's own `POST /v1/jobs`,
         # which takes any input a caller writes.
         if source_cfg is None:
-            raise aio.JobFailed("not_found", f"no source {name!r}")
+            raise _failed("not_found", f"no source {name!r}")
         if not source_cfg.enabled and not force:
-            raise aio.JobFailed(
+            raise _failed(
                 "source_disabled", f"source {name!r} is disabled; use force=true to pull"
             )
         sid = snapshot_id(name, ctx.job_id)
@@ -120,29 +135,16 @@ def handler(app: Any, jobs: Any) -> Callable[[Any], dict[str, Any]]:
         if isinstance(out, JSONResponse):
             # The pull refused: a source whose plugin has not landed (501). The
             # row carries that same code and sentence rather than a handler error.
-            raise aio.JobFailed.of(out)
+            raise _refusal(out)
         out["snapshot"] = sid
         return out
 
     return pull
 
 
-def _carrying_failure(run: Callable[[Any], Any]) -> Callable[[Any], Any]:
-    """`ctx.failure`, so `_KeepsTheCode` can write the code the handler named."""
-
-    def wrapped(ctx: Any) -> Any:
-        try:
-            return run(ctx)
-        except aio.JobFailed as exc:
-            ctx.failure = {"code": exc.code, "message": exc.message}
-            raise
-
-    return wrapped
-
-
 def register(app: Any, jobs: Any) -> Any:
     """Declare the pull kind on this app's store, once."""
-    run = _carrying_failure(handler(app, jobs))
+    run = handler(app, jobs)
     run.__name__ = "pull"
     run.__doc__ = handler.__doc__
     return jobs.register(PULL, run, idempotency=IDEMPOTENT)

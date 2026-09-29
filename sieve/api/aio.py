@@ -574,61 +574,6 @@ def _aio_db(config: Any) -> str:
 SHUTDOWN_GRACE = 5.0
 
 
-class JobFailed(Exception):  # noqa: N818  (the name the kit's `_finish` answers to)
-    """A handler's own refusal: the job ends `failed` with *this* code.
-
-    The kit writes a handler that raises as `handler_error` plus the exception's
-    type, which is right for a bug and wrong for an answer the app means to give
-    -- `not_built` for a source whose plugin has not landed, `store_busy` when
-    another writer holds the store. A handler raises this instead, and `_Jobs`
-    writes the code and the sentence it carries.
-    """
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = str(code)
-        self.message = str(message)
-
-    @classmethod
-    def of(cls, answer: Any) -> JobFailed:
-        """The same refusal one of `/v1`'s helpers answered as a JSONResponse."""
-        try:
-            import json
-
-            body = json.loads(bytes(answer.body).decode("utf-8"))
-            named = body["error"]
-            return cls(str(named.get("code") or "bad_request"), str(named.get("message") or ""))
-        except Exception:
-            return cls("bad_request", "the answer to that call could not be read")
-
-
-class _KeepsTheCode:
-    """The kit's store, with one addition: a `JobFailed` keeps its code.
-
-    Only the error a failed row carries is changed, and only when the handler
-    named one (`ctx.failure`, set by `sieve.api.v1_jobs.register`'s wrapper);
-    every state transition, guard and claim check is the kit's own `_finish`.
-    """
-
-    def _finish(
-        self, job: Any, ctx: Any = None, *, result: Any = None, error: Any = None
-    ) -> bool:
-        failure = getattr(ctx, "failure", None) if ctx is not None else None
-        if error is not None and isinstance(failure, dict):
-            error = dict(failure)
-        return super()._finish(job, ctx, result=result, error=error)  # type: ignore[misc]
-
-
-def _jobs_class() -> Any:
-    """The kit's `Jobs`, with `_KeepsTheCode` in front of it.
-
-    Composed when it is first needed rather than at import: a `class` statement
-    reads its base then, and this module must not read `_vendor/` at all while
-    `AGENT_V1` is off.
-    """
-    return type("_Jobs", (_KeepsTheCode, _kit().jobs.Jobs), {})
-
-
 def _jobs_key() -> bytes:
     """§3.6's key for the job list's cursors.
 
@@ -654,7 +599,7 @@ def jobs_for(app: Any) -> Any:
     """
     found = getattr(app.state, "aio_jobs", None)
     if found is None:
-        found = _jobs_class()(
+        found = _kit().jobs.Jobs(
             _aio_db(getattr(app.state, "aio_config", None)),
             key=_jobs_key(),
             audit=getattr(app.state, "aio_audit", None),
