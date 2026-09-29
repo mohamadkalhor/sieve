@@ -87,7 +87,7 @@ Same key with the same body inside the retention window -> the stored answer is 
 
 ### Jobs
 
-With `AGENT_V1` on, `POST /v1/sources/{name}/pull` answers 202 with a job object; poll `GET /v1/jobs/{job_id}` until its status is `done` or `failed`. A failed job carries its own error code: `store_busy`, `not_found` or `source_disabled`.
+With `AGENT_V1` on, `POST /v1/sources/{name}/pull` answers 202 with a job object; poll `GET /v1/jobs/{job_id}` until its status is `succeeded`, `failed` or `cancelled`. A failed job carries its own error code: `store_busy`, `not_found` or `source_disabled`.
 
 With `AGENT_V1` off the same route answers synchronously, as before.
 
