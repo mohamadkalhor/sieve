@@ -60,3 +60,48 @@ Set the `cc/` price multiplier to 0.1:
 ```
 
 The guide is also served as Markdown at `GET /v1/guide` and as MCP resource `sieve://operating-guide`. With the kit on, `POST /v1/mcp` serves the same tools as MCP (each one is a `/v1` route, called with your own API key); `sieve mcp` on your own machine keeps `SIEVE_TOKEN` as its bearer.
+## Agent API (/v1)
+
+Everything below exists only when the operator sets `AGENT_V1=on`. Unset — the default — means none of it exists and `/v1/*` behaves exactly as it did before: the same routes, the same synchronous answers, the same credential rules.
+
+### Credentials
+
+Send either `Authorization: Bearer <key>` or the gate session cookie, never both.
+
+- both -> 400 `mixed_credentials`
+- a bad or unknown bearer -> 401 `bad_key`; there is no fallback to the cookie
+- neither -> 401 `sign_in`
+- a key without the route's scope -> 403 `not_allowed`
+
+Public, no credential: `/v1/guide`, `/v1/openapi.json`, `/healthz`, `/v1/health`, `/llms.txt`.
+
+### Errors
+
+Every error body is `{"error": {"code": "...", "message": "...", "detail": ... (optional), "request_id": "..."}}`, and every `/v1` answer carries an `X-Request-Id` header.
+
+### Retries and Idempotency-Key
+
+Send `Idempotency-Key: <any unique string>`. It is required on the run routes `POST /v1/apply`, `POST /v1/runs/{step}` and `POST /v1/sources/{name}/pull`; a missing key is 400 `idempotency_key_required`. It is optional on every other write.
+
+Same key with the same body inside the retention window -> the stored answer is replayed. Same key with a different body -> 409.
+
+### Jobs
+
+With `AGENT_V1` on, `POST /v1/sources/{name}/pull` answers 202 with a job object; poll `GET /v1/jobs/{job_id}` until its status is `done` or `failed`. A failed job carries its own error code: `store_busy`, `not_found` or `source_disabled`.
+
+With `AGENT_V1` off the same route answers synchronously, as before.
+
+### The store lock
+
+Every bulk writer — the CLI's `pull`, `plan --store` and `run`, and the API's `apply` and `pull` — takes one lock file `<data dir>/store.lock`. A second writer waits up to `SIEVE_STORE_LOCK_WAIT` seconds (default 600) and then fails: the CLI exits 1 with a message, the API answers 503 `store_busy` with `Retry-After: 2`.
+
+### MCP
+
+`POST /v1/mcp` is JSON-RPC (MCP over HTTP) with the caller's own credential. 15 tools: `list_profiles`, `get_profile`, `set_weights`, `set_ship`, `evaluate`, `recommend`, `get_ranking`, `explain`, `report_outcome`, `apply`, `list_models`, `leaderboard`, `status`, `list_runs`, `export_config`. `apply` is a run tool: pass `_idempotency_key` in its arguments. `sieve mcp` (stdio, local) still works and still uses `SIEVE_TOKEN` for its own bearer.
+
+### For operators: environment
+
+- `AGENT_V1` — off by default; turns the whole surface above on.
+- `AIO_CURSOR_KEY` — required outside `APP_ENV=dev`; without it, list cursors do not survive a restart.
+- `APP_ENV` — `dev` enables `GET /v1/_crash` for the conformance suite; never set `dev` in production.
+- `SIEVE_STORE_LOCK_WAIT` — seconds a bulk writer waits for the store lock (default 600).

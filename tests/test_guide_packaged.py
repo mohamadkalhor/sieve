@@ -9,6 +9,7 @@ sieve. These tests hold that down, plus the two documents that describe the
 from __future__ import annotations
 
 import pathlib
+import re
 import tomllib
 
 import pytest
@@ -43,3 +44,19 @@ def test_the_wheel_would_carry_the_guide() -> None:
     data = tomllib.loads((REPO / "pyproject.toml").read_text())
     packages = data["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
     assert packages == ["sieve"]
+
+
+def test_every_route_the_guide_names_exists(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """The guide is the only context an arriving agent has: every route it
+    names has to be a route the box answers. `AGENT_V1=1`, because that is the
+    surface the section documents."""
+    monkeypatch.setenv("AGENT_V1", "1")
+    app = create_app(default_config(tmp_path))
+    paths = app.openapi()["paths"]
+    named = re.findall(r"(GET|POST|PUT|PATCH|DELETE) (/v1/[A-Za-z0-9_{}/.-]+)", GUIDE.read_text())
+    assert named, "the guide names no /v1 route at all"
+    for method, path in named:
+        if path.startswith("/v1/_crash"):
+            continue
+        assert path in paths, f"the guide names {method} {path}, which is not a route"
+        assert method.lower() in paths[path], f"{path} does not answer {method}"
