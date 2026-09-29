@@ -16,6 +16,8 @@ Status: **phase 1**. See [PLAN.md](PLAN.md) for the whole design and
 
 ## Three minutes
 
+The default port is 8110 (`[server] port` in sieve.toml); a box may run it elsewhere — this project's own VPS uses 8111.
+
 ```bash
 uv sync                            # creates .venv; `sieve` is not on your PATH
 cp sieve.toml.example sieve.toml
