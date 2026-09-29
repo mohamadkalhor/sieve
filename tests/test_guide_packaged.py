@@ -46,6 +46,17 @@ def test_the_wheel_would_carry_the_guide() -> None:
     assert packages == ["sieve"]
 
 
+def test_healthz_matches_contracts(client: TestClient) -> None:
+    """CONTRACTS' `/healthz` row is what a probe is written against: the body
+    is the code's, so the row has to say the code's shape."""
+    body = client.get("/healthz").json()
+    assert set(body) == {"status", "version"}
+    assert body["status"] == "ok"
+    rows = [line for line in CONTRACTS.read_text().splitlines() if line.startswith("| GET /healthz |")]
+    assert len(rows) == 1
+    assert '"status": "ok"' in rows[0]
+
+
 def test_mcp_doc_lists_every_tool(monkeypatch: pytest.MonkeyPatch) -> None:
     """`docs/mcp.md`'s table is the only list of the hosted tools; a tool the
     registry serves but the doc does not name is a tool nobody calls."""

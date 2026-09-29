@@ -321,7 +321,7 @@ read needs a live gate session or a bearer.
 
 | method & path | scope | returns |
 |---|---|---|
-| GET /healthz | – | `{"ok": true}` and nothing else — the liveness probe the unit and the image use, outside `/v1` and outside auth |
+| GET /healthz | – | `{"status": "ok", "version": "<package version>"}` — the liveness probe the unit and the image use, outside `/v1` and outside auth |
 | GET /v1/modalities | – | list of modality + counts |
 | GET /v1/axes?modality= · GET /v1/axes/{name}?modality= | – | Axis[] · one Axis (404 `not_found`). Each carries `meaning`: one line saying what the axis means, for the person moving its slider — `describes` where an axis has one, a sentence built from its label where it does not |
 | POST /v1/axes · PUT /v1/axes/{name} · DELETE /v1/axes/{name}?modality=&force= | profiles:write | create · replace · delete an axis. A name a shared axis already holds is refused; a delete an enabled profile still weighs is 409 `axis_in_use` naming the profiles, and `force=1` deletes it and sets those weights to 0 |
