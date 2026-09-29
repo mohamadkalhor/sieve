@@ -130,5 +130,5 @@ def put_config(
 
 @router.get("/guide", response_class=PlainTextResponse)
 def get_guide(_: Read = None) -> PlainTextResponse:
-    path = Path(__file__).resolve().parents[3] / "OPERATING.md"
+    path = Path(__file__).resolve().parents[2] / "OPERATING.md"
     return PlainTextResponse(path.read_text(), media_type="text/markdown")

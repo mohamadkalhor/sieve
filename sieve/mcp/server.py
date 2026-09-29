@@ -292,7 +292,7 @@ def build_server(bridge: Bridge | None = None) -> Any:
     def operating_guide() -> str:
         from pathlib import Path
 
-        return (Path(__file__).resolve().parents[2] / "OPERATING.md").read_text()
+        return (Path(__file__).resolve().parents[1] / "OPERATING.md").read_text()
 
     for fn in (
         list_profiles,

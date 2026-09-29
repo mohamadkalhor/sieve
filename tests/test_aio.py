@@ -352,7 +352,7 @@ def test_on_a_gate_that_cannot_be_reached_refuses_the_key(
 def test_on_the_guide_is_the_kit_serving_operating_md(on: TestClient) -> None:
     answer = on.get("/v1/guide")
     assert answer.status_code == 200
-    assert answer.text == (REPO / "OPERATING.md").read_text()
+    assert answer.text == (REPO / "sieve" / "OPERATING.md").read_text()
     assert answer.headers["content-type"].startswith("text/markdown")
 
 

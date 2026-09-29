@@ -720,7 +720,7 @@ def mount(app: Any, config: Any) -> None:
         for route in app.router.routes
         if not (isinstance(route, APIRoute) and route.path == "/v1/guide")
     ]
-    guide_path = _ROOT / "OPERATING.md"
+    guide_path = Path(__file__).resolve().parents[1] / "OPERATING.md"
     if guide_path.is_file():
         kit.guide.mount(
             app,

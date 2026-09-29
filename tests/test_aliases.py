@@ -123,4 +123,4 @@ def test_guide_is_operating_markdown(client: TestClient) -> None:
     result = client.get("/v1/guide")
     assert result.status_code == 200
     assert result.headers["content-type"].startswith("text/markdown")
-    assert result.text == (Path(__file__).resolve().parents[1] / "OPERATING.md").read_text()
+    assert result.text == (Path(__file__).resolve().parents[1] / "sieve" / "OPERATING.md").read_text()
