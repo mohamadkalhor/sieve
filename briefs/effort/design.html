@@ -1,0 +1,362 @@
+<title>Sieve Seat Efforts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout: a single reading column for the plan, with full-width Console frames (Sieve's own dark look) set into it. */
+:root{
+  --bg:#0d0f12; --panel:#101317; --raise:#15181d; --line:#23272e; --line2:#2c313a;
+  --fg:#e6e8eb; --soft:#c3c8d0; --mute:#98a0ad; --accent:#b6e35c; --warn:#e0a15a; --cool:#5cc8e3;
+  --sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.55 var(--sans);margin:0;padding-inline:16px;padding-block:32px 64px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:44px}
+.col{max-width:720px}
+h1{font:500 30px/1.15 var(--mono);margin:0;letter-spacing:.01em;text-wrap:balance}
+h2{font:600 18px/1.3 var(--sans);margin:0 0 12px;text-wrap:balance}
+h3{font:600 14px/1.3 var(--sans);margin:0 0 6px}
+p{margin:0 0 10px;color:var(--soft)}
+.eyebrow{font:500 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.mono{font-family:var(--mono)}
+.mute{color:var(--mute)}
+.acc{color:var(--accent)}
+.lede{font-size:16px;color:var(--soft);max-width:68ch}
+code{font:12.5px var(--mono);background:var(--raise);border:1px solid var(--line2);border-radius:4px;padding:1px 5px;color:var(--fg)}
+.head{display:flex;flex-direction:column;gap:12px}
+.head .sq{display:inline-block;width:12px;height:12px;background:var(--accent);margin-right:10px}
+
+/* the gap, drawn */
+.gap{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.gapcard{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.ladder{display:flex;flex-direction:column;gap:6px}
+.lrow{display:grid;grid-template-columns:96px 1fr 40px;gap:10px;align-items:center;font-size:12px}
+.lrow .bar{height:8px;background:#1c2027;border-radius:2px;overflow:hidden}
+.lrow .bar i{display:block;height:100%;background:#5b6472}
+.lrow.used .bar i{background:var(--accent)}
+.lrow.claimed .bar i{background:var(--warn)}
+.lrow .n{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.tag{font:500 10px/1 var(--mono);padding:3px 6px;border-radius:3px;letter-spacing:.04em}
+.tag.w{background:rgba(224,161,90,.14);color:var(--warn)}
+.tag.a{background:rgba(182,227,92,.14);color:var(--accent)}
+
+/* frames */
+.frame{border:1px solid var(--line2);border-radius:8px;overflow-x:auto;background:var(--bg)}
+.frame-inner{min-width:1040px}
+.caption{display:flex;gap:10px;align-items:baseline;margin:0 0 10px;flex-wrap:wrap}
+.caption b{font:600 14px var(--sans)}
+.callouts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:12px}
+.callout{display:flex;gap:10px;font-size:13px;color:var(--soft);min-width:0}
+.callout .k{flex:none;width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--bg);font:600 11px/20px var(--mono);text-align:center}
+
+/* console bits */
+.c-top{height:48px;display:flex;align-items:center;gap:14px;padding:0 16px;border-bottom:1px solid var(--line)}
+.c-top .logo{display:flex;align-items:center;gap:8px;font:500 15px var(--mono);width:220px}
+.c-top .logo i{width:13px;height:13px;background:var(--accent);display:inline-block}
+.c-top .search{flex:1;max-width:520px;height:32px;border:1px solid var(--line2);background:var(--raise);border-radius:6px;color:var(--mute);display:flex;align-items:center;padding:0 12px;font-size:12px}
+.c-top nav{margin-left:auto;display:flex;gap:2px;font-size:13px}
+.c-top nav span{padding:7px 11px;border-radius:6px;color:var(--mute)}
+.c-top nav span.on{background:#1c2027;color:var(--fg)}
+.c-body{display:flex;min-height:0}
+.c-seats{width:250px;flex:none;border-right:1px solid var(--line);padding:10px 8px;display:flex;flex-direction:column;gap:2px}
+.c-sec{display:flex;padding:6px 10px;font:500 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.c-sec span:first-child{flex:1}
+.seat{display:flex;align-items:center;gap:10px;height:46px;padding:0 10px;border-radius:6px}
+.seat.on{background:#1c2027}
+.seat .dot{width:6px;height:6px;border-radius:50%;background:#3a404b;flex:none}
+.seat .t{display:flex;flex-direction:column;min-width:0;flex:1}
+.seat .t b{font:400 13px var(--mono)}
+.seat .t span{font-size:11px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seat .note{font:11px var(--mono);color:var(--mute)}
+.seat .note.w{color:var(--warn)}
+.c-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.c-hdr{padding:16px 20px 10px;display:flex;align-items:center;gap:14px}
+.c-hdr .ttl{flex:1;display:flex;flex-direction:column;gap:2px}
+.c-hdr h4{margin:0;font:500 22px var(--mono)}
+.seg{display:flex;padding:2px;background:var(--raise);border:1px solid var(--line2);border-radius:6px}
+.seg span{height:30px;padding:0 11px;border-radius:4px;display:flex;align-items:center;color:var(--mute);font-size:12.5px}
+.seg span.on{background:var(--line2);color:var(--fg)}
+.ship{height:34px;padding:0 15px;border-radius:6px;background:var(--accent);color:var(--bg);font-weight:600;display:flex;align-items:center;font-size:13px}
+.runs{display:flex;align-items:center;gap:10px;padding:0 20px 12px;flex-wrap:wrap}
+.runs .lbl{font:500 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.eff{display:flex;padding:2px;background:var(--raise);border:1px solid var(--line2);border-radius:6px}
+.eff span{height:28px;padding:0 10px;border-radius:4px;display:flex;align-items:center;font:12px var(--mono);color:var(--mute)}
+.eff span.on{background:var(--accent);color:var(--bg);font-weight:500}
+.eff span.src{position:relative}
+.runs .hint{font-size:12px;color:var(--mute)}
+.split{display:flex;height:34px;gap:3px;padding:0 20px 12px}
+.split span{border-radius:3px;color:var(--bg);font-size:11.5px;font-weight:600;display:flex;align-items:center;justify-content:space-between;padding:0 8px;overflow:hidden;white-space:nowrap}
+.thead,.row{display:flex;align-items:center;gap:12px;padding:0 20px}
+.thead{height:30px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font:500 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.row{height:44px;border-bottom:1px solid #1a1d23}
+.row.sel{background:#161a20;box-shadow:inset 2px 0 0 var(--accent)}
+.row.next{opacity:.72;height:40px}
+.w-r{width:22px;font-family:var(--mono);color:var(--mute)}
+.w-n{width:260px;display:flex;align-items:center;gap:8px;min-width:0}
+.w-n b{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.w-s{flex:1;display:flex;align-items:center;gap:10px}
+.w-s .bar{flex:1;height:6px;background:#1c2027;border-radius:3px;overflow:hidden}
+.w-s .bar i{display:block;height:100%;background:var(--accent)}
+.row.next .w-s .bar i{background:#5b6472}
+.w-s .n{width:36px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.w-c{width:62px;text-align:right;font-family:var(--mono);color:var(--soft)}
+.w-v{width:46px;font:12px var(--mono);color:var(--mute)}
+.mv{font-size:11px;font-weight:600;color:var(--accent)}
+.mv.dn{color:var(--warn)}
+.pill{flex:none;font:500 10.5px/1 var(--mono);padding:3px 6px;border-radius:10px;border:1px solid var(--line2);color:var(--soft)}
+.pill.exact{border-color:#3a4a2a;color:var(--accent)}
+.pill.near{border-style:dashed;border-color:var(--warn);color:var(--warn)}
+.pill.fixed{border-color:#2a4450;color:var(--cool)}
+.pill.one{color:var(--mute)}
+.shipline{display:flex;align-items:center;gap:12px;height:26px;padding:0 20px;color:var(--accent);font:500 11px var(--sans);letter-spacing:.08em;text-transform:uppercase}
+.shipline i{flex:1;height:1px;background:var(--accent)}
+.c-insp{width:350px;flex:none;border-left:1px solid var(--line);padding:16px 18px;background:var(--panel);display:flex;flex-direction:column;gap:16px}
+.c-insp h5{margin:0;font:600 19px var(--sans)}
+.ladder2{display:flex;flex-direction:column;gap:2px}
+.lr{display:grid;grid-template-columns:86px 1fr 38px 50px;gap:8px;align-items:center;height:26px;font-size:12px;padding:0 6px;border-radius:4px}
+.lr.here{background:#1c2027;box-shadow:inset 2px 0 0 var(--accent)}
+.lr .m{font-family:var(--mono);color:var(--soft);display:flex;gap:6px;align-items:center}
+.lr .b{height:7px;background:#1c2027;border-radius:2px;overflow:hidden}
+.lr.here .b{background:#262b33}
+.lr .b i{display:block;height:100%;background:#5b6472}
+.lr.here .b i{background:var(--accent)}
+.lr .n,.lr .c{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.lr .c{color:var(--mute)}
+.lr .r{width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block}
+.lr .r.no{background:transparent;border:1px solid #3a404b}
+.sb{height:28px;border-top:1px solid var(--line);display:flex;align-items:center;gap:20px;padding:0 16px;font:11px var(--mono);color:var(--mute)}
+.sb .w{color:var(--warn)}
+
+/* phone */
+.duo{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start}
+@media (max-width:860px){.duo{grid-template-columns:1fr}}
+.phone{width:340px;max-width:100%;border:1px solid var(--line2);border-radius:22px;padding:14px 0 0;background:var(--bg);overflow:hidden}
+.phone .row{padding:0 14px;height:auto;min-height:56px;flex-wrap:wrap;gap:6px 10px;padding-block:8px}
+.phone .w-n{width:auto;flex:1 1 100%}
+.phone .w-s{flex:1}
+.ph-h{padding:0 14px 10px;display:flex;flex-direction:column;gap:8px}
+.ph-h h4{margin:0;font:500 20px var(--mono)}
+.ph-eff{display:flex;align-items:center;justify-content:space-between;height:44px;border:1px solid var(--line2);border-radius:8px;padding:0 12px;background:var(--raise);font-size:13px}
+
+/* states legend */
+.states{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.state{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.state .ex{display:flex;align-items:center;gap:8px;font-weight:500}
+.state p{font-size:13px;margin:0}
+
+/* tables */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:13px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{font:500 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);background:var(--panel)}
+td{color:var(--soft)}
+td:first-child{color:var(--fg);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+
+.chain{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;flex:1 1 200px;min-width:0}
+.card .id{font:500 12px var(--mono);color:var(--accent)}
+.card b{font-weight:600}
+.card span{font-size:12.5px;color:var(--soft)}
+.arrow{align-self:center;color:var(--mute);font-family:var(--mono)}
+ul.plain{margin:0;padding-left:18px;color:var(--soft)}
+ul.plain li{margin-bottom:6px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+
+<header class="head">
+  <span class="eyebrow">Sieve · plan + UI design · 2 Oct 2026</span>
+  <h1><span class="sq"></span>Seat efforts</h1>
+  <p class="lede">Every seat gets one new setting, <b>Runs at</b>: the reasoning effort its agent actually uses. Sieve then scores each model at that effort instead of at its best one, and shows the effort on every row and the whole effort ladder in the inspector.</p>
+</header>
+
+<section class="col">
+  <h2>Why: Sieve scores today's seats at the wrong effort</h2>
+  <p>Artificial Analysis publishes one row per effort, and Sieve already keeps them apart. But a router id such as <code>cx/gpt-6-astra</code> names no effort, so it matches the family's bare row, which is its <b>top</b> mode. Hermes then calls it at the profile's <code>reasoning_effort</code>. The <code>build</code> seat runs at medium and is ranked at max.</p>
+  <p>This is live, not hypothetical: 15 of the shipped LLM seats have a multi-effort model in their list, and 11 of them have one as their first pick, <code>build</code> included.</p>
+</section>
+
+<section class="gap" aria-label="Scored effort against run effort, real Artificial Analysis numbers">
+  <div class="gapcard">
+    <div class="caption"><b>GPT-6 Astra</b><span class="mute">build's first pick · AA intelligence index</span></div>
+    <div class="ladder">
+      <div class="lrow claimed"><span class="mono">max</span><span class="bar"><i style="width:100%"></i></span><span class="n">52.7</span></div>
+      <div class="lrow"><span class="mono">xhigh</span><span class="bar"><i style="width:99.4%"></i></span><span class="n">52.4</span></div>
+      <div class="lrow"><span class="mono">high</span><span class="bar"><i style="width:96.6%"></i></span><span class="n">50.9</span></div>
+      <div class="lrow used"><span class="mono">medium</span><span class="bar"><i style="width:94.1%"></i></span><span class="n">49.6</span></div>
+      <div class="lrow"><span class="mono">low</span><span class="bar"><i style="width:86.9%"></i></span><span class="n">45.8</span></div>
+      <div class="lrow"><span class="mono">none</span><span class="bar"><i style="width:85.8%"></i></span><span class="n">45.2</span></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="tag w">scored at max</span><span class="tag a">runs at medium</span></div>
+  </div>
+  <div class="gapcard">
+    <div class="caption"><b>GPT-6 Sol</b><span class="mute">in build's list · AA intelligence index</span></div>
+    <div class="ladder">
+      <div class="lrow claimed"><span class="mono">max</span><span class="bar"><i style="width:100%"></i></span><span class="n">47.6</span></div>
+      <div class="lrow"><span class="mono">xhigh</span><span class="bar"><i style="width:92.9%"></i></span><span class="n">44.2</span></div>
+      <div class="lrow"><span class="mono">high</span><span class="bar"><i style="width:89.1%"></i></span><span class="n">42.4</span></div>
+      <div class="lrow used"><span class="mono">medium</span><span class="bar"><i style="width:83.6%"></i></span><span class="n">39.8</span></div>
+      <div class="lrow"><span class="mono">low</span><span class="bar"><i style="width:71.8%"></i></span><span class="n">34.2</span></div>
+      <div class="lrow"><span class="mono">none</span><span class="bar"><i style="width:59.9%"></i></span><span class="n">28.5</span></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="tag w">credited 7.8 points it never uses</span></div>
+  </div>
+  <div class="gapcard">
+    <div class="caption"><b>What the fix does</b></div>
+    <p style="font-size:13px">Astra loses 3 points, Sol loses 8. A model whose ladder is flat (Astra on coding: 76.9 at max, 76.7 at medium) barely moves. A model that leans on high effort drops. The list reorders to what the seat really gets.</p>
+    <p style="font-size:13px" class="mute">Price per token is the same at every effort. Higher modes burn more output tokens, which no source we read publishes, so per-task cost still cannot tell modes apart. The plan keeps saying so on the page.</p>
+  </div>
+</section>
+
+<section>
+  <div class="caption"><b>1 · The seat view</b><span class="mute">Console, 1440 wide · example scores, real model names</span></div>
+  <div class="frame"><div class="frame-inner">
+    <div class="c-top"><span class="logo"><i></i>sieve</span><span class="search">Find a model, a seat or an action</span><nav><span class="on">Seats</span><span>Field</span><span>Sources</span><span>Runs</span><span>Guide</span></nav></div>
+    <div class="c-body">
+      <aside class="c-seats">
+        <div class="c-sec"><span>Text</span><span class="mono">15</span></div>
+        <div class="seat"><span class="dot"></span><span class="t"><b>assistant</b><span>Gemini 3.7 Flash · medium</span></span><span class="note">med</span></div>
+        <div class="seat on"><span class="dot" style="background:var(--accent)"></span><span class="t"><b>build</b><span>GPT-6 Astra · medium</span></span><span class="note acc">3</span></div>
+        <div class="seat"><span class="dot"></span><span class="t"><b>coordinator</b><span>Claude Opus 4.7 · high</span></span><span class="note">high</span></div>
+        <div class="seat"><span class="dot"></span><span class="t"><b>critic</b><span>GPT-6 Sol · max</span></span><span class="note w" title="Runs at is not set: models are scored at their top effort">effort?</span></div>
+        <div class="seat"><span class="dot"></span><span class="t"><b>designer</b><span>Gemini 3.8 Flash · high</span></span><span class="note w">effort?</span></div>
+        <div class="seat"><span class="dot"></span><span class="t"><b>publisher</b><span>GLM 5.3 · medium</span></span><span class="note">med</span></div>
+      </aside>
+      <main class="c-main">
+        <div class="c-hdr">
+          <div class="ttl"><h4>build</h4><span class="mute">The coder on this server: one brief in, a pushed commit and a closed card out.</span></div>
+          <div class="seg"><span class="on">Auto</span><span>Manual</span></div>
+          <span class="ship">Ship 3 changes</span>
+        </div>
+        <div class="runs">
+          <span class="lbl">Runs at</span>
+          <div class="eff" role="radiogroup" aria-label="Effort this seat runs at"><span>any</span><span>none</span><span>low</span><span class="on">medium</span><span>high</span><span>xhigh</span><span>max</span></div>
+          <span class="hint">Was <span class="mono">any</span>: scored at each model's top effort. Moves 3 rows.</span>
+        </div>
+        <div class="split">
+          <span style="width:45%;background:#b6e35c">Agentic coding<em class="mono" style="font-style:normal">45</em></span>
+          <span style="width:20%;background:#5cc8e3">Cost<em class="mono" style="font-style:normal">20</em></span>
+          <span style="width:10%;background:#e3b65c">Tools<em class="mono" style="font-style:normal">10</em></span>
+          <span style="width:10%;background:#c9a0f0">Reason.<em class="mono" style="font-style:normal">10</em></span>
+          <span style="width:10%;background:#f0a0a0">Long ctx<em class="mono" style="font-style:normal">10</em></span>
+          <span style="width:5%;background:#aeb6c2">L</span>
+        </div>
+        <div class="thead"><span class="w-r">#</span><span class="w-n">Model · effort</span><span class="w-s">Score</span><span class="w-c">Per task</span><span class="w-v">Via</span></div>
+        <div class="row"><span class="w-r">1</span><span class="w-n"><b>GPT-6 Astra</b><span class="pill exact">medium</span></span><span class="w-s"><span class="bar"><i style="width:84%"></i></span><span class="n">0.84</span></span><span class="w-c">$0.07</span><span class="w-v">cx/</span></div>
+        <div class="row sel"><span class="w-r">2</span><span class="w-n"><b>GLM 5.3</b><span class="pill near" title="No medium row is published for GLM 5.3. Scored at low, the nearest effort below.">low ↓</span><span class="mv">up 2</span></span><span class="w-s"><span class="bar"><i style="width:79%"></i></span><span class="n">0.79</span></span><span class="w-c">$0.02</span><span class="w-v">ocg/</span></div>
+        <div class="row"><span class="w-r">3</span><span class="w-n"><b>Muse Spark 1.3</b><span class="pill one" title="Publishes one setting">one setting</span></span><span class="w-s"><span class="bar"><i style="width:78%"></i></span><span class="n">0.78</span></span><span class="w-c">$0.05</span><span class="w-v">vercel/</span></div>
+        <div class="row"><span class="w-r">4</span><span class="w-n"><b>Gemini 3.8 Flash</b><span class="pill fixed" title="The router id ag/gemini-3.8-flash-high names its own effort, so the seat setting does not apply">high · id</span><span class="mv">new</span></span><span class="w-s"><span class="bar"><i style="width:76%"></i></span><span class="n">0.76</span></span><span class="w-c">$0.01</span><span class="w-v">ag/</span></div>
+        <div class="row"><span class="w-r">5</span><span class="w-n"><b>GPT-6 Sol</b><span class="pill exact">medium</span><span class="mv dn">down 3</span></span><span class="w-s"><span class="bar"><i style="width:74%"></i></span><span class="n">0.74</span></span><span class="w-c">$0.05</span><span class="w-v">cx/</span></div>
+        <div class="shipline"><span>Ships above this line</span><i></i><span>next up below</span></div>
+        <div class="row next"><span class="w-r">6</span><span class="w-n"><b>Grok 4.6</b><span class="pill exact">medium</span></span><span class="w-s"><span class="bar"><i style="width:72%"></i></span><span class="n">0.72</span></span><span class="w-c">$0.03</span><span class="w-v">ocg/</span></div>
+        <div class="row next"><span class="w-r">7</span><span class="w-n"><b>Claude Opus 4.7</b><span class="pill exact">medium</span></span><span class="w-s"><span class="bar"><i style="width:70%"></i></span><span class="n">0.70</span></span><span class="w-c">$0.24</span><span class="w-v">ag/</span></div>
+      </main>
+      <aside class="c-insp">
+        <div style="display:flex;flex-direction:column;gap:4px"><span class="eyebrow">Selected · would ship second</span><h5>GLM 5.3</h5><span class="mono mute" style="font-size:12px">ocg/glm-5.3 → scored as zai/glm-5-3-low</span></div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:baseline"><b style="flex:1">Effort ladder</b><span class="mute" style="font-size:12px">score on build · intelligence</span></div>
+          <div class="ladder2">
+            <div class="lr"><span class="m"><span class="r"></span>max</span><span class="b"><i style="width:86%"></i></span><span class="n">0.86</span><span class="c">44.8</span></div>
+            <div class="lr"><span class="m"><span class="r no"></span>xhigh</span><span class="mute" style="font-size:11px">not published</span><span></span><span></span></div>
+            <div class="lr"><span class="m"><span class="r no"></span>high</span><span class="mute" style="font-size:11px">not published</span><span></span><span></span></div>
+            <div class="lr"><span class="m"><span class="r no"></span>medium</span><span class="mute" style="font-size:11px">not published · seat runs here</span><span></span><span></span></div>
+            <div class="lr here"><span class="m"><span class="r"></span>low</span><span class="b"><i style="width:79%"></i></span><span class="n">0.79</span><span class="c">34.3</span></div>
+          </div>
+          <p style="font-size:12px;margin:4px 0 0" class="mute">The seat runs at medium. GLM 5.3 publishes no medium row, so it is scored at <b class="acc">low</b>, the nearest below, and never credited with max. At max it would score 0.86.</p>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <b>Where 0.79 comes from</b>
+          <div class="lrow" style="grid-template-columns:96px 1fr 60px"><span class="soft">Agentic coding</span><span class="bar"><i style="width:80%;background:#b6e35c"></i></span><span class="n">36.0 / 45</span></div>
+          <div class="lrow" style="grid-template-columns:96px 1fr 60px"><span>Cost</span><span class="bar"><i style="width:92%;background:#5cc8e3"></i></span><span class="n">18.4 / 20</span></div>
+          <div class="lrow" style="grid-template-columns:96px 1fr 60px"><span>Reasoning</span><span class="bar"><i style="width:55%;background:#c9a0f0"></i></span><span class="n">5.5 / 10</span></div>
+        </div>
+        <p style="font-size:12px;margin:0" class="mute">Same price at every effort. Higher efforts use more output tokens, and no source publishes how many, so per-task cost is the same down the ladder.</p>
+      </aside>
+    </div>
+    <div class="sb"><span><span class="acc">●</span> run ok 14m ago</span><span>15 ranked · 15 shipped</span><span>587 reachable</span><span class="w">2 seats have no effort set</span><span style="margin-left:auto">next run 04:30</span></div>
+  </div></div>
+  <div class="callouts">
+    <div class="callout"><span class="k">1</span><span><b>Runs at</b> sits under the seat title, beside the weights. Picking an effort re-ranks the list like a slider does, and <b>Ship</b> counts it as a change. <span class="mono">any</span> keeps today's behaviour.</span></div>
+    <div class="callout"><span class="k">2</span><span>Every row carries an <b>effort pill</b>, so the effort a score was measured at is never hidden. The pill has four looks, shown below.</span></div>
+    <div class="callout"><span class="k">3</span><span>The inspector opens with the model's <b>effort ladder</b>: each published effort, its score on this seat, and which one the seat runs at.</span></div>
+    <div class="callout"><span class="k">4</span><span>The seat list shows each seat's effort, and flags <b class="mono" style="color:var(--warn)">effort?</b> on any seat still scoring at top effort. The status bar counts them.</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="caption"><b>2 · The effort pill, four ways</b><span class="mute">the row always says which effort its score is about</span></div>
+  <div class="states">
+    <div class="state"><div class="ex">GPT-6 Astra <span class="pill exact">medium</span></div><p><b>Exact.</b> The family publishes the seat's effort, and the score is that row's.</p></div>
+    <div class="state"><div class="ex">GLM 5.3 <span class="pill near">low ↓</span></div><p><b>Nearest.</b> No row at the seat's effort. Scored at the nearest effort <i>below</i>, never above, so a model is never credited with effort it will not use. Dashed and amber so it reads as a stand-in.</p></div>
+    <div class="state"><div class="ex">Gemini 3.8 Flash <span class="pill fixed">high · id</span></div><p><b>Set by the router id.</b> <code>ag/gemini-3.8-flash-high</code> names its own effort. The seat setting does not override an id that says what it is.</p></div>
+    <div class="state"><div class="ex">Muse Spark 1.3 <span class="pill one">one setting</span></div><p><b>One setting.</b> The model publishes no efforts. Unchanged from today.</p></div>
+  </div>
+  <p class="mute" style="font-size:13px;margin-top:10px">If nothing lies below the seat's effort (a seat at <span class="mono">low</span>, a family that only publishes max), the nearest above is used and the pill says <span class="mono">max ↑</span>.</p>
+</section>
+
+<section class="duo">
+  <div class="col">
+    <h2>3 · Phone and the Field page</h2>
+    <p>On a phone, <b>Runs at</b> is one 44px row that opens a sheet of efforts. The pill wraps under the model name with the score, so nothing is clipped at 375px.</p>
+    <p>The Field page already joins a family's efforts into a line. It gains one mark: when you arrive from a seat, the point at that seat's effort is ringed in the accent, so you can see where on the line the seat sits.</p>
+    <p>The command palette gets <span class="mono">effort medium</span> (and the other efforts) for the open seat.</p>
+  </div>
+  <div class="phone" aria-label="Phone mockup of the build seat">
+    <div class="ph-h"><span class="eyebrow">Seat</span><h4>build</h4>
+      <div class="ph-eff"><span class="mute">Runs at</span><span class="mono">medium ▾</span></div></div>
+    <div class="row"><span class="w-n"><span class="w-r">1</span><b>GPT-6 Astra</b><span class="pill exact">medium</span></span><span class="w-s"><span class="bar"><i style="width:84%"></i></span><span class="n">0.84</span></span><span class="w-c">$0.07</span></div>
+    <div class="row sel"><span class="w-n"><span class="w-r">2</span><b>GLM 5.3</b><span class="pill near">low ↓</span></span><span class="w-s"><span class="bar"><i style="width:79%"></i></span><span class="n">0.79</span></span><span class="w-c">$0.02</span></div>
+    <div class="row"><span class="w-n"><span class="w-r">3</span><b>Muse Spark 1.3</b><span class="pill one">one setting</span></span><span class="w-s"><span class="bar"><i style="width:78%"></i></span><span class="n">0.78</span></span><span class="w-c">$0.05</span></div>
+    <div class="row" style="border-bottom:0"><span class="w-n"><span class="w-r">4</span><b>Gemini 3.8 Flash</b><span class="pill fixed">high · id</span></span><span class="w-s"><span class="bar"><i style="width:76%"></i></span><span class="n">0.76</span></span><span class="w-c">$0.01</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>4 · Back end and front end</h2>
+  <p class="col">One rule holds the design together: <b>the row's id never changes with effort.</b> Pins, removals, manual lists, chains and router ids stay keyed on the model the router reaches. Effort only changes <i>which published row is read to score it</i>. So switching a seat from medium to high cannot lose a pin, and what ships to 9router is the same list of router ids.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Part</th><th>Back end (Python, <code>sieve/</code>)</th><th>Front end (Svelte, <code>web/</code>)</th></tr></thead>
+    <tbody>
+      <tr><td>Setting</td><td><code>ProfileSettings.effort</code>: one of the seven efforts or null (any). LLM seats only; a media seat with it set is a 400 <code>bad_settings</code>. Stored with the other settings, logged as a decision ("effort any → medium").</td><td><code>EffortControl.svelte</code> under the seat title: segmented on desktop, sheet on phone. Part of the dirty-settings diff, so Ship counts it.</td></tr>
+      <tr><td>Resolving</td><td><code>catalog/effort.py</code> gains <code>resolve(matched_id, local_id, seat_effort, family_rows)</code> → <code>{scored_as, effort, how}</code>, how being exact, nearest_below, nearest_above, id, one or any. Pure, doctested.</td><td>—</td></tr>
+      <tr><td>Ranking</td><td><code>engine.rank_profile</code> resolves each reachable model before scoring and reads the resolved row's observations. <code>Rank</code> gains <code>scored_as</code>, <code>effort</code>, <code>effort_how</code>. <code>model_id</code> and <code>local_ids</code> unchanged.</td><td>—</td></tr>
+      <tr><td>Preview</td><td><code>POST /profiles/{name}/preview</code> accepts <code>effort</code>. A changed effort cannot reuse the cached ranking's axes, so it ranks fresh and caches per (seat, effort) in memory. Each row gains <code>effort</code>, <code>effort_how</code>, <code>scored_as</code>, <code>family</code>.</td><td><code>ModelRow</code> draws <code>EffortPill.svelte</code> after the name. <code>rows.ts</code> gains the pill's text and title as pure functions, tested.</td></tr>
+      <tr><td>Ladder</td><td><code>GET /v1/model-card</code> takes an optional <code>seat</code> and returns <code>ladder</code>: every effort of the family in order, with id, published or not, reachable or not, score on that seat, intelligence index.</td><td><code>EffortLadder.svelte</code> at the top of the inspector. The seat's effort row is marked; unpublished efforts are listed and greyed.</td></tr>
+      <tr><td>Seats list</td><td><code>/v1/seats</code> rows gain <code>effort</code> and <code>multi_mode</code> (true when a shipped model has more than one effort).</td><td>Seat link shows "Model · effort"; <span class="mono">effort?</span> note when effort is null and multi_mode is true. Status bar count.</td></tr>
+      <tr><td>Shipping</td><td>Chains and 9router combos unchanged. <code>/v1/chain/{seat}</code> gains <code>effort</code> so a consumer (Hermes, brain) can read it. Sieve does not write Hermes config; it stays independent.</td><td>—</td></tr>
+      <tr><td>CLI, MCP, check</td><td><code>sieve score build --effort medium</code>; profile set accepts <code>effort=</code>; the MCP settings tool passes it through. <code>sieve check</code> warns on an LLM seat with no effort that ships a multi-effort model.</td><td>Command palette: <span class="mono">effort &lt;level&gt;</span>.</td></tr>
+      <tr><td>Field</td><td>—</td><td>Ring the point at the seat's effort when the Field is opened from a seat.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>5 · How it gets built</h2>
+  <p class="col">Contracts first, then one serial chain of AMS cards on Opus 5.5 at medium effort, in its own working copy on a new branch <code>effort</code> so it cannot collide with the agent-io (D1) work landing on <code>main</code>. I verify each card on the branch before the next one starts.</p>
+  <div class="chain">
+    <div class="card"><span class="id">EFF-0 · here</span><b>Contract</b><span>CONTRACTS.md + <code>briefs/EFFORT.md</code>: fields, resolve rules, API shapes, test list. Committed to <code>effort</code>.</span></div>
+    <span class="arrow">→</span>
+    <div class="card"><span class="id">EFF-A · Opus</span><b>Back end</b><span>Setting, resolver, engine, preview, model-card ladder, seats, chain, CLI, check. pytest, ruff, mypy green.</span></div>
+    <span class="arrow">→</span>
+    <div class="card"><span class="id">EFF-B · Opus</span><b>Front end</b><span>Control, pill, ladder, seat list, palette, Field ring, phone. pnpm check, lint, test, build; e2e extended.</span></div>
+    <span class="arrow">→</span>
+    <div class="card"><span class="id">EFF-T · tester</span><b>UI test</b><span>Playwright walk at 1440, 1024, 375 on a seeded store. Report in <code>briefs/effort/UITEST.md</code>.</span></div>
+    <span class="arrow">→</span>
+    <div class="card"><span class="id">Me</span><b>Verify, then ship on your word</b><span>Own walk on seed and a copy of the live DB, merge to main, deploy, set each seat's effort from the Hermes profiles.</span></div>
+  </div>
+</section>
+
+<section class="col">
+  <h2>6 · Decided, and what to tell me if you disagree</h2>
+  <ul class="plain">
+    <li><b>Nearest below, not above.</b> When a family skips the seat's effort, scoring falls to the lower one. Under-crediting is the safe error; over-crediting is the bug this fixes.</li>
+    <li><b>One effort per seat, not per model.</b> Hermes sets <code>reasoning_effort</code> per profile, so that is the true granularity. A per-model override can come later if a router starts honouring effort per id.</li>
+    <li><b>Default stays <span class="mono">any</span></b> on deploy, so nothing moves until a seat is set. After you approve, I set the live seats from their Hermes profiles in one step: assistant, build, cataloguer, creator, manager at medium; coordinator at high. The rest show <span class="mono">effort?</span> until you pick.</li>
+    <li><b>Media seats</b> get no control; efforts are an LLM thing and a hidden setting rots.</li>
+  </ul>
+</section>
+
+</div>
