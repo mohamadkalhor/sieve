@@ -442,7 +442,9 @@ def _served_by(store: Store, model_id: str, owner_id: str | None) -> list[dict[s
 
 
 @router.get("/model-card")
-def get_model_card(request: Request, id: str, modality: Modality, _: Read = None) -> Any:
+def get_model_card(
+    request: Request, id: str, modality: Modality, seat: str | None = None, _: Read = None
+) -> Any:
     """One model: what it can do and who says so, its posted price, where it is served.
 
     A query route rather than a path one, because `/v1/models/{model_id:path}`
@@ -503,7 +505,79 @@ def get_model_card(request: Request, id: str, modality: Modality, _: Read = None
             {k: row[k] for k in ("local_id", "prefix", "inventory", "stale")} for row in served
         ],
         "scored": id in hand.scored_ids(store, [id], modality, owner_id),
+        "ladder": effort_ladder(request, model, seat),
     }
+
+
+#: the field the ladder's `intelligence` column reads
+LADDER_INTELLIGENCE = ("aa_llm", "artificial_analysis_intelligence_index")
+
+
+def effort_ladder(request: Request, model: Any, seat: str | None) -> list[dict[str, Any]]:
+    """Every effort this model's family publishes, scored for one seat.
+
+    One entry per published effort, in `EFFORT_ORDER`, plus the seat's own
+    effort when the family does not publish it (`published: false`), so the
+    inspector can say what the seat asked for and what it got instead. A model
+    with one setting has no ladder.
+
+    `score` is each row scored on the seat's weights with no effort applied --
+    every row read as published -- from the seat's ranking at "any", which a
+    stored ranking at another effort cannot give, so it is ranked once and kept
+    with the other effort rankings. `here` marks the row the seat's own score
+    was read from.
+    """
+    from sieve.catalog.effort import EFFORT_ORDER, family_of, resolve
+
+    store, cfg = store_of(request), config_of(request)
+    owner_id = owner_of(request)
+    modality: Modality = model.modality
+    family, by_family = _ladders(store, modality)
+    modes = by_family.get(family.get(model.id) or family_of(model.id), {})
+    if len(modes) <= 1:
+        return []
+    local = store.local_ids(owner_id, modality)
+    found = control.profile(store, seat, owner_id) if seat else None
+    if found is not None and found.modality != modality:
+        found = None
+    wanted = found.effort if found is not None else None
+
+    scores: dict[str, float] = {}
+    here: str | None = None
+    if found is not None:
+        here = resolve(model.id, local.get(model.id, []), wanted, modes)[0]
+        snapshot = store.latest_snapshot() or "none"
+        ranking = store.ranking(found.name, None, owner_id)
+        if ranking is None or ranking.effort is not None:
+            plain = found.model_copy(update={"effort": None})
+            ranking = control.effort_ranking(
+                (owner_id, found.name, None, snapshot),
+                lambda: rank_profile(
+                    cfg, store, plain, deps=EngineDeps(), snapshot=snapshot, owner_id=owner_id
+                ),
+            )
+        ranking = control.rerank_cached(ranking, found.weights, found.prefix_weights)
+        scores = {r.model_id: r.score for r in ranking.ranks}
+
+    view = store.cache.view(modality).obs
+    out: list[dict[str, Any]] = []
+    for effort in EFFORT_ORDER:
+        row = modes.get(effort)
+        if row is None and effort != wanted:
+            continue
+        observed = view.get(row, *LADDER_INTELLIGENCE) if row else None
+        out.append(
+            {
+                "effort": effort,
+                "id": row,
+                "published": row is not None,
+                "reachable": row is not None and bool(local.get(row)),
+                "score": scores.get(row) if row else None,
+                "intelligence": observed.value if observed is not None else None,
+                "here": row is not None and row == here,
+            }
+        )
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -519,6 +593,14 @@ def get_profiles(request: Request, modality: Modality | None = None, _: Read = N
     control.seed(store, cfg.profiles_dir, owner_id)
     profiles = control.profiles(store, owner_id)
     return [p for p in profiles if modality is None or p.modality == modality]
+
+
+def _ladders(store: Store, modality: Modality) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+    """`(id -> family, family -> {effort: id})` for one modality, in one query."""
+    from sieve.catalog.effort import family_modes, family_of
+
+    rows = store.effort_rows(modality)
+    return {i: fam or family_of(i) for i, fam, _ in rows}, family_modes(rows)
 
 
 @router.get("/seats")
@@ -559,6 +641,7 @@ def get_seats(request: Request, _: Read = None) -> list[dict[str, Any]]:
     caps: dict[Modality, dict[str, Any]] = {}
     names: dict[Modality, dict[str, str]] = {}
     touched: dict[Modality, datetime | None] = {}
+    ladders: dict[Modality, tuple[dict[str, str], dict[str, dict[str, str]]]] = {}
     rows: list[dict[str, Any]] = []
     for seat in seats:
         modality = seat.modality
@@ -566,6 +649,7 @@ def get_seats(request: Request, _: Read = None) -> list[dict[str, Any]]:
             caps[modality] = control.capability_map(store, modality)
             names[modality] = store.model_names(modality)
             touched[modality] = hand.changed_at(store, modality, owner_id)
+            ladders[modality] = _ladders(store, modality)
         chain = store.chain(seat.name, owner_id)
         live: list[dict[str, str]] | None = None
         if chain is not None:
@@ -577,6 +661,9 @@ def get_seats(request: Request, _: Read = None) -> list[dict[str, Any]]:
         ranking = store.ranking(seat.name, None, owner_id)
         stale_at = touched[modality]
         if ranking is not None and stale_at is not None and ranking.computed_at < stale_at:
+            ranking = None
+        if ranking is not None and ranking.effort != seat.effort:
+            # ranked at another effort: other rows, which no reweighing reaches
             ranking = None
         if ranking is not None:
             saved = control.settings_of(seat)
@@ -592,6 +679,9 @@ def get_seats(request: Request, _: Read = None) -> list[dict[str, Any]]:
             lineup_ids = [m["id"] for m in lineup]
             in_step = live_ids == lineup_ids
             changed = changes_between(live_ids, lineup_ids)
+        family, by_family = ladders[modality]
+        shipped = {m["id"] for m in [*(live or []), *(lineup or [])]}
+        multi_mode = any(len(by_family.get(family.get(m, m), {})) > 1 for m in shipped)
         rows.append(
             {
                 "name": seat.name,
@@ -604,6 +694,8 @@ def get_seats(request: Request, _: Read = None) -> list[dict[str, Any]]:
                 "in_step": in_step,
                 "changes": changed,
                 "shipped_at": chain.computed_at if chain is not None else None,
+                "effort": seat.effort,
+                "multi_mode": multi_mode,
             }
         )
     return rows
@@ -652,6 +744,13 @@ def _save(
     saver.save_profile(cfg.profiles_dir, profile)
 
 
+def log_effort(store: Store, name: str, actor: str, before: str | None, after: str | None) -> None:
+    """A changed effort is its own decision, so the history says it in words."""
+    reason = control.effort_change(before, after)
+    if reason is not None:
+        log_decision(store, name, "policy", actor, {"effort": before}, {"effort": after}, reason)
+
+
 @router.put("/profiles/{name}")
 def put_profile(
     request: Request,
@@ -677,6 +776,10 @@ def put_profile(
     if profile.name != name:
         return error(400, "bad_request", "the body's name must match the path")
     try:
+        control.check_effort(profile.modality, profile.effort)
+    except ValueError as exc:
+        return error(400, "bad_settings", str(exc))
+    try:
         before = load_profile(cfg, name, store, owner_id)
         if before is None:
             return error(404, "not_found", f"no profile {name!r}; create it with POST /v1/profiles")
@@ -695,6 +798,7 @@ def put_profile(
         profile.model_dump(mode="json"),
         f"profile {name} replaced by {token.name}",
     )
+    log_effort(store, name, token.name, before.effort if before else None, profile.effort)
     return {**profile.model_dump(mode="json"), "warnings": warnings}
 
 
@@ -817,12 +921,13 @@ def put_profile_settings(
     before = control.settings(store, name, owner_id)
     if before is None:
         return error(404, "not_found", f"no profile {name!r}")
-    try:
-        after, warnings = control.update_settings(before, body)
-    except (ValidationError, ValueError, TypeError) as exc:
-        return error(400, "bad_settings", str(exc))
     found = control.profile(store, name, owner_id)
     assert found is not None
+    try:
+        after, warnings = control.update_settings(before, body)
+        control.check_effort(found.modality, after.effort)
+    except (ValidationError, ValueError, TypeError) as exc:
+        return error(400, "bad_settings", str(exc))
     try:
         _validate_profile_weights(
             cfg,
@@ -842,6 +947,7 @@ def put_profile_settings(
         after.model_dump(mode="json"),
         f"settings set by {token.name}",
     )
+    log_effort(store, name, token.name, before.effort, after.effort)
     return {**after.model_dump(mode="json"), "warnings": warnings}
 
 
@@ -924,6 +1030,7 @@ def listed(
     caps: dict[str, Any] | None,
     needs: list[str] | None,
     proposed: Any,
+    families: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """One row of a list, as a page draws it: who, how it scores, what it can do.
 
@@ -937,7 +1044,12 @@ def listed(
     `raw` is the score before health and trim, `score` the final number, and
     `factor` what the profile's prefix weights multiplied it by, so the
     inspector can show the equation rather than the answer alone.
+
+    `scored_as`, `effort` and `effort_how` say which row of the model's
+    `family` the score was read from (EFFORT.md); `id` is always the model
+    the router reaches.
     """
+    from sieve.catalog.effort import family_of
     from sieve.scoring.select import abilities, lacks, prefix_factor
 
     capability = (caps or {}).get(rank.model_id)
@@ -974,7 +1086,18 @@ def listed(
         "confidence": rank.confidence,
         "cost_per_task": rank.cost_per_task,
         "cost_from": rank.cost_from,
+        "scored_as": rank.scored_as or rank.model_id,
+        "effort": rank.effort,
+        "effort_how": rank.effort_how,
+        "family": (families or {}).get(rank.model_id) or family_of(rank.model_id),
     }
+
+
+def families_of(store: Store, modality: Modality) -> dict[str, str]:
+    """Catalogue id -> the family its effort modes share, for one modality."""
+    from sieve.catalog.effort import family_of
+
+    return {i: fam or family_of(i) for i, fam, _ in store.effort_rows(modality)}
 
 
 @router.post("/profiles/{name}/preview")
@@ -1000,6 +1123,7 @@ def preview(
         return error(404, "not_found", f"no profile {name!r}")
     try:
         proposed, warnings = control.update_settings(current, body)
+        control.check_effort(found.modality, proposed.effort)
     except (ValidationError, ValueError, TypeError) as exc:
         return error(400, "bad_settings", str(exc))
     ranking = store.ranking(name, None, owner_id)
@@ -1009,21 +1133,31 @@ def preview(
     if ranking is not None and touched is not None and ranking.computed_at < touched:
         # hand scores changed after this ranking was stored: rank again once
         ranking = None
-    if ranking is None:
-        candidate = found.model_copy(update={"weights": dict(proposed.weights)})
-        ranking = rank_profile(
-            cfg,
-            store,
-            candidate,
-            deps=EngineDeps(),
-            snapshot=store.latest_snapshot() or "none",
-            owner_id=owner_id,
+    snapshot = store.latest_snapshot() or "none"
+
+    def fresh() -> Ranking:
+        candidate = found.model_copy(
+            update={"weights": dict(proposed.weights), "effort": proposed.effort}
         )
+        return rank_profile(
+            cfg, store, candidate, deps=EngineDeps(), snapshot=snapshot, owner_id=owner_id
+        )
+
+    if ranking is None and proposed.effort == current.effort:
+        ranking = fresh()
         store.put_ranking(ranking, owner_id)
+    elif ranking is None or ranking.effort != proposed.effort:
+        # Another effort scores other rows, which no reweighing can reach. It
+        # is ranked once and held in memory, never stored: the stored ranking
+        # is the saved settings' (EFFORT.md section 4).
+        ranking = control.effort_ranking(
+            (owner_id, name, proposed.effort, snapshot), fresh, touched
+        )
     from sieve.scoring.select import behind, select
 
     ranking = control.rerank_cached(ranking, proposed.weights, proposed.prefix_weights)
     names = store.model_names(found.modality)
+    families = families_of(store, found.modality)
     caps = control.capability_map(store, found.modality)
     needs = [str(need) for need in proposed.needs]
     chosen = select(ranking.ranks, proposed, caps)
@@ -1036,7 +1170,7 @@ def preview(
 
     def row(rank: Any) -> dict[str, Any]:
         return {
-            **listed(rank, names, caps, needs, proposed),
+            **listed(rank, names, caps, needs, proposed, families),
             "pinned": rank.model_id in pinned,
             "scored": rank.model_id in scored,
         }
@@ -1058,6 +1192,7 @@ def preview(
         "profile": name,
         "mode": proposed.mode,
         "ship": proposed.ship,
+        "effort": proposed.effort,
         "models": [row(r) for r in chosen.rows],
         "blocked": [row(r) for r in chosen.failed_needs if r.model_id in held],
         "next": [row(r) for r in behind(ranking.ranks, proposed, chosen, caps)[:NEXT_UP]],
@@ -1324,8 +1459,14 @@ def get_ranking_explanation(request: Request, profile: str, _: Read = None) -> A
 
 @router.get("/chains/{profile}")
 def get_chain(request: Request, profile: str, _: Read = None) -> Any:
-    chain = store_of(request).chain(profile, owner_of(request))
-    return chain or error(404, "not_found", f"no chain for {profile!r}; run sieve plan --store")
+    store, owner_id = store_of(request), owner_of(request)
+    chain = store.chain(profile, owner_id)
+    if chain is None:
+        return error(404, "not_found", f"no chain for {profile!r}; run sieve plan --store")
+    # the effort the seat's models were scored at, so a consumer can call them
+    # at it; Sieve writes no harness config (EFFORT.md section 5)
+    held = control.settings(store, profile, owner_id)
+    return {**chain.model_dump(mode="json"), "effort": held.effort if held else None}
 
 
 @router.get("/recommend", response_model=Recommendation)

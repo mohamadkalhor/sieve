@@ -59,6 +59,8 @@ SEAT_KEYS = {
     "in_step",
     "changes",
     "shipped_at",
+    "effort",
+    "multi_mode",
 }
 #: `Listed` in `client.ts`: what `listed()` serialises for every row.
 LISTED_KEYS = {
@@ -75,6 +77,10 @@ LISTED_KEYS = {
     "confidence",
     "cost_per_task",
     "cost_from",
+    "scored_as",
+    "effort",
+    "effort_how",
+    "family",
 }
 #: and the two the preview route adds to each of them.
 ROW_KEYS = LISTED_KEYS | {"pinned", "scored"}
@@ -91,6 +97,7 @@ CARD_KEYS = {
     "context_window",
     "served_by",
     "scored",
+    "ladder",
 }
 NEEDS = ("vision", "reasoning", "tools", "structured_output")
 BOX = {"Authorization": "Bearer s3cret"}
