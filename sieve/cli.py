@@ -20,11 +20,12 @@ from typing import Any
 
 from sieve import plugins
 from sieve.catalog.aliases import load_aliases
+from sieve.catalog.effort import EFFORT_ORDER
 from sieve.catalog.registry import merge_pull
 from sieve.config import DEFAULT_CONFIG, Config, default_config, load_config
 from sieve.connectors import build_registry, refresh, seed_from_toml
 from sieve.connectors.base import ConnectorError
-from sieve.contracts import Profile, PullResult
+from sieve.contracts import Chain, Profile, PullResult
 from sieve.engine import COST_SOURCE, OwnerMissingError, apply_targets, run
 from sieve.http import client as http_client
 from sieve.http import fixtures_enabled
@@ -348,6 +349,8 @@ def cmd_check(args: argparse.Namespace) -> int:
             )
     _out(f"profiles: {len(profiles)} loaded from {cfg.profiles_dir}")
 
+    for note in _seats_without_effort(store, profiles):
+        _out(f"  warn: {note}")
     problems += _axes_against_the_data(cfg, axes)
     problems += _boards_that_produced_nothing(cfg)
     for note in _prices_that_disagree(cfg):
@@ -357,6 +360,37 @@ def cmd_check(args: argparse.Namespace) -> int:
         _out(f"  fail: {problem}")
     _out("check: green" if not problems else f"check: {len(problems)} problem(s)")
     return EXIT_OK if not problems else EXIT_ERROR
+
+
+def _seats_without_effort(store: Store, profiles: list[Profile]) -> list[str]:
+    """An llm seat with no effort that ships a model published at several.
+
+    A warning, not a failure: "any" is a choice, and today's behaviour. But a
+    router id that names no effort matches the family's top mode, and a harness
+    usually calls it at less, so the seat is ranked on effort it never uses
+    (EFFORT.md section 0).
+    """
+    from sieve.catalog.effort import family_modes, family_of
+
+    rows = store.effort_rows("llm")
+    family = {i: fam or family_of(i) for i, fam, _ in rows}
+    ladders = family_modes(rows)
+    out: list[str] = []
+    for profile in profiles:
+        if profile.modality != "llm" or profile.effort is not None:
+            continue
+        shipped: list[str] = []
+        for row in store.db.execute("SELECT json FROM chains WHERE profile=?", (profile.name,)):
+            chain = Chain.model_validate_json(row["json"])
+            shipped += [chain.primary, *chain.fallbacks]
+        multi = sorted({m for m in shipped if len(ladders.get(family.get(m, m), {})) > 1})
+        if multi:
+            out.append(
+                f"profile {profile.name!r} sets no effort and ships {', '.join(multi)}, "
+                "published at several; it is scored at each model's top effort. Set "
+                "`effort:` to the one its harness calls."
+            )
+    return out
 
 
 def _boards_that_produced_nothing(cfg: Config) -> list[str]:
@@ -516,6 +550,13 @@ def cmd_score(args: argparse.Namespace) -> int:
     if not profiles:
         _out("no profiles")
         return EXIT_ERROR
+    if args.effort is not None:
+        # an effort is an llm seat's; a media profile is scored as it is
+        effort = None if args.effort == "any" else args.effort
+        profiles = [
+            p.model_copy(update={"effort": effort}) if p.modality == "llm" else p
+            for p in profiles
+        ]
     result = run(cfg, profiles=profiles, dry_run=True)
     for ranking in result.rankings:
         _print_ranking(ranking, limit=args.limit)
@@ -525,7 +566,8 @@ def cmd_score(args: argparse.Namespace) -> int:
 
 
 def _print_ranking(ranking: Any, *, limit: int) -> None:
-    _out(f"\n{ranking.profile}  ({ranking.modality})  snapshot {ranking.snapshot}")
+    at = f"  effort {ranking.effort}" if ranking.effort else ""
+    _out(f"\n{ranking.profile}  ({ranking.modality})  snapshot {ranking.snapshot}{at}")
     if not ranking.ranks:
         _out("  (no models — pull a source first)")
         return
@@ -549,6 +591,9 @@ def _print_ranking(ranking: Any, *, limit: int) -> None:
         )
         if contributions:
             _out(f"       {contributions}")
+        if rank.scored_as and rank.scored_as != rank.model_id:
+            how = (rank.effort_how or "").replace("_", " ")
+            _out(f"       scored as {rank.scored_as} ({rank.effort}, {how})")
         # say when a cost is an estimate. The profile's shape is the same for
         # every effort mode of a model, so a cost read from it cannot tell them
         # apart, and a reader deserves to know that before acting on it.
@@ -561,11 +606,6 @@ def _print_ranking(ranking: Any, *, limit: int) -> None:
             _out(f"       cost ${rank.cost_per_task:.4f} per task, {basis}")
         if rank.flip:
             _out(f"       flip: {rank.flip}")
-    for rank in ranking.ranks:
-        if rank.dominated_by:
-            _out(f"  --  {rank.model_id}: dominated by {rank.dominated_by}")
-        elif rank.excluded_by:
-            _out(f"  --  {rank.model_id}: excluded by {rank.excluded_by}")
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
@@ -880,6 +920,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("score", help="print the ranking for a profile")
     p.add_argument("--profile", help="profile name; default every profile")
     p.add_argument("--limit", type=int, default=20)
+    p.add_argument(
+        "--effort",
+        choices=("any", *EFFORT_ORDER),
+        help="score llm seats at this reasoning effort instead of their saved one",
+    )
     p.set_defaults(func=cmd_score)
 
     p = sub.add_parser("plan", help="score every profile and decide its chain")
