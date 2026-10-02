@@ -11,6 +11,7 @@ The fixture is three families on one gateway, small enough to read:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -100,9 +101,9 @@ def value(rank: Rank) -> float | None:
 
 
 @pytest.fixture
-def box(tmp_path: Path) -> tuple[Config, Store]:
+def box(tmp_path: Path) -> Iterator[tuple[Config, Store]]:
     cfg, store = build(tmp_path)
-    yield cfg, store  # type: ignore[misc]
+    yield cfg, store
     store.close()
 
 
