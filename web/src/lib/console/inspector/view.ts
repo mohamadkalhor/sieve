@@ -13,7 +13,7 @@
  *   render `NaN`.
  */
 import { NEEDS, type Need } from '$lib/api/client';
-import type { Listed, ModelCard, PreviewResult } from '$lib/api/client';
+import type { Effort, EffortHow, LadderRung, Listed, ModelCard, PreviewResult } from '$lib/api/client';
 import type { Unit } from '$lib/types';
 import type { CardState } from '../contracts';
 import { NEED_LABEL, NO_SOURCE_SAYS, tone, who, type Tone } from '../logic/abilities';
@@ -21,6 +21,7 @@ import type { LineupDiff } from '../logic/diff';
 import { multipliers } from '../logic/explain';
 import { perMillion, perTask, type Money } from '../logic/money';
 import { rowAbilities } from '../state/card.svelte';
+import { effortWord } from '../seat/rows';
 
 /** Section 4.2's sentence, when the server does not say how a score is made up. */
 export const NO_AXES = 'This server does not say how a score is made up.';
@@ -262,4 +263,108 @@ export function allUnknown(rows: AbilityRow[]): boolean {
 /** Nothing has answered yet, and there is no card to draw while it does. */
 export function waiting(state: CardState, card: ModelCard | null): boolean {
   return state === 'loading' && card === null;
+}
+
+/* ------------------------------------------------------------------------ */
+/* the effort ladder (EFFORT.md section 6)                                   */
+/* ------------------------------------------------------------------------ */
+
+/** Under the ladder, always: why the price column does not move down it. */
+export const SAME_PRICE =
+  'Same price at every effort. Higher efforts use more output tokens, and no source publishes how many, so per-task cost is the same down the ladder.';
+
+/** One rung as the inspector draws it. */
+export interface LadderLine {
+  effort: Effort;
+  word: string;
+  published: boolean;
+  reachable: boolean;
+  /** the row the seat's score used: drawn with the accent edge */
+  here: boolean;
+  /** the seat runs at this effort (it may not be published) */
+  seat: boolean;
+  /** a bar width, or null when there is no score to draw */
+  width: string | null;
+  score: string;
+  intelligence: string;
+  /** the words in place of a bar, for a rung with nothing to draw */
+  note: string;
+  title: string;
+}
+
+/**
+ * The ladder, highest effort first as the mockup draws it.
+ *
+ * An unpublished rung is listed and greyed rather than left out, because "no
+ * medium row" is the reason a stand-in was used, and the seat's own rung says
+ * "seat runs here" so the gap between where it runs and where it is scored is
+ * on the page, not in a hover.
+ */
+export function ladderLines(ladder: readonly LadderRung[], seat: Effort | null): LadderLine[] {
+  return [...ladder].reverse().map((rung) => {
+    const word = effortWord(rung.effort);
+    const atSeat = seat !== null && rung.effort === seat;
+    const scored = rung.published && rung.score !== null;
+    const note = !rung.published
+      ? atSeat
+        ? 'not published · seat runs here'
+        : 'not published'
+      : rung.score === null
+        ? 'no score on this seat'
+        : '';
+    return {
+      effort: rung.effort,
+      word,
+      published: rung.published,
+      reachable: rung.reachable,
+      here: rung.here,
+      seat: atSeat,
+      width: scored ? barWidth(rung.score as number) : null,
+      score: scored ? twoDecimals(rung.score as number) : '',
+      intelligence:
+        rung.published && rung.intelligence !== null ? oneDecimal(rung.intelligence) : '',
+      note,
+      title: !rung.published
+        ? `${word}: not published for this family`
+        : `${word}: ${rung.reachable ? 'a router serves this row' : 'no router serves this row'}${rung.id ? ` (${rung.id})` : ''}`
+    };
+  });
+}
+
+/**
+ * The one sentence under the ladder: where the seat runs, where the model is
+ * scored, and -- when those differ -- why, and what the top effort it is no
+ * longer credited with would have scored.
+ */
+export function ladderSentence(
+  ladder: readonly LadderRung[],
+  seat: Effort | null,
+  name: string,
+  how: EffortHow | null | undefined
+): string {
+  const here = ladder.find((rung) => rung.here) ?? null;
+  if (!here) return '';
+  const at = effortWord(here.effort);
+  if (how === 'id') {
+    return `Its router id names ${at} itself, so ${name} is scored at ${at} whatever the seat runs at.`;
+  }
+  if (seat === null) {
+    return `Runs at is any, so ${name} is scored at ${at}, the row its router id matched.`;
+  }
+  const runs = effortWord(seat);
+  if (here.effort === seat) return `The seat runs at ${runs}, and ${name} is scored there.`;
+
+  const published = ladder.filter((rung) => rung.published);
+  const top = published.length ? published[published.length - 1] : null;
+  const order = ladder.map((rung) => rung.effort);
+  const below = order.indexOf(here.effort) < order.indexOf(seat);
+  const credit =
+    top && top.effort !== here.effort
+      ? `, and never credited with ${effortWord(top.effort)}${
+          top.score !== null ? `. At ${effortWord(top.effort)} it would score ${twoDecimals(top.score)}` : ''
+        }`
+      : '';
+  return below
+    ? `The seat runs at ${runs}. ${name} publishes no ${runs} row, so it is scored at ${at}, the nearest below${credit}.`
+    : `The seat runs at ${runs}. ${name} publishes nothing at or below ${runs}, so it is scored at ${at}, the nearest above.`;
 }

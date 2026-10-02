@@ -25,6 +25,7 @@
 import { api as defaultApi } from '$lib/api/client';
 import type {
   ApiError,
+  Effort,
   Listed,
   ModelCard,
   ModelRow,
@@ -38,7 +39,11 @@ import type { CardCacheLike, CardState } from '../contracts';
 
 /** The slice of the client this cache calls, so a test can answer it by hand. */
 export interface CardApi {
-  modelCard(id: string, modality: Modality, o?: RequestOptions): Promise<Result<ModelCard>>;
+  modelCard(
+    id: string,
+    modality: Modality,
+    o?: RequestOptions & { seat?: string }
+  ): Promise<Result<ModelCard>>;
   models(
     params: { modality?: Modality; reachable?: boolean; q?: string; limit?: number; cursor?: string },
     o?: RequestOptions
@@ -60,6 +65,15 @@ export function browserCardDeps(): CardCacheDeps {
     api: defaultApi as unknown as CardApi,
     token: () => session.token || undefined
   };
+}
+
+/**
+ * The seat a card is read for: its name, so the ladder is scored on its
+ * weights, and its effort, so a new Runs at is a new read.
+ */
+export interface SeatAsk {
+  name: string;
+  effort: Effort | null;
 }
 
 /** Everything the inspector needs about one read, including how to ask again. */
@@ -171,12 +185,13 @@ export class CardCache implements CardCacheLike {
    * is read once more when the row turns up, rather than drawn emptier than
    * what the app already knows.
    */
-  get(id: string, modality: Modality, row?: Listed | null): CardRead {
-    const key = this.key(modality, id);
+  get(id: string, modality: Modality, row?: Listed | null, seat?: SeatAsk | null): CardRead {
+    const key = this.key(modality, id, seat ?? null);
     const held = this.entries[key];
     const near = row ?? null;
+    const at = seat ?? null;
     if (!held || (held.state === 'fallback' && !held.fromRow && near)) {
-      this.ask(key, id, modality, near);
+      this.ask(key, id, modality, near, at);
     }
     const entry = this.entries[key] ?? loading();
     return {
@@ -184,12 +199,19 @@ export class CardCache implements CardCacheLike {
       state: entry.state,
       error: entry.error,
       priceError: entry.priceError,
-      retry: () => this.again(key, id, modality, near)
+      retry: () => this.again(key, id, modality, near, at)
     };
   }
 
-  private key(modality: Modality, id: string): string {
-    return `${modality}\u0000${id}`;
+  /**
+   * A card asked for a seat carries that seat's effort ladder, scored on its
+   * weights and marked at its effort (EFFORT.md section 5), so the seat and
+   * its effort are part of the key: a new Runs at reads the ladder again
+   * rather than marking the old effort's row.
+   */
+  private key(modality: Modality, id: string, seat: SeatAsk | null): string {
+    const base = `${modality}\u0000${id}`;
+    return seat ? `${base}\u0000${seat.name}\u0000${seat.effort ?? 'any'}` : base;
   }
 
   private options(): RequestOptions {
@@ -197,17 +219,29 @@ export class CardCache implements CardCacheLike {
     return token ? { token } : {};
   }
 
-  private ask(key: string, id: string, modality: Modality, row: Listed | null): void {
+  private ask(
+    key: string,
+    id: string,
+    modality: Modality,
+    row: Listed | null,
+    seat: SeatAsk | null
+  ): void {
     if (this.reading.has(key)) return;
     this.reading.add(key);
-    void this.read(key, id, modality, row).finally(() => this.reading.delete(key));
+    void this.read(key, id, modality, row, seat).finally(() => this.reading.delete(key));
   }
 
   /** Ask again: the old card stays on screen while the new read runs. */
-  private again(key: string, id: string, modality: Modality, row: Listed | null): void {
+  private again(
+    key: string,
+    id: string,
+    modality: Modality,
+    row: Listed | null,
+    seat: SeatAsk | null
+  ): void {
     const held = this.entries[key];
     this.hold(key, { ...loading(), card: held?.card ?? null, fromRow: held?.fromRow ?? false });
-    this.ask(key, id, modality, row);
+    this.ask(key, id, modality, row, seat);
   }
 
   private hold(key: string, entry: Entry): void {
@@ -218,9 +252,14 @@ export class CardCache implements CardCacheLike {
     key: string,
     id: string,
     modality: Modality,
-    row: Listed | null
+    row: Listed | null,
+    seat: SeatAsk | null
   ): Promise<void> {
-    const answer = await this.deps.api.modelCard(id, modality, this.options());
+    const answer = await this.deps.api.modelCard(
+      id,
+      modality,
+      seat ? { ...this.options(), seat: seat.name } : this.options()
+    );
     if (answer.ok) {
       this.hold(key, {
         card: answer.value,

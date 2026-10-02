@@ -19,7 +19,9 @@
   import type { SeatSession } from '../state/seat.svelte';
   import Button from '../ui/Button.svelte';
   import Skeleton from '../ui/Skeleton.svelte';
+  import EffortPill from '../seat/EffortPill.svelte';
   import AbilityTable from './AbilityTable.svelte';
+  import EffortLadder from './EffortLadder.svelte';
   import InspectorActions from './InspectorActions.svelte';
   import PriceBlock from './PriceBlock.svelte';
   import ServedBy from './ServedBy.svelte';
@@ -61,8 +63,18 @@
 
   const read = $derived.by((): CardRead => {
     if (!id || !modality) return IDLE;
-    return cache.get(id, modality, standing.row);
+    return cache.get(id, modality, standing.row, {
+      name: session.name,
+      effort: session.settings?.effort ?? null
+    });
   });
+
+  /** EFFORT.md section 6: the ladder leads the inspector, when there is one */
+  const ladder = $derived(read.card?.ladder ?? []);
+  /** the catalogue row the score was read from, when it is not the row itself */
+  const scoredAs = $derived(
+    standing.row?.scored_as && standing.row.scored_as !== standing.row.id ? standing.row.scored_as : null
+  );
 
   const settings = $derived(session.settings);
   const agree = $derived(inStep(session.diff));
@@ -90,9 +102,14 @@
   <div class="root" data-block="inspector">
     <header class="head">
       <p class="caps">{capsText(standing, agree)}</p>
-      <h2>{standing.name}</h2>
+      <div class="title">
+        <h2>{standing.name}</h2>
+        {#if standing.row}<EffortPill row={standing.row} seat={settings?.effort ?? null} />{/if}
+      </div>
       {#if standing.row?.local_ids?.length}
-        <p class="ids" title={standing.row.local_ids.join(', ')}>{standing.row.local_ids[0]}</p>
+        <p class="ids" title={standing.row.local_ids.join(', ')}>
+          {standing.row.local_ids[0]}{#if scoredAs}&nbsp;→ scored as {scoredAs}{/if}
+        </p>
       {/if}
     </header>
 
@@ -108,6 +125,16 @@
     {#if settings === null}
       <Skeleton rows={5} height={24} />
     {:else}
+      {#if ladder.length}
+        <EffortLadder
+          {ladder}
+          seat={settings.effort ?? null}
+          seatName={session.name}
+          name={standing.name}
+          how={standing.row?.effort_how ?? null}
+        />
+      {/if}
+
       {#if standing.row}
         <WhyBars
           row={standing.row}
@@ -169,6 +196,12 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--c-muted);
+  }
+  .title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 8px;
   }
   h2 {
     margin: 0;
