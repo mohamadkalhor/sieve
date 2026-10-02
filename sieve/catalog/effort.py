@@ -20,6 +20,10 @@ The name carries it in brackets and is unambiguous.
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from sieve.contracts import Effort, EffortHow
 
 #: The modes AA publishes, ordered from least effort to most. The order is the
 #: point: `cheapest_clearing` walks up it, `best` takes the far end.
@@ -117,3 +121,110 @@ def effort_rank(mode: str | None) -> int:
     if mode is None:
         return len(EFFORT_ORDER)
     return _RANK.get(mode, len(EFFORT_ORDER))
+
+
+#: what a router id may end in to name its own effort: the slug suffixes, and
+#: `max`, which AA never writes as a suffix but a gateway does
+_ID_SUFFIXES: tuple[str, ...] = (*_SLUG_SUFFIXES, "max")
+
+
+def effort_in_id(local_id: str) -> str | None:
+    """The effort a router id spells out at its end, or None.
+
+    >>> effort_in_id("cx/gpt-6-astra-medium")
+    'medium'
+    >>> effort_in_id("gm/gemini-3.8-flash-max")
+    'max'
+    >>> effort_in_id("cx/gpt-6-astra") is None
+    True
+    """
+    slug = local_id.rsplit("/", 1)[-1].lower()
+    for suffix in _ID_SUFFIXES:
+        tail = f"-{suffix}"
+        if slug.endswith(tail) and len(slug) > len(tail):
+            return suffix
+    return None
+
+
+def resolve(
+    matched_id: str,
+    local_ids: list[str],
+    seat: Effort | None,
+    modes: dict[str, str],
+) -> tuple[str, Effort | None, EffortHow]:
+    """Which catalogue row scores a model for a seat running at `seat`.
+
+    `modes` maps effort -> catalogue id for every published effort of the
+    matched model's family. The answer is `(scored_as, its effort, how)`; the
+    model's own id never changes (EFFORT.md section 1), only the row read.
+
+    >>> sol = {"low": "o/sol-low", "medium": "o/sol-medium", "max": "o/sol"}
+
+    No effort on the seat: the matched row, as before.
+
+    >>> resolve("o/sol", ["cx/sol"], None, sol)
+    ('o/sol', 'max', 'any')
+
+    A family with one setting has nothing to choose between.
+
+    >>> resolve("k/kimi", ["cx/kimi"], "medium", {})
+    ('k/kimi', None, 'one')
+
+    A router id that names its effort says what it is.
+
+    >>> resolve("o/sol-low", ["cx/sol-low"], "high", sol)
+    ('o/sol-low', 'low', 'id')
+
+    The seat's effort is published.
+
+    >>> resolve("o/sol", ["cx/sol"], "medium", sol)
+    ('o/sol-medium', 'medium', 'exact')
+
+    It is not: the nearest below, else the nearest above.
+
+    >>> resolve("o/sol", ["cx/sol"], "high", sol)
+    ('o/sol-medium', 'medium', 'nearest_below')
+    >>> resolve("o/sol", ["cx/sol"], "non-reasoning", sol)
+    ('o/sol-low', 'low', 'nearest_above')
+    """
+    by_id = {row: mode for mode, row in modes.items()}
+    own = cast("Effort | None", by_id.get(matched_id))
+    if seat is None:
+        return matched_id, own, "any"
+    if len(modes) <= 1:
+        return matched_id, own, "one"
+    named = [effort_in_id(local_id) for local_id in local_ids]
+    if named and all(mode is not None for mode in named):
+        return matched_id, own or cast("Effort", named[0]), "id"
+    if seat in modes:
+        return modes[seat], seat, "exact"
+    rank = _RANK[seat]
+    below = [mode for mode in modes if _RANK.get(mode, -1) < rank]
+    if below:
+        mode = max(below, key=lambda m: _RANK[m])
+        return modes[mode], cast("Effort", mode), "nearest_below"
+    above = [mode for mode in modes if _RANK.get(mode, len(EFFORT_ORDER)) > rank]
+    mode = min(above, key=lambda m: _RANK[m])
+    return modes[mode], cast("Effort", mode), "nearest_above"
+
+
+def family_modes(rows: list[tuple[str, str | None, str | None]]) -> dict[str, dict[str, str]]:
+    """`family -> {effort: catalogue id}` from `(id, family, effort)` rows.
+
+    A row with no family folds by `family_of`; a row with no effort is a
+    model with one setting and adds no mode. Built once per ranking.
+
+    >>> family_modes([("o/sol", "o/sol", "max"), ("o/sol-low", "o/sol", "low"),
+    ...               ("k/kimi", None, None)])
+    {'o/sol': {'max': 'o/sol', 'low': 'o/sol-low'}}
+    """
+    out: dict[str, dict[str, str]] = {}
+    for model_id, family, mode in rows:
+        if mode is None or mode not in _RANK:
+            continue
+        held = out.setdefault(family or family_of(model_id), {})
+        # two rows claiming one mode: the one whose id is the family's own
+        # spelling of it wins, so the answer does not depend on row order
+        if mode not in held or model_id == family:
+            held[mode] = model_id
+    return out
