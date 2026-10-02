@@ -23,7 +23,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from sieve.config import Config
 from sieve.contracts import (
@@ -31,6 +31,8 @@ from sieve.contracts import (
     AxisScore,
     Chain,
     Decision,
+    Effort,
+    EffortHow,
     EngineResult,
     Modality,
     Observation,
@@ -240,6 +242,62 @@ def add_cost_observations(
 
 
 # --------------------------------------------------------------------------- #
+# effort
+# --------------------------------------------------------------------------- #
+
+#: model id -> (scored_as, its effort, how it was chosen)
+Resolved = dict[str, tuple[str, Effort | None, EffortHow | None]]
+
+
+def resolve_efforts(
+    store: Store, profile: Profile, local: dict[str, list[str]], pool: set[str]
+) -> Resolved:
+    """Which catalogue row scores each model of `pool` for this seat.
+
+    Reachable models are resolved at the seat's effort (EFFORT.md section 3).
+    A model nobody can call is scored on its own row whatever the seat says:
+    it has no position, and reading another mode's numbers into a catalogue
+    row would only mislabel it.
+    """
+    from sieve.catalog.effort import family_modes, family_of, resolve
+
+    rows = store.effort_rows(profile.modality)
+    ladders = family_modes(rows)
+    family = {model_id: fam or family_of(model_id) for model_id, fam, _ in rows}
+    seat = profile.effort if profile.modality == "llm" else None
+    out: Resolved = {}
+    for model_id in pool:
+        modes = ladders.get(family.get(model_id) or family_of(model_id), {})
+        if model_id in local:
+            out[model_id] = resolve(model_id, local[model_id], seat, modes)
+        else:
+            own = next((m for m, row in modes.items() if row == model_id), None)
+            out[model_id] = (model_id, cast("Effort | None", own), None)
+    return out
+
+
+def substitute_rows(obs: ObsTable, efforts: Resolved) -> None:
+    """Point every resolved model at its `scored_as` row's observations and price.
+
+    Read from a frozen copy first, so two models that swap rows -- or one
+    resolved onto a row that is itself resolved elsewhere -- each read the
+    row as published, not as already rewritten.
+    """
+    moves = {m: target for m, (target, _, _) in efforts.items() if target != m}
+    if not moves:
+        return
+    latest = {t: dict(obs.latest.get(t, {})) for t in set(moves.values())}
+    prices = {t: obs.prices.get(t) for t in set(moves.values())}
+    for model_id, target in moves.items():
+        obs.latest[model_id] = dict(latest[target])
+        price = prices[target]
+        if price is None:
+            obs.prices.pop(model_id, None)
+        else:
+            obs.prices[model_id] = price
+
+
+# --------------------------------------------------------------------------- #
 # the run
 # --------------------------------------------------------------------------- #
 
@@ -309,6 +367,17 @@ def _rank_profile(
     # into it, and the shared one must not see them.
     view = store.cache.view(profile.modality, snapshot)
     obs = view.working()
+    # Reachable models *of this modality*. A router row names a model, not what
+    # it makes, so every other modality's reachable ids would otherwise join
+    # this pool at a score of 0 and take positions (and ship) in a seat that
+    # cannot use them.
+    local = store.local_ids(owner_id, profile.modality)
+    # EFFORT.md: a seat that runs at one effort is scored on each model's
+    # family row at that effort. The row keeps its id -- only what is read
+    # to score it changes -- so this rewrites the working table, before cost
+    # and axes are computed from it, and never the shared one.
+    efforts = resolve_efforts(store, profile, local, set(obs.latest) | set(local))
+    substitute_rows(obs, efforts)
     # PLAN 2.1: the rate per token is identical across a model's effort modes,
     # so only the tokens actually burned can tell them apart, and the gateway's
     # own traffic is the only place that number exists.
@@ -318,11 +387,6 @@ def _rank_profile(
         else {}
     )
     costs, costed_from_telemetry = add_cost_observations(obs, profile, at, measured_tokens)
-    # Reachable models *of this modality*. A router row names a model, not what
-    # it makes, so every other modality's reachable ids would otherwise join
-    # this pool at a score of 0 and take positions (and ship) in a seat that
-    # cannot use them.
-    local = store.local_ids(owner_id, profile.modality)
     try:
         adjusted = _cheapest_multipliers(store, costs, local, owner_id)
     except (RuntimeError, AttributeError):
@@ -339,7 +403,11 @@ def _rank_profile(
     axes_load, axes_compute, weigh_mod = deps.axes_load, deps.axes_compute, deps.weigh
     if axes_load is None or axes_compute is None or weigh_mod is None:
         return Ranking(
-            profile=profile.name, modality=profile.modality, computed_at=at, snapshot=snapshot
+            profile=profile.name,
+            modality=profile.modality,
+            computed_at=at,
+            snapshot=snapshot,
+            effort=profile.effort,
         )
 
     from sieve.axes import control as axis_control
@@ -418,6 +486,9 @@ def _rank_profile(
                     if model_id not in costs
                     else ("telemetry" if model_id in costed_from_telemetry else "shape")
                 ),
+                scored_as=efforts[model_id][0] if model_id in efforts else model_id,
+                effort=efforts[model_id][1] if model_id in efforts else None,
+                effort_how=efforts[model_id][2] if model_id in efforts else None,
             )
         )
 
@@ -435,6 +506,7 @@ def _rank_profile(
         computed_at=at,
         snapshot=snapshot,
         ranks=reachable + [r for r in ranks if not r.reachable],
+        effort=profile.effort,
     )
 
     explain_mod = deps.explain

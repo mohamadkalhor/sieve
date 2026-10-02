@@ -252,6 +252,21 @@ class Store:
             args = (modality,)
         return {r["id"]: r["name"] for r in self.db.execute(sql, args)}
 
+    def effort_rows(
+        self, modality: Modality | None = None
+    ) -> list[tuple[str, str | None, str | None]]:
+        """`(id, family, effort)` for every model, in one query.
+
+        What `sieve.catalog.effort.family_modes` folds into a family ladder:
+        no names, no aliases, nothing a ranking does not read.
+        """
+        sql = "SELECT id, family, effort FROM models"
+        args: tuple[Any, ...] = ()
+        if modality:
+            sql += " WHERE modality = ?"
+            args = (modality,)
+        return [(r["id"], r["family"], r["effort"]) for r in self.db.execute(sql, args)]
+
     def models(self, modality: Modality | None = None) -> list[ModelRef]:
         sql = "SELECT * FROM models"
         args: tuple[Any, ...] = ()
