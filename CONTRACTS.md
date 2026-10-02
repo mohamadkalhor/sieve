@@ -147,10 +147,30 @@ class Profile(BaseModel):
     weights: dict[str, float]           # axis name -> share of the score; must sum to 1 ± 0.001
     ship: int = SHIP_DEFAULT            # how many models it ships, 1..10: the first is used,
                                         # the rest are fallbacks
+    effort: Effort | None = None        # llm seats only; see EFFORT below
 
 class ProfileSettings(BaseModel):       # the tuned half of a profile, and all of it
     ship: int = SHIP_DEFAULT
     weights: dict[str, float] = {}
+    effort: Effort | None = None        # None = "any": score the row the router id matched
+
+Effort = Literal["non-reasoning","minimal","low","medium","high","xhigh","max"]   # = EFFORT_ORDER
+EffortHow = Literal["any","exact","nearest_below","nearest_above","id","one"]
+
+# EFFORT (briefs/EFFORT.md). A seat runs at one reasoning effort, and each model
+# it can reach is scored on its family's catalogue row at that effort. **A row's
+# id never changes with effort**: `Rank.model_id`, `local_ids`, pins, removals,
+# manual lists, chains and combos stay keyed on the model the router reaches;
+# effort only changes which row's observations (axes, coverage, price) are read.
+# `sieve.catalog.effort.resolve(matched_id, local_ids, seat, modes)`, in order:
+#   seat None -> the matched row, "any"; family publishes <= 1 mode -> "one";
+#   every local id ends in an effort (-low ... -max) -> the matched row, "id";
+#   seat published -> that row, "exact"; else the nearest published below
+#   ("nearest_below"), else the nearest above ("nearest_above").
+# Families come from `models.family` (fallback `family_of(id)`). A model nobody
+# can call is scored on its own row (effort_how None). Setting `effort` on a
+# non-llm profile is 400 `bad_settings`; a change is logged as a decision with
+# reason "effort any → medium". Profile YAML carries `effort:` next to `ship`.
 
 # A profile is its weights. `require`, `shape`, `policy`, `targets` and
 # `prefer_effort` are gone from Profile, and `list_length`, `floor_score`,
@@ -174,6 +194,9 @@ class Rank(BaseModel):
     axes: list[AxisScore]
     cost_per_task: float | None
     flip: str | None = None             # "raise cost to 0.31 and #2 leads" — only on position 1
+    scored_as: str | None = None        # catalogue id whose observations made the score
+    effort: Effort | None = None        # the effort of scored_as (None = one setting)
+    effort_how: EffortHow | None = None # None on a stored ranking older than EFFORT
 
 class Ranking(BaseModel):
     profile: str; modality: Modality; computed_at: datetime
@@ -181,6 +204,7 @@ class Ranking(BaseModel):
     ranks: list[Rank]                    # position 1..N over every *reachable* model, best first;
                                          # 0 only for a model this box cannot call. Nothing else
                                          # takes a model out of the ranking.
+    effort: Effort | None = None         # the seat effort it was computed at
 
 class Chain(BaseModel):
     profile: str; computed_at: datetime
@@ -328,17 +352,19 @@ read needs a live gate session or a bearer.
 | GET /v1/models?modality=&reachable=&q= | – | ModelRef + latest observations + prices + reachable |
 | GET /v1/models/{id} | – | one, with full observation history |
 | GET /v1/profiles?modality= · GET /v1/profiles/{name} | – | Profile — name, modality, purpose, `weights`, `ship` (SQLite truth; YAML seeds an empty store). Reads resolve `weights` and `ship` through the settings, whatever shape the stored document was written in; writes keep the two in step |
-| GET · PUT /v1/profiles/{name}/settings | – · profiles:write | `{ship, weights}` and nothing else. Weights merge per axis, so a page that knows one slider cannot wipe the others; a weight may be sent as a number or as the old `{"value": …}` object. **Removing an axis:** `{"weights": {"axis": null}}` (what a cleared form row sends) or `{"remove_axes": ["axis", ...]}` (what a script writes) drops it from the profile for real; both spellings may be combined with ordinary weight changes in one call. After merging/removal, the shared weight validator requires axes visible in GET /v1/axes?modality= for this profile, values in [0,1], and sum 1 ± 0.001; 400 `{error:{code:"bad_weights",message:...}}` names the axis or sum (settings errors use `bad_settings`). **Retired keys** — `list_length` (read once as the old spelling of `ship`), `floor_score`, `price_sensitivity`, `experience_weight`, `auto_apply`, `cost_multipliers`, and a weight's `min`/`max`/`locked` — are accepted, dropped, and named in the answer's `warnings` |
+| GET · PUT /v1/profiles/{name}/settings | – · profiles:write | `{ship, weights, effort, mode, manual, pinned, removed, needs, prefix_weights}`; PUT merges (it is the patch door — there is no separate PATCH). `effort` is one of `Effort` or null ("any"); on a non-llm seat it is 400 `bad_settings` "effort applies to llm seats only", and a change logs a decision `effort any → medium`. Weights merge per axis, so a page that knows one slider cannot wipe the others; a weight may be sent as a number or as the old `{"value": …}` object. **Removing an axis:** `{"weights": {"axis": null}}` (what a cleared form row sends) or `{"remove_axes": ["axis", ...]}` (what a script writes) drops it from the profile for real; both spellings may be combined with ordinary weight changes in one call. After merging/removal, the shared weight validator requires axes visible in GET /v1/axes?modality= for this profile, values in [0,1], and sum 1 ± 0.001; 400 `{error:{code:"bad_weights",message:...}}` names the axis or sum (settings errors use `bad_settings`). **Retired keys** — `list_length` (read once as the old spelling of `ship`), `floor_score`, `price_sensitivity`, `experience_weight`, `auto_apply`, `cost_multipliers`, and a weight's `min`/`max`/`locked` — are accepted, dropped, and named in the answer's `warnings` |
 | GET · PUT /v1/cost-multipliers | – · profiles:write | default multiplier per reachable local-id prefix |
 | POST /v1/outcomes · GET /v1/profiles/{name}/experience | telemetry · – | append-only outcome · 30-day Laplace success score |
-| POST /v1/profiles/{name}/preview | – | `{weights?, ship?}` in; `{profile, ship, models, next, settings, computed_at, warnings}` out. `models` is the list those weights would ship — the top `ship` reachable models in score order — and `next` the ten behind it, each `{id, name, local_ids, score}`. Reweighs the stored ranking rather than rebuilding it, so it answers in milliseconds; only a profile with no stored ranking pays for a full one, and a box with every ranking slot busy answers 503 `ranking_busy` with `Retry-After` |
+| POST /v1/profiles/{name}/preview | – | `{weights?, ship?, effort?, ...settings}` in; `{profile, mode, ship, effort, models, next, blocked, removed, missing, failed_needs, pool, unlinked, settings, computed_at, warnings}` out. Every row (models, next, blocked, removed, pool) also carries `scored_as` (catalogue id the score was read from; `id` stays the reached model), `effort`, `effort_how` (`EffortHow`) and `family`. A preview at an effort other than the stored ranking's is ranked fresh and held in an in-process LRU keyed `(owner, profile, effort, snapshot)` (64), never stored; effort on a non-llm seat is 400 `bad_settings`. `models` is the list those weights would ship — the top `ship` reachable models in score order — and `next` the ten behind it, each `{id, name, local_ids, score}`. Reweighs the stored ranking rather than rebuilding it, so it answers in milliseconds; only a profile with no stored ranking pays for a full one, and a box with every ranking slot busy answers 503 `ranking_busy` with `Retry-After` |
 | POST /v1/profiles · PATCH · DELETE /v1/profiles/{name} | profiles:write | create/copy (`from` or `copy_from`, optional replacement `weights`) · rename and/or re-describe · guarded delete. POST uses the same axis/[0,1]/sum validator as settings; invalid weights return 400 `bad_weights`. Copy carries effective settings weights. **PATCH takes `name`, `purpose`, or both**: `{"purpose": "..."}` alone rewrites the description and touches nothing else (400 with neither, 404 for an unknown profile), so fixing a sentence no longer means PUTting every weight and constraint back. **DELETE is 409 `in_use` only when the profile has a chain** — it was applied, so a write connector may still hold a combo under that name; a profile that was never applied deletes cleanly, and `?force=1` deletes either way |
 | POST /v1/profiles/{name}/apply · GET /v1/profiles/{name}/history | apply · – | ranks, ships, and answers `{chain, combos, models, shipped_at, results}` — `combos` names what was written on each write connector (`sieve-<profile>`), `models` the list it now holds · decision history |
-| PUT /v1/profiles/{name} | profiles:write | Replace existing Profile (stored; decision logged); unknown name → 404 `not_found`, "create it with POST /v1/profiles". Same axis/[0,1]/sum validator as settings; 400 `bad_weights` names the axis or sum. **Retired keys** — `require`, `shape`, `policy`, `targets`, `prefer_effort` — are accepted, dropped, and named in the answer's `warnings`; a body carrying `policy.chain` and no `ship` is read as that many to ship |
+| PUT /v1/profiles/{name} | profiles:write | Replace existing Profile (stored; decision logged; `effort` validated and logged as in settings, written to the YAML next to `ship`); unknown name → 404 `not_found`, "create it with POST /v1/profiles". Same axis/[0,1]/sum validator as settings; 400 `bad_weights` names the axis or sum. **Retired keys** — `require`, `shape`, `policy`, `targets`, `prefer_effort` — are accepted, dropped, and named in the answer's `warnings`; a body carrying `policy.chain` and no `ship` is read as that many to ship |
 | PATCH /v1/profiles/{name}/weights | profiles:write | Profile; replaces weight values using the same axis/[0,1]/sum validator as settings; 400 `bad_weights` names the axis or sum |
 | POST /v1/profiles/{name}/evaluate | – | {ranking, chain, decision} — dry run, nothing stored |
 | GET /v1/rankings/{profile} | – | Ranking (latest) |
-| GET /v1/chains/{profile} | – | Chain |
+| GET /v1/chains/{profile} | – | Chain + `effort` (the seat's saved effort, so a consumer can call the models at it; Sieve writes no harness config) |
+| GET /v1/seats | – | one row per seat: `{name, modality, purpose, mode, ship, live, lineup, in_step, changes, shipped_at, effort, multi_mode}`. `multi_mode`: a model in `live` or `lineup` belongs to a family publishing more than one effort. `lineup` is null when the stored ranking was computed at another effort than the saved one |
+| GET /v1/model-card?id=&modality=&seat= | – | ModelRef + `{price, abilities, context_window, served_by, scored, ladder}`. `ladder`: in `EFFORT_ORDER`, one `{effort, id, published, reachable, score, intelligence, here}` per effort the family publishes, plus the seat's effort when unpublished (`id: null, published: false`). `score` is that row scored on the seat's weights with every row read as published (null without `seat`); `reachable` means a router id matched that very row; `intelligence` is the AA intelligence index; `here` marks the row the seat's score used. `[]` for a model with one setting |
 | GET /v1/recommend?profile=&n=3&reachable_only=true | – | {profile, models:[{id, local_ids, final, confidence}], computed_at} — **the shipped chain, in the order it shipped**, so a caller and a router holding the combo cannot disagree. A profile that has never shipped falls back to its ranking |
 | POST /v1/apply {profiles:[...], targets:[...]} | apply | TargetResult[] |
 | POST /v1/telemetry [TelemetryEvent] | telemetry | {accepted} |
