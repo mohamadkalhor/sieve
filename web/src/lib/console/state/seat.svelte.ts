@@ -28,6 +28,7 @@ import type {
   ApiError,
   ApplyOutcome,
   AxisRow,
+  Effort,
   HistoryRow,
   PreviewResult,
   ProfileMode,
@@ -46,8 +47,14 @@ import {
   type ShipState
 } from '$lib/profile/tune';
 import type { SeatSessionLike } from '../contracts';
-import { diffLineup, shipLabel, type LineupDiff } from '../logic/diff';
-import { fromServer, setMode as setModeOn, toPatch, type Settings } from '../logic/settings';
+import { diffLineup, shipLabel, shipWithEffort, type LineupDiff } from '../logic/diff';
+import {
+  fromServer,
+  setEffort as setEffortOn,
+  setMode as setModeOn,
+  toPatch,
+  type Settings
+} from '../logic/settings';
 
 /** The slice of the client one seat calls, so a test can answer it by hand. */
 export interface SeatApi {
@@ -194,6 +201,13 @@ export class SeatSession implements SeatSessionLike {
   historyRows = $state<HistoryRow[] | null>(null);
   historyError = $state<ApiError | null>(null);
   historyLoading = $state(false);
+  /**
+   * The effort the live chain went out at: what the seat opened with, then
+   * whatever the last ship sent. Undefined on a server from before efforts.
+   */
+  shippedEffort = $state<Effort | null | undefined>(undefined);
+  /** the lineup on screen when the effort first left the shipped one */
+  private effortBase = $state<string[] | null>(null);
 
   /** the ids this seat ships right now, or null when no chain was read */
   live = $derived(this.chain ? [this.chain.primary, ...(this.chain.fallbacks ?? [])] : null);
@@ -208,22 +222,40 @@ export class SeatSession implements SeatSessionLike {
     })
   );
   diff = $derived<LineupDiff>(diffLineup(this.live, this.lineup));
-  button = $derived<ShipState>(
-    shipState({
-      shipped: this.live ?? [],
-      next: this.lineup ?? [],
-      shipping: this.shipping,
-      // "Ready" means the list has answered *for this draft*. A lineup is an
-      // answer and so is "there is none"; ranking, busy and error are not. An
-      // answer that came back for weights the person has already moved on from
-      // would otherwise let the button say "this is already what ships" about a
-      // lineup nobody is looking at.
-      ready:
-        (this.listing === 'ready' || this.listing === 'empty') &&
-        this.previewRevision === this.revision
-    })
+  /** the seat's effort differs from the one the live chain went out at */
+  effortMoved = $derived(
+    this.settings !== null &&
+      this.settings.effort !== undefined &&
+      (this.settings.effort ?? null) !== (this.shippedEffort ?? null)
   );
-  shipText = $derived(shipLabel(this.diff, this.button));
+  button = $derived<ShipState>(
+    shipWithEffort(
+      shipState({
+        shipped: this.live ?? [],
+        next: this.lineup ?? [],
+        shipping: this.shipping,
+        // "Ready" means the list has answered *for this draft*. A lineup is an
+        // answer and so is "there is none"; ranking, busy and error are not. An
+        // answer that came back for weights the person has already moved on from
+        // would otherwise let the button say "this is already what ships" about a
+        // lineup nobody is looking at.
+        ready:
+          (this.listing === 'ready' || this.listing === 'empty') &&
+          this.previewRevision === this.revision
+      }),
+      // A new effort is a change even when every id stays where it was.
+      this.effortMoved
+    )
+  );
+  /**
+   * How many rows the new effort moved, against the list on screen when it was
+   * picked; null until the list for this draft has answered.
+   */
+  effortMoves = $derived.by((): number | null => {
+    if (!this.effortMoved || this.previewRevision !== this.revision) return null;
+    return diffLineup(this.effortBase, this.lineup).changes;
+  });
+  shipText = $derived(shipLabel(this.diff, this.button, this.effortMoved ? 1 : 0));
   /** axis name -> what it is called on screen */
   labels = $derived(
     Object.fromEntries(this.everyAxis.map((axis) => [axis.name, axis.label ?? axis.name]))
@@ -306,6 +338,8 @@ export class SeatSession implements SeatSessionLike {
     this.settings = settings;
     this.loaded = { ...settings.weights };
     this.opened = copySettings(settings);
+    this.shippedEffort = settings.effort;
+    this.effortBase = null;
     this.revision = 0;
     this.savedRevision = 0;
     this.previewRevision = -1;
@@ -372,6 +406,17 @@ export class SeatSession implements SeatSessionLike {
   setMode(mode: ProfileMode): void {
     if (!this.settings) return;
     this.edit(setModeOn(this.settings, mode, this.lineup ?? []));
+  }
+
+  /**
+   * The effort the seat runs at. The list on screen is remembered the first
+   * time the effort leaves the shipped one, so the hint can say how many rows
+   * the change moved.
+   */
+  setEffort(effort: Effort | null): void {
+    if (!this.settings) return;
+    if (!this.effortMoved) this.effortBase = this.lineup;
+    this.edit(setEffortOn(this.settings, effort));
   }
 
   /** Put back everything as the seat opened, without touching what shipped. */
@@ -538,6 +583,8 @@ export class SeatSession implements SeatSessionLike {
 
     const value = result.value;
     this.chain = value?.chain ?? this.chain;
+    this.shippedEffort = snapshot.effort;
+    this.effortBase = null;
     const combo = (value?.combos ?? []).join(', ');
     this.said = { ok: true, text: combo ? `Shipped as ${combo}.` : 'Shipped.' };
     this.deps.onShipped?.(this.name, value);

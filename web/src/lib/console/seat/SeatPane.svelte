@@ -1,9 +1,9 @@
 <script lang="ts">
   /**
-   * The seat itself (CONSOLE.md sections 6.2-6.5): the header, the weights, what
-   * it must support, how many it ships -- and the table of what those settings
-   * would ship, which belongs to the table package and is a list of names until
-   * then.
+   * The seat itself (CONSOLE.md sections 6.2-6.5): the header, the effort it
+   * runs at (EFFORT.md section 6), the weights, what it must support, how many
+   * it ships -- and the table of what those settings would ship, which belongs
+   * to the table package and is a list of names until then.
    *
    * The pane owns its own scrolling so a long axis list never moves the column
    * beside it, and it says which of the three ways it has nothing to show --
@@ -13,6 +13,7 @@
   import { explainError } from '$lib/api/client';
   import type { SeatSession } from '$lib/console/state/seat.svelte';
   import AllReachable from './AllReachable.svelte';
+  import EffortControl from './EffortControl.svelte';
   import LineupTable from './LineupTable.svelte';
   import ManualList from './ManualList.svelte';
   import NeedChips from './NeedChips.svelte';
@@ -50,6 +51,7 @@
     <SeatHeader {session} />
 
     {#if session.settings}
+      <EffortControl {session} />
       {#if mode === 'auto'}
         <WeightsBlock {session} />
       {/if}

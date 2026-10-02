@@ -511,3 +511,28 @@ export function effortHint(
   if (moved === 0) return `${before} Moves no rows.`;
   return `${before} Moves ${moved} ${moved === 1 ? 'row' : 'rows'}.`;
 }
+
+/** What the Runs at control offers: `any` is null, the rest are efforts. */
+export interface EffortOption {
+  value: 'any' | Effort;
+  label: string;
+}
+
+/**
+ * The Runs at choices. The desktop control is one segmented row and leaves
+ * out `minimal`, which almost nothing publishes; the phone sheet has the room
+ * for all seven, so a seat set to minimal elsewhere can still be seen and
+ * changed there -- and the desktop row grows it back for a seat already on it,
+ * so the control never shows no choice at all.
+ */
+export function effortOptions(sheet: boolean, current: Effort | null = null): EffortOption[] {
+  const order: Effort[] = sheet || current === 'minimal'
+    ? ['non-reasoning', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+    : ['non-reasoning', 'low', 'medium', 'high', 'xhigh', 'max'];
+  return [{ value: 'any', label: 'any' }, ...order.map((e) => ({ value: e, label: effortWord(e) }))];
+}
+
+/** A control's value back to the setting: `any` is null. */
+export function effortFromOption(value: string): Effort | null {
+  return value === 'any' ? null : (value as Effort);
+}

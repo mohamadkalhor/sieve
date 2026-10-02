@@ -105,9 +105,30 @@ export function diffLineup(
  */
 export function shipLabel(
   diff: LineupDiff,
-  state: { disabled: boolean; label: string }
+  state: { disabled: boolean; label: string },
+  extra = 0
 ): string {
   if (state.disabled) return state.label;
-  if (!diff.known || diff.changes === null || diff.changes <= 0) return state.label;
-  return diff.changes === 1 ? 'Ship 1 change' : `Ship ${diff.changes} changes`;
+  const moved = diff.known && diff.changes !== null && diff.changes > 0 ? diff.changes : 0;
+  const count = moved + Math.max(0, extra);
+  if (count <= 0) return state.label;
+  return count === 1 ? 'Ship 1 change' : `Ship ${count} changes`;
+}
+
+/**
+ * The button, once the seat's effort is part of what ships (EFFORT.md
+ * section 6).
+ *
+ * A new effort can leave every router id where it was -- the row's id never
+ * changes with effort -- and the lineup comparison would then call the button
+ * "already what ships". It is not: the chain carries the effort for whoever
+ * reads it. So exactly that one refusal is lifted when the effort moved; every
+ * other reason the button is off (shipping, waiting, nothing to ship) stands.
+ */
+export function shipWithEffort<T extends { disabled: boolean; title: string; label: string }>(
+  state: T,
+  effortMoved: boolean
+): T {
+  if (!effortMoved || !state.disabled || state.title !== 'this is already what ships') return state;
+  return { ...state, disabled: false, title: '' };
 }
