@@ -22,7 +22,7 @@
  * Locked axes are page-only state (they live in `localStorage`, per seat) and
  * never travel in a patch, which is why `toPatch` does not mention them.
  */
-import type { Need, ProfileMode, ProfileSettings, SettingsPatch } from '$lib/api/client';
+import type { Effort, Need, ProfileMode, ProfileSettings, SettingsPatch } from '$lib/api/client';
 import type { Profile } from '$lib/types';
 import {
   addAxis as addAxisTo,
@@ -53,6 +53,13 @@ export interface Settings {
   removed: string[];
   needs: Need[];
   prefixWeights: Record<string, number>;
+  /**
+   * The effort the seat runs at (EFFORT.md section 2); null = any. Undefined
+   * when the server never named one -- a server from before efforts -- and
+   * then it is left out of the patch rather than sent to a route that would
+   * not know the key.
+   */
+  effort?: Effort | null;
 }
 
 /** The failure `dropAxis` may hand back, as `session.edit` already takes it. */
@@ -97,7 +104,8 @@ export function fromServer(
     pinned: [...(held?.pinned ?? profile.pinned ?? [])],
     removed: [...(held?.removed ?? profile.removed ?? [])],
     needs: [...(held?.needs ?? profile.needs ?? [])],
-    prefixWeights: { ...(held?.prefix_weights ?? profile.prefix_weights ?? {}) }
+    prefixWeights: { ...(held?.prefix_weights ?? profile.prefix_weights ?? {}) },
+    effort: held && 'effort' in held ? (held.effort ?? null) : undefined
   };
 }
 
@@ -117,6 +125,7 @@ export function toPatch(settings: Settings, everyAxis: readonly string[]): Setti
     removed: [...settings.removed],
     needs: [...settings.needs],
     prefix_weights: { ...settings.prefixWeights },
+    ...(settings.effort === undefined ? {} : { effort: settings.effort }),
     remove_axes: everyAxis.filter((axis) => !(axis in settings.weights))
   };
 }
@@ -253,6 +262,14 @@ export function setMode(
       ? [...currentLineupIds]
       : settings.manual;
   return { ...settings, mode, manual };
+}
+
+/**
+ * The effort the seat runs at. Null is "any": each model scored at the row
+ * its router id matched, which is today's behaviour.
+ */
+export function setEffort(settings: Settings, effort: Effort | null): Settings {
+  return effort === settings.effort ? settings : { ...settings, effort };
 }
 
 /** A must-support need, on or off. */

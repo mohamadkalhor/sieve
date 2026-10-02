@@ -496,6 +496,31 @@ export interface ConnectorProbe {
  */
 export type ProfileMode = 'auto' | 'manual';
 
+/**
+ * A reasoning effort, as Artificial Analysis publishes one row per (EFFORT.md
+ * section 2). `non-reasoning` is drawn as `none`; null on a seat means "any":
+ * score the row the router id matched, which is the family's top mode.
+ */
+export type Effort = 'non-reasoning' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+/** Lowest to highest: the order a ladder is drawn in and "nearest" walks. */
+export const EFFORT_ORDER: Effort[] = [
+  'non-reasoning',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max'
+];
+
+/**
+ * How a row's effort was found: the seat's own (`exact`), the nearest one the
+ * family publishes below or above it, named by the router id itself (`id`),
+ * a model with one setting (`one`), or no seat effort at all (`any`).
+ */
+export type EffortHow = 'any' | 'exact' | 'nearest_below' | 'nearest_above' | 'id' | 'one';
+
 /** What a shipped model can be required to do. */
 export type Need = 'vision' | 'reasoning' | 'tools' | 'structured_output';
 
@@ -515,6 +540,8 @@ export interface ProfileSettings {
   needs?: Need[];
   /** router prefix -> a multiplier on the score of every model it serves */
   prefix_weights?: Record<string, number>;
+  /** the effort this seat's agent runs at; null or absent = any */
+  effort?: Effort | null;
   /** keys the server accepted and ignored, one sentence each */
   warnings?: string[];
 }
@@ -530,6 +557,7 @@ export interface SettingsPatch {
   removed?: string[];
   needs?: Need[];
   prefix_weights?: Record<string, number>;
+  effort?: Effort | null;
 }
 
 /** One model on a list, as a page draws it. */
@@ -560,6 +588,16 @@ export interface Listed {
   confidence?: number;
   cost_per_task?: number | null;
   cost_from?: 'shape' | 'telemetry' | null;
+  /**
+   * EFFORT.md section 5: which effort the score is about and how it was
+   * chosen. `id` above never changes with effort; `scored_as` is the
+   * catalogue row whose observations made the score. All absent on a server
+   * from before efforts.
+   */
+  effort?: Effort | null;
+  effort_how?: EffortHow | null;
+  scored_as?: string | null;
+  family?: string | null;
 }
 
 /**
@@ -585,6 +623,8 @@ export interface PreviewResult {
   /** router ids that matched nothing: link one to pin it */
   unlinked?: { local_id: string; name: string }[];
   settings: ProfileSettings;
+  /** the effort this list was ranked at; null = any */
+  effort?: Effort | null;
   computed_at: string;
   warnings: string[];
 }
@@ -697,6 +737,10 @@ export interface SeatRow {
   /** how many ids differ (added + removed + moved); null with in_step */
   changes: number | null;
   shipped_at: string | null;
+  /** the seat's effort; null = any. Absent on a server from before efforts */
+  effort?: Effort | null;
+  /** a shipped model's family publishes more than one effort */
+  multi_mode?: boolean;
 }
 
 /** The seats list, and whether it came from the one request that answers it. */
@@ -737,6 +781,27 @@ export interface ModelCard {
   context_window: number | null;
   served_by: { local_id: string; prefix: string; inventory: string; stale: boolean }[];
   scored: boolean;
+  /**
+   * Every effort the family publishes, lowest first, plus the seat's own when
+   * it is not published (EFFORT.md section 5). Empty for a one-setting model;
+   * absent on a server from before efforts.
+   */
+  ladder?: LadderRung[];
+}
+
+/** One effort of a model's family, scored on the seat that asked. */
+export interface LadderRung {
+  effort: Effort;
+  /** the catalogue row; null when this effort is not published */
+  id: string | null;
+  published: boolean;
+  /** a router serves this row */
+  reachable: boolean;
+  /** that row on the seat's weights; null without a seat */
+  score: number | null;
+  intelligence: number | null;
+  /** the row the seat's score used */
+  here: boolean;
 }
 
 const q = (params: Record<string, string | number | boolean | undefined>): string => {
@@ -883,8 +948,8 @@ export const api = {
   },
 
   /** One model's card: what it can do, who says so, its price, where it is served (§4.3). */
-  modelCard: (id: string, modality: Modality, o?: RequestOptions) =>
-    request<ModelCard>(`/v1/model-card${q({ id, modality })}`, o),
+  modelCard: (id: string, modality: Modality, o?: RequestOptions & { seat?: string }) =>
+    request<ModelCard>(`/v1/model-card${q({ id, modality, seat: o?.seat })}`, o),
 
   /** The one word a seat's purpose is: the whole sentence, replaced. */
   setPurpose: (name: string, purpose: string, o?: RequestOptions) =>

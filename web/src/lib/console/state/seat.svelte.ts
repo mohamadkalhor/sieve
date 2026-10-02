@@ -137,7 +137,8 @@ function copySettings(settings: Settings): Settings {
     pinned: [...settings.pinned],
     removed: [...settings.removed],
     needs: [...settings.needs],
-    prefixWeights: { ...settings.prefixWeights }
+    prefixWeights: { ...settings.prefixWeights },
+    effort: settings.effort
   };
 }
 

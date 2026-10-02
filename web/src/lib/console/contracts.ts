@@ -17,6 +17,7 @@ import type { Chain } from '$lib/types';
 import type {
   ApiError,
   AxisRow,
+  Effort,
   HistoryRow,
   ModelCard,
   Need,
@@ -50,6 +51,8 @@ export interface SettingsLike {
   removed: string[];
   needs: Need[];
   prefixWeights: Record<string, number>;
+  /** null = any; optional so a stub without efforts still fits */
+  effort?: Effort | null;
 }
 
 /** What `shipState` decides: the label, whether it is pressable, and why not. */

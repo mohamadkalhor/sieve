@@ -84,6 +84,8 @@ export interface Chain {
   local?: Record<string, string[]>;
   incumbent?: string | null;
   incumbent_since?: string | null;
+  /** the seat's effort, for a consumer to apply (EFFORT.md section 5); null = any */
+  effort?: string | null;
 }
 
 

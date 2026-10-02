@@ -46,6 +46,7 @@ function settings(over: Partial<Settings> = {}): Settings {
     removed: [],
     needs: [],
     prefixWeights: {},
+    effort: null,
     ...over
   };
 }
