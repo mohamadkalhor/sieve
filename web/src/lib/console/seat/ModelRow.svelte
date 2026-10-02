@@ -15,12 +15,13 @@
    * not the row's, and a composing keystroke (a Japanese IME mid-word) is
    * nobody's here (finding 13).
    */
-  import type { Need } from '$lib/api/client';
+  import type { Effort, Need } from '$lib/api/client';
   import { viewport } from '$lib/console/layout/viewport.svelte';
   import { NEED_TAG } from '../logic/abilities';
   import type { RowMove } from '../logic/diff';
   import { perTask } from '../logic/money';
   import Bar from '../ui/Bar.svelte';
+  import EffortPill from './EffortPill.svelte';
   import Icon from '../ui/Icon.svelte';
   import IconButton from '../ui/IconButton.svelte';
   import { ACTION_ICON, actionLabel, canDo, via } from './rows';
@@ -38,6 +39,8 @@
     active?: boolean;
     /** where this model stands in the seat, for a view that shows the pool */
     standing?: string;
+    /** the effort the seat runs at, so a stand-in pill can say what it stands in for */
+    effort?: Effort | null;
     onselect?: (id: string) => void;
     onaction?: (action: RowAction, id: string) => void;
     onmove?: (by: number, id: string) => void;
@@ -53,6 +56,7 @@
     actions = [],
     active = false,
     standing = '',
+    effort = null,
     onselect = () => {},
     onaction = () => {},
     onmove = () => {}
@@ -154,6 +158,7 @@
 
   <div class="cell model" role="cell">
     <span class="name">{row.name}</span>
+    {#if listed}<EffortPill row={listed} seat={effort} />{/if}
     {#if move}<span class="move">{move.text}</span>{/if}
     {#if standing}<span class="standing">{standing}</span>{/if}
     {#if row.note}<span class="note">{row.note}</span>{/if}

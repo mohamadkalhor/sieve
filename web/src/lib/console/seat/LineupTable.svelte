@@ -56,6 +56,8 @@
   const settings = $derived(session.settings);
   const mode = $derived(settings?.mode ?? session.profile?.mode ?? 'auto');
   const needs = $derived(settings?.needs ?? []);
+  /** EFFORT.md section 6: an llm row names the effort its score is about */
+  const modelHead = $derived(session.profile?.modality === 'llm' ? 'Model · effort' : 'Model');
   // In manual mode the pane draws the hand-made list, not this one, so a row it
   // is already showing must not be repeated under the ship line.
   const sections = $derived(
@@ -143,7 +145,7 @@
 <div class="table" role="table" aria-label="What these settings would ship">
   <div class="head" role="row">
     <span class="caps cell at" role="columnheader">#</span>
-    <span class="caps cell model" role="columnheader">Model</span>
+    <span class="caps cell model" role="columnheader">{modelHead}</span>
     <span class="caps cell score" role="columnheader">Score</span>
     <span class="caps cell task" role="columnheader">Per task</span>
     <span class="caps cell can" role="columnheader">Can do</span>
@@ -166,6 +168,7 @@
           selected={pick.id === row.id}
           active={active === row.id}
           {needs}
+          effort={session.settings?.effort ?? null}
           tone="ship"
           actions={['pin', 'remove']}
           onselect={(id) => pick.select(id)}
@@ -184,6 +187,7 @@
           selected={pick.id === row.id}
           active={active === row.id}
           {needs}
+          effort={session.settings?.effort ?? null}
           tone="next"
           dim
           onselect={(id) => pick.select(id)}
@@ -198,6 +202,7 @@
           selected={pick.id === row.id}
           active={active === row.id}
           {needs}
+          effort={session.settings?.effort ?? null}
           tone="next"
           dim
           onselect={(id) => pick.select(id)}
@@ -212,6 +217,7 @@
           selected={pick.id === row.id}
           active={active === row.id}
           {needs}
+          effort={session.settings?.effort ?? null}
           tone="blocked"
           dim
           actions={['pin', 'remove']}
@@ -231,6 +237,7 @@
             selected={pick.id === row.id}
             active={active === row.id}
             {needs}
+            effort={session.settings?.effort ?? null}
             tone="removed"
             dim
             actions={['restore']}
@@ -247,6 +254,7 @@
           selected={pick.id === row.id}
           active={active === row.id}
           {needs}
+          effort={session.settings?.effort ?? null}
           tone="missing"
           dim
           onselect={(id) => pick.select(id)}

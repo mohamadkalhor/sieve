@@ -13,7 +13,7 @@
  * `web/tests/console/d-rows.test.ts` are where the ordering, the deduplication
  * and the wording are pinned down.
  */
-import type { Listed, Need, PreviewResult, ProfileMode } from '$lib/api/client';
+import type { Effort, Listed, Need, PreviewResult, ProfileMode } from '$lib/api/client';
 import { NEEDS } from '$lib/api/client';
 import { NEED_TAG } from '../logic/abilities';
 import type { LineupDiff, RowMove } from '../logic/diff';
@@ -399,4 +399,115 @@ export function tabStop(
   if (stop && ids.includes(stop)) return stop;
   if (selected && ids.includes(selected)) return selected;
   return ids[0] ?? null;
+}
+
+/* ------------------------------------------------------------------------ */
+/* efforts (EFFORT.md section 6)                                             */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * An effort as the screen says it. `non-reasoning` is the one long word in
+ * the set and it reads as "none" on a pill and in the control; everything
+ * else is its own name.
+ */
+export function effortWord(effort: Effort): string {
+  return effort === 'non-reasoning' ? 'none' : effort;
+}
+
+/** The pill's five looks: the mockup's four, plus a plain one for "any". */
+export type PillLook = 'exact' | 'near' | 'id' | 'one' | 'any';
+
+export interface EffortPillView {
+  look: PillLook;
+  text: string;
+  title: string;
+}
+
+/**
+ * The effort pill after a row's name: which effort its score is about, and
+ * how that effort was chosen.
+ *
+ * `seat` is the effort the seat runs at, for the sentence a stand-in owes:
+ * "no medium row" needs to know it was medium that was asked for. Null when
+ * the server said nothing about efforts at all -- a row from before efforts,
+ * or an "any" row whose matched model is one setting -- because a pill that
+ * said nothing would still take a column's worth of eye.
+ */
+export function effortPill(
+  row: Pick<Listed, 'name' | 'local_ids' | 'effort' | 'effort_how'>,
+  seat: Effort | null | undefined
+): EffortPillView | null {
+  const how = row.effort_how ?? null;
+  const effort = row.effort ?? null;
+  const missing = seat
+    ? `No ${effortWord(seat)} row is published for ${row.name}`
+    : `No row at the seat's effort is published for ${row.name}`;
+
+  if (how === 'one') {
+    return {
+      look: 'one',
+      text: 'one setting',
+      title: `${row.name} publishes one setting, so there is no effort to choose`
+    };
+  }
+  if (effort === null) return null;
+  const word = effortWord(effort);
+
+  switch (how) {
+    case 'exact':
+      return {
+        look: 'exact',
+        text: word,
+        title: `Scored at ${word}, the effort this seat runs at`
+      };
+    case 'nearest_below':
+      return {
+        look: 'near',
+        text: `${word} ↓`,
+        title: `${missing}. Scored at ${word}, the nearest effort below.`
+      };
+    case 'nearest_above':
+      return {
+        look: 'near',
+        text: `${word} ↑`,
+        title: `${missing}, and none below it. Scored at ${word}, the nearest effort above.`
+      };
+    case 'id': {
+      const named = row.local_ids[0] ?? row.name;
+      return {
+        look: 'id',
+        text: `${word} · id`,
+        title: `The router id ${named} names its own effort, so the seat setting does not apply`
+      };
+    }
+    default:
+      return {
+        look: 'any',
+        text: word,
+        title: `Runs at is any: scored at ${word}, the row the router id matched`
+      };
+  }
+}
+
+/**
+ * The sentence beside Runs at once it has been changed: what it was, what
+ * that meant, and how many rows the change moved.
+ *
+ * `moved` is null while the list for the new effort has not answered, and
+ * then the sentence stops at what the old setting meant rather than guessing
+ * a count.
+ */
+export function effortHint(
+  was: Effort | null | undefined,
+  now: Effort | null | undefined,
+  moved: number | null
+): string {
+  if ((was ?? null) === (now ?? null)) return '';
+  const before =
+    was == null
+      ? "Was any: scored at each model's top effort."
+      : `Was ${effortWord(was)}.`;
+  if (moved === null) return before;
+  if (moved === 0) return `${before} Moves no rows.`;
+  return `${before} Moves ${moved} ${moved === 1 ? 'row' : 'rows'}.`;
 }

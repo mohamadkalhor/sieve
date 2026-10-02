@@ -153,6 +153,7 @@
           selected={pick.id === row.id}
           active={active === row.id}
           {needs}
+          effort={session.settings?.effort ?? null}
           standing={where(row)}
           tone={keepsOut(row) ? 'blocked' : 'ship'}
           dim={keepsOut(row)}

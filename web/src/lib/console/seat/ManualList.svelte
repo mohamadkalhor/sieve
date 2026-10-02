@@ -93,6 +93,7 @@
           selected={pick.id === one.row.id}
           active={active === one.row.id}
           {needs}
+          effort={session.settings?.effort ?? null}
           tone={one.tone}
           actions={actionsAt(at)}
           onselect={(id) => pick.select(id)}
