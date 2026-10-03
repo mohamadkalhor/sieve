@@ -195,14 +195,16 @@ test('the table drops three columns below 900 and keeps its three numbers', asyn
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.goto(`/seats/${seat}`);
   const table = page.getByRole('table', SHIP_TABLE);
-  for (const column of ['Model', 'Score', 'Per task', 'Can do', 'Via']) {
+  // an llm seat's model column also names the effort a score is about
+  await expect(table.getByRole('columnheader', { name: /^Model( · effort)?$/ })).toBeVisible();
+  for (const column of ['Score', 'Per task', 'Can do', 'Via']) {
     await expect(table.getByRole('columnheader', { name: column, exact: true })).toBeVisible();
   }
 
   await page.setViewportSize({ width: 768, height: 900 });
   await page.goto(`/seats/${seat}`);
   const narrow = page.getByRole('table', SHIP_TABLE);
-  await expect(narrow.getByRole('columnheader', { name: 'Model', exact: true })).toBeVisible();
+  await expect(narrow.getByRole('columnheader', { name: /^Model( · effort)?$/ })).toBeVisible();
   await expect(narrow.getByRole('columnheader', { name: 'Score', exact: true })).toBeVisible();
   for (const dropped of ['Per task', 'Can do', 'Via']) {
     await expect(narrow.getByRole('columnheader', { name: dropped, exact: true })).toBeHidden();

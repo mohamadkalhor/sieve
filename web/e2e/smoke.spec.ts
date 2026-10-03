@@ -138,7 +138,9 @@ test('a seat is a page: the url carries it, and the panes around it are there', 
   // the weights bar, and the columns the table has when there is room
   await expect(page.locator('.track button.seg').first()).toBeVisible();
   const table = page.getByRole('table', SHIP_TABLE);
-  for (const column of ['Model', 'Score', 'Per task', 'Can do', 'Via']) {
+  // an llm seat's model column also names the effort a score is about
+  await expect(table.getByRole('columnheader', { name: /^Model( · effort)?$/ })).toBeVisible();
+  for (const column of ['Score', 'Per task', 'Can do', 'Via']) {
     await expect(table.getByRole('columnheader', { name: column, exact: true })).toBeVisible();
   }
 

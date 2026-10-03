@@ -83,7 +83,10 @@ kind = "list"
 models = [
   "anthropic/claude-opus-5", "anthropic/claude-sonnet-5", "openai/gpt-5-2",
   "google/gemini-3-pro", "z-ai/glm-5.3", "deepseek/deepseek-v4",
-  "google/veo-3-1", "google/veo-3-1-fast"
+  "google/veo-3-1", "google/veo-3-1-fast",
+  # EFFORT.md section 7: a family AA publishes at six efforts, reached bare
+  # (scored at max under "any") and by an id that names its own mode
+  "openai/gpt-5-6-sol", "openai/gpt-5-6-sol-xhigh"
 ]
 
 [targets.out]

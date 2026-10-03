@@ -34,7 +34,9 @@ test('the lineup draws rows, a ship line and the columns above them', async ({ p
 
   const table = page.getByRole('table', SHIP_TABLE);
   await expect(table).toBeVisible();
-  for (const column of ['Model', 'Score', 'Per task', 'Can do', 'Via']) {
+  // an llm seat's model column also names the effort a score is about
+  await expect(table.getByRole('columnheader', { name: /^Model( · effort)?$/ })).toBeVisible();
+  for (const column of ['Score', 'Per task', 'Can do', 'Via']) {
     await expect(table.getByRole('columnheader', { name: column, exact: true })).toBeVisible();
   }
 
