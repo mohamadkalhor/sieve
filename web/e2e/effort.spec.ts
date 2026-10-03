@@ -3,8 +3,8 @@ import { expect, test, type Page } from '@playwright/test';
 /**
  * Runs at, end to end (EFFORT.md section 7), on the seeded store.
  *
- * The seed's gateway reaches GPT-5.6 Sol bare -- so under "any" it is scored
- * at its top effort, max -- and by `openai/gpt-5-6-sol-xhigh`, an id that names
+ * The seed's gateway reaches GPT-5.6 Luna bare -- so under "any" it is scored
+ * at its top effort, max -- and by `openai/gpt-5-6-luna-xhigh`, an id that names
  * its own mode. Setting the coder seat to medium has to move the bare row's
  * score to the medium row (its pill says so), leave the id-named row alone,
  * count as a change on Ship, and mark the medium rung in the inspector's
@@ -13,8 +13,8 @@ import { expect, test, type Page } from '@playwright/test';
  */
 
 const SEAT = 'coder';
-const SOL = 'openai/gpt-5-6-sol';
-const SOL_XHIGH = 'openai/gpt-5-6-sol-xhigh';
+const BARE = 'openai/gpt-5-6-luna';
+const XHIGH = 'openai/gpt-5-6-luna-xhigh';
 const POOL_TABLE = { name: 'Every reachable model' };
 /** The seeded store's write token: Runs at is a setting, and a setting is saved. */
 const TOKEN = 'ci-secret';
@@ -55,20 +55,20 @@ test('Runs at re-scores the seat at that effort and Ship counts it', async ({ pa
   );
 
   // under any, the bare id is scored at the row it matched: the top effort
-  const sol = row(page, SOL);
-  await expect(sol.locator('[data-effort-pill]')).toHaveText('max');
-  await expect(sol.locator('[data-effort-pill]')).toHaveAttribute('data-look', 'any');
-  const before = await sol.locator('.figure').innerText();
+  const bare = row(page, BARE);
+  await expect(bare.locator('[data-effort-pill]')).toHaveText('max');
+  await expect(bare.locator('[data-effort-pill]')).toHaveAttribute('data-look', 'any');
+  const before = await bare.locator('.figure').innerText();
 
   await runsAt(page, 'medium');
 
-  await expect(sol.locator('[data-effort-pill]')).toHaveText('medium');
-  await expect(sol.locator('[data-effort-pill]')).toHaveAttribute('data-look', 'exact');
-  // medium Sol is credited with less than max Sol
-  await expect(sol.locator('.figure')).not.toHaveText(before);
-  expect(Number(await sol.locator('.figure').innerText())).toBeLessThan(Number(before));
+  await expect(bare.locator('[data-effort-pill]')).toHaveText('medium');
+  await expect(bare.locator('[data-effort-pill]')).toHaveAttribute('data-look', 'exact');
+  // medium Luna is credited with less than max Luna
+  await expect(bare.locator('.figure')).not.toHaveText(before);
+  expect(Number(await bare.locator('.figure').innerText())).toBeLessThan(Number(before));
   // the router id names its own mode, and the seat does not override it
-  await expect(row(page, SOL_XHIGH).locator('[data-effort-pill]')).toHaveText('xhigh · id');
+  await expect(row(page, XHIGH).locator('[data-effort-pill]')).toHaveText('xhigh · id');
 
   await expect(page.locator('[data-effort-hint]')).toContainText(
     "Was any: scored at each model's top effort."
@@ -78,7 +78,7 @@ test('Runs at re-scores the seat at that effort and Ship counts it', async ({ pa
   await expect(ship).toBeEnabled();
 
   // the inspector opens on the ladder, the medium rung marked
-  await sol.click();
+  await bare.click();
   const ladder = page.locator('[data-block="ladder"]');
   await expect(ladder).toBeVisible();
   await expect(ladder.locator('[data-here="true"]')).toHaveAttribute('data-effort', 'medium');
@@ -99,7 +99,7 @@ test('Runs at re-scores the seat at that effort and Ship counts it', async ({ pa
   ).toHaveAttribute('aria-checked', 'true');
 
   await runsAt(page, 'any');
-  await expect(row(page, SOL).locator('[data-effort-pill]')).toHaveText('max');
+  await expect(row(page, BARE).locator('[data-effort-pill]')).toHaveText('max');
 
   expect(thrown, 'the seat page threw').toEqual([]);
 });

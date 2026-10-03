@@ -42,7 +42,7 @@
     <span class="name">{row.name}</span>
     {#if line}<span class="line" title="last applied chain">{line}</span>{/if}
   </span>
-  {#if unset}<span class="badge warn" data-effort-note title={unset.title}>{unset.text}</span>{/if}
+  {#if unset}<span class="unset" data-effort-note title={unset.title}>{unset.text}</span>{/if}
   {#if mark}<span class="badge" class:accent={mark.tone === 'accent'}>{mark.text}</span>{/if}
 </a>
 
@@ -109,7 +109,12 @@
   .badge.accent {
     color: var(--c-accent);
   }
-  .badge.warn {
+  /* not a badge: the badge is the server's change count, and this is a
+     question about the seat's own settings */
+  .unset {
+    flex: none;
+    font-family: var(--f-mono);
+    font-size: 11px;
     color: var(--c-warn);
   }
 </style>
