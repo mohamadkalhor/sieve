@@ -81,7 +81,7 @@ Every error body is `{"error": {"code": "...", "message": "...", "detail": ... (
 
 ### Retries and Idempotency-Key
 
-Send `Idempotency-Key: <any unique string>`. It is required on the run routes `POST /v1/apply`, `POST /v1/runs/{step}` and `POST /v1/sources/{name}/pull`; a missing key is 400 `idempotency_key_required`. It is optional on every other write.
+Send `Idempotency-Key: <any unique string>`. It is required on the run routes `POST /v1/apply`, `POST /v1/runs/{step}` and `POST /v1/sources/{name}/pull`; a missing key is 400 `idempotency_key_required`. It is optional on every other write. The one exception is `POST /v1/tokens` (needs the `keys` scope, and a key never mints a scope it does not itself hold): its answer is a secret shown once, so it is never stored or replayed, an `Idempotency-Key` sent there is ignored, and a retry mints a second key.
 
 Same key with the same body inside the retention window -> the stored answer is replayed. Same key with a different body -> 409.
 

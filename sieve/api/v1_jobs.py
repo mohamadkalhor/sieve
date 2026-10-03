@@ -92,7 +92,7 @@ def _pulled(
                 cfg, store, name, source_cfg, actor, snapshot=sid, job=job_id
             )
     except StoreBusy as busy:
-        raise _failed("store_busy", str(busy)) from busy
+        raise _failed("store_busy", aio.store_busy_message(busy)) from busy
 
 
 def _failed(code: str, message: str) -> Exception:

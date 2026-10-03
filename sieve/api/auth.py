@@ -78,8 +78,8 @@ GATE_APP = "sieve"
 #: anything here: a script that could not manage connectors before still
 #: cannot, and one that could must be given `admin` explicitly.
 ROLE_SCOPES: dict[str, frozenset[str]] = {
-    "owner": frozenset({"read", "profiles:write", "apply", "admin"}),
-    "member": frozenset({"read", "profiles:write", "apply"}),
+    "owner": frozenset({"read", "profiles:write", "apply", "admin", "keys"}),
+    "member": frozenset({"read", "profiles:write", "apply", "keys"}),
     "viewer": frozenset({"read", "profiles:write"}),
 }
 
@@ -156,6 +156,7 @@ def gate_identity(request: Request) -> Token | None:
                         scopes=scopes,
                         sha256=key,
                         owner_id=_resolve_owner(request, email, role, user_id),
+                        gate_id=user_id,
                     )
     except Exception:
         # A gate that is down, slow, or answers something that is not the
@@ -203,6 +204,9 @@ class Token:
     #: where nobody has signed in and only `SIEVE_TOKENS` is configured -- the
     #: single-user case, where every row is unowned and everything matches.
     owner_id: str | None = None
+    #: gate's own user id for a browser session ("" for a key): the principal's
+    #: name when the local row cannot be resolved.
+    gate_id: str = ""
 
     def allows(self, scope: str) -> bool:
         return scope in self.scopes

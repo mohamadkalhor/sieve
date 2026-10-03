@@ -214,7 +214,8 @@ def test_the_pull_route_answers_store_busy_with_retry_after(
         assert answer.status_code == 503, answer.text
         assert answer.json()["error"]["code"] == "store_busy"
         assert answer.headers["retry-after"] == "2"
-        assert str(holder.pid) in answer.json()["error"]["message"]
+        # F15: the lock path and holder pid go to the log, not to the caller
+        assert str(holder.pid) not in answer.json()["error"]["message"]
 
 
 def test_the_pull_route_reaches_the_source_when_the_store_is_free(

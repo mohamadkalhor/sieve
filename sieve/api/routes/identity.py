@@ -11,15 +11,32 @@ from __future__ import annotations
 import sqlite3
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, Request
+from fastapi import APIRouter, Body, Depends, Header, Request
 
 from sieve import owners
 from sieve import tokens as script_tokens
-from sieve.api.auth import ROLE_SCOPES, Token, owner_of_request
+from sieve.api import aio
+from sieve.api.auth import ROLE_SCOPES, Token, bearer, owner_of_request
 from sieve.api.auth import require as require_scope
 from sieve.api.routes.v1 import Read, error, store_of
 
 router = APIRouter(prefix="/v1", tags=["identity"])
+
+_legacy_gate = require_scope("profiles:write")
+_keys_gate = require_scope("keys")
+
+
+def _keys_dependency(
+    request: Request, authorization: str | None = Header(default=None, include_in_schema=False)
+) -> Token:
+    """Minting and listing keys: `profiles:write` as ever, and with `AGENT_V1` on
+    the kit's `keys` scope, which no write-only key holds."""
+    gate = _keys_gate if aio.agent_v1() else _legacy_gate
+    return gate(request, authorization)
+
+
+setattr(_keys_dependency, "__aio_scope__", "keys")
+Keys = Depends(_keys_dependency)
 
 
 def _me(request: Request) -> Any:
@@ -59,7 +76,7 @@ def get_me(request: Request, _: Read = None) -> Any:
 
 @router.get("/tokens")
 def get_tokens(
-    request: Request, token: Annotated[Token, Depends(require_scope("profiles:write"))]
+    request: Request, token: Annotated[Token, Keys]
 ) -> Any:
     owner_id = owner_of_request(request)
     if owner_id is None:
@@ -71,7 +88,7 @@ def get_tokens(
 def post_token(
     request: Request,
     body: Annotated[dict[str, Any], Body()],
-    token: Annotated[Token, Depends(require_scope("profiles:write"))],
+    token: Annotated[Token, Keys],
 ) -> Any:
     """Mint a token. The secret is in this reply and nowhere else, ever.
 
@@ -88,6 +105,9 @@ def post_token(
     # still works for reading, so the fallback is the smallest role there is.
     allowed = set(ROLE_SCOPES.get(who.role if who else "viewer", frozenset())) | {"telemetry"}
     wanted = set(body.get("scopes") or ["read"])
+    if bearer(request.headers.get("authorization")):
+        # A key never mints scopes its own principal lacks.
+        allowed &= set(token.scopes)
     if not wanted <= allowed:
         return error(
             403,

@@ -397,18 +397,29 @@ def test_on_a_run_with_a_different_body_under_the_same_key_is_a_mismatch(
     assert answer.json()["error"]["code"] == "idempotency_mismatch"
 
 
-def test_on_a_replayed_write_does_not_run_twice(on: TestClient, seats: Store) -> None:
-    """The mint is the proof: one key, one token, the same secret twice."""
+def test_on_a_replayed_write_does_not_run_twice(
+    on: TestClient, seats: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One key, one schedule change, the same answer twice (the mint route is
+    out of idempotency on purpose: it would store a secret -- FIX-sieve F2)."""
+    from sieve import runs as runs_module
+
+    calls: list[str] = []
+    real = runs_module.put_schedule
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        calls.append("put")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(runs_module, "put_schedule", counted)
     key = {"Idempotency-Key": "k-three", **BOX}
-    body = {"name": "cron", "scopes": ["read"]}
-    first = on.post("/v1/tokens", json=body, headers=key)
-    second = on.post("/v1/tokens", json=body, headers=key)
-    assert first.status_code == second.status_code == 201
+    body = {"mode": "hourly", "at_minute": 5}
+    first = on.put("/v1/schedules/full", json=body, headers=key)
+    second = on.put("/v1/schedules/full", json=body, headers=key)
+    assert first.status_code == second.status_code == 200, first.text
     assert first.json() == second.json()
-    boss = owners.by_email(seats, OWNER_EMAIL)
-    assert boss is not None
-    minted = [t for t in script_tokens.tokens(seats, boss.id) if t.name == "cron"]
-    assert len(minted) == 1
+    assert second.headers.get("idempotent-replay")
+    assert calls == ["put"]
 
 
 def test_on_a_body_over_the_cap_is_refused(on: TestClient) -> None:
@@ -435,7 +446,7 @@ def test_on_an_unknown_v1_path_is_not_found(on: TestClient) -> None:
 
 
 def test_on_a_write_leaves_an_audit_row(on: TestClient, box: Config) -> None:
-    assert on.post("/v1/tokens", json={"name": "cron", "scopes": ["read"]}, headers=BOX).status_code == 201
+    assert on.put("/v1/schedules/full", json={"mode": "off"}, headers=BOX).status_code == 200
     rows = (
         sqlite3.connect(box.path("aio.db"))
         .execute("SELECT principal, action, target, result_status FROM aio_audit")
@@ -443,7 +454,7 @@ def test_on_a_write_leaves_an_audit_row(on: TestClient, box: Config) -> None:
     )
     assert rows, "a write left no audit row"
     # `action` is "<METHOD> <route template>" (agentkit.audit)
-    assert any((row[1] or "").startswith("POST ") and "tokens" in row[1] for row in rows)
+    assert any((row[1] or "").startswith("PUT ") and "schedules" in row[1] for row in rows)
 
 
 def test_on_the_kit_file_sits_beside_the_store_and_never_the_cwd(
@@ -490,6 +501,10 @@ def test_on_every_write_route_carries_the_wrapper(
     ]
     assert writes, "no write routes found: the walk is wrong, not the app"
     for route in writes:
+        if aio._skips_idempotency(route):
+            # the key-mint route: its answer is a secret, so it is never stored
+            assert not getattr(route.endpoint, aio.WRAPPED, False), route.path
+            continue
         assert getattr(route.endpoint, aio.WRAPPED, False), route.path
 
 

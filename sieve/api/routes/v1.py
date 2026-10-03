@@ -1562,7 +1562,9 @@ def post_apply(
                 cfg, chains, targets=targets, dry_run=False, actor=token.name, store=store
             )
     except StoreBusy as busy:
-        return error(503, "store_busy", str(busy), retry_after=2)
+        from sieve.api import aio as _aio
+
+        return error(503, "store_busy", _aio.store_busy_message(busy), retry_after=2)
     events.publish("apply", {"targets": [r.target for r in results], "actor": token.name})
     return results
 
@@ -1983,7 +1985,9 @@ def post_pull(
     except StoreBusy as busy:
         # A waiting writer is not a failure of this request: whatever holds the
         # store is doing this same work, and saying so beats a 500.
-        return error(503, "store_busy", str(busy), retry_after=2)
+        from sieve.api import aio as _aio
+
+        return error(503, "store_busy", _aio.store_busy_message(busy), retry_after=2)
 
 
 def _pull_source(

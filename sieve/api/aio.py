@@ -128,6 +128,7 @@ KIT_SCOPES: Mapping[str, str] = {
     "profiles:write": "write",
     "apply": "run",
     "admin": "admin",
+    "keys": "keys",
 }
 
 #: `telemetry` has no kit equivalent -- machines reporting outcomes is sieve's
@@ -357,7 +358,8 @@ def session_lookup(app: Any, cookie: str | None) -> Any:
     role = _role_of(token.scopes)
     if role is None:
         return None
-    return _kit().auth.Session(id=str(token.owner_id or ""), role=role)
+    who = str(token.owner_id or "") or str(getattr(token, "gate_id", "") or "") or str(token.name)
+    return _kit().auth.Session(id=who, role=role)
 
 
 def _role_of(scopes: frozenset[str]) -> str | None:
@@ -422,6 +424,16 @@ def charge(request: Request, principal: Any) -> None:
         )
 
 
+#: What a caller is told when another writer holds the store. The lock's path and
+#: the holder's pid go to the log, never to the caller.
+STORE_BUSY_MESSAGE = "the store is busy with another write; try again in a moment"
+
+
+def store_busy_message(busy: BaseException) -> str:
+    _log.warning("store busy: %s", busy)
+    return STORE_BUSY_MESSAGE
+
+
 def _refuse(status: int, code: str) -> Exception:
     kit = _kit()
     return kit.errors.APIError(status, code, kit.errors.MESSAGES[code])
@@ -481,6 +493,9 @@ def read_identity(request: Request) -> Any:
     principal = auth_config(request.app).dependency(request)
     charge(request, principal)
     token = _token_for(request, principal)
+    if token is not None and not principal.has("read"):
+        # A key that holds no `read` (a telemetry-only key) reads nothing.
+        raise _refuse(403, "not_allowed")
     if token is None:
         request.state.actor = "anon"
         request.state.owner_id = auth.owner_identity(request)
@@ -525,6 +540,17 @@ RUN_ROUTES = (
 #: The note this module leaves on a route it has already wrapped, so mounting
 #: twice -- two `create_app` calls on one app object -- cannot wrap twice.
 WRAPPED = "__aio_wrapped__"
+
+#: Routes that are NOT under the kit's idempotency wrapper. `POST /v1/tokens`
+#: returns a raw secret exactly once; the wrapper would store that answer in
+#: `aio_idem` for 24 h and replay it. An `Idempotency-Key` sent here is simply
+#: ignored, and a retry mints a second key -- which is right for "shown once".
+NO_IDEM_ROUTES = (("POST", "/v1/tokens"),)
+
+
+def _skips_idempotency(route: APIRoute) -> bool:
+    methods = route.methods or set()
+    return any(m in methods and route.path_format == path for m, path in NO_IDEM_ROUTES)
 
 LLMS_TEXT = """# sieve
 
@@ -663,9 +689,22 @@ def start_jobs(app: Any) -> None:
     store = jobs_for(app)
     try:
         store.startup()
+        startup_idem(app)
         store.start()
     except _kit().jobs.Locked as exc:
         _log.error("agent jobs are not running in this process: %s", exc)
+
+
+def startup_idem(app: Any) -> None:
+    """§3.4's restart rule for idempotency rows: `pending` -> `interrupted`.
+
+    The same `Idempotency` object the write wrapper uses, run where the job
+    store's own restart rule runs, so a retry of a call a restart cut short is
+    told `idempotency_interrupted` instead of `in_progress` for 24 h.
+    """
+    idem_store = getattr(app.state, "aio_idem", None)
+    if idem_store is not None:
+        idem_store.startup()
 
 
 def stop_jobs(app: Any) -> None:
@@ -698,6 +737,7 @@ def mount(app: Any, config: Any) -> None:
     app.state.aio_audit = audit_store
     kit.audit.mount(app, audit_store)
     idem_store = kit.idem.Idempotency(aio_db)
+    app.state.aio_idem = idem_store
     _wrap_writes(app, idem_store)
     # §3.5's four `/v1/jobs` routes. Included *after* `_wrap_writes`, so the
     # kit's own submit route is not wrapped a second time by this app's
@@ -853,7 +893,7 @@ def _wrap_writes(app: Any, store: Any) -> None:
             copy = _copy_router(original, store)
             context = dataclasses.replace(entry.include_context, included_router=copy)
             routes[index] = type(entry)(original_router=copy, include_context=context)
-        elif isinstance(entry, APIRoute) and _is_v1_write(entry):
+        elif isinstance(entry, APIRoute) and _is_v1_write(entry) and not _skips_idempotency(entry):
             # An older FastAPI that flattened the routes: rebuild this one route.
             routes[index] = _rebuilt(entry, _wrapped(entry, store))
 
@@ -917,6 +957,7 @@ def _copy_router(original: Any, store: Any) -> Any:
             continue
         if route.path == "/v1/guide":
             continue
-        endpoint = _wrapped(route, store) if _is_v1_write(route) else route.endpoint
+        wrap = _is_v1_write(route) and not _skips_idempotency(route)
+        endpoint = _wrapped(route, store) if wrap else route.endpoint
         copy.add_api_route(route.path, endpoint, **_route_kwargs(route))
     return copy

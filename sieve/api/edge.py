@@ -43,7 +43,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from sieve.api import auth
+from sieve.api import aio, auth
 
 _EDGE_HEADER = b"x-gate-edge"
 _STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
@@ -98,6 +98,11 @@ class EdgeAuthMiddleware:
             return
 
         request = Request(scope, receive=receive)
+        if aio.agent_v1() and request.headers.get("authorization"):
+            # With the kit on, a credential on a /v1 call is the kit's to judge:
+            # it answers `bad_key` and applies the per-IP limit on failures.
+            await self.app(scope, receive, send)
+            return
         secret = auth.bearer(request.headers.get("authorization"))
         if secret:
             # A bearer is present: it must resolve, full stop. Never falls

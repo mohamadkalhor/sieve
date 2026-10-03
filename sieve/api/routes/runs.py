@@ -1,7 +1,7 @@
 """`/v1/runs` and `/v1/schedules` — the loop under hand control.
 
-Six routes. Starting a run is a write (`profiles:write`), because a run ships
-combos to the gateways of every profile with auto-apply on; reading runs and
+Six routes. Starting a run (or changing when one fires) needs `apply`, because a run
+ships combos to the gateways of every profile with auto-apply on; reading runs and
 schedules is a read, because the status box on every page asks for them.
 
 `POST /v1/runs/{step}` answers **202** with the id of the run it started, and
@@ -25,7 +25,7 @@ from sieve.api.v1_models import RunRow
 
 router = APIRouter(prefix="/v1", tags=["runs"])
 
-Write = Annotated[Token, Depends(require_scope("profiles:write"))]
+Apply = Annotated[Token, Depends(require_scope("apply"))]
 
 
 def runner_of(request: Request) -> runs_module.Runner:
@@ -70,7 +70,7 @@ def put_schedule(
     request: Request,
     step: str,
     body: Annotated[ScheduleBody, Body()],
-    token: Write,
+    token: Apply,
 ) -> Any:
     try:
         changed = runs_module.put_schedule(
@@ -117,7 +117,7 @@ def get_run_log(request: Request, run_id: str, _: Read = None) -> Any:
 
 
 @router.post("/runs/{step}")
-def post_run(request: Request, step: str, token: Write) -> Any:
+def post_run(request: Request, step: str, token: Apply) -> Any:
     """Start one step now. 202 with the id, or 409 naming the run already going."""
     runner = runner_of(request)
     try:
