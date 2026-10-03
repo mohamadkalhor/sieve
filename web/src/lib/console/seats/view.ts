@@ -7,6 +7,7 @@
  * view state rather than a setting.
  */
 import type { SeatRow } from '$lib/api/client';
+import { effortWord } from '../seat/rows';
 
 /**
  * Where the pane remembers which groups are collapsed.
@@ -18,16 +19,31 @@ import type { SeatRow } from '$lib/api/client';
 export const COLLAPSED_KEY = 'sieve:seats-collapsed';
 
 /**
- * The second line of a seat's row: the first model the gateway holds.
+ * The second line of a seat's row: the first model the gateway holds, and
+ * the effort the seat runs at -- "GPT-6 Astra · medium" (EFFORT.md section 6).
  *
  * `live` is null when no chain was ever read and `[]` when the seat ships
  * nothing, and those are two different things: one says nothing at all, the
- * other says the truth out loud.
+ * other says the truth out loud. A seat with no effort set says no effort:
+ * "any" is the absence of one, and the `effort?` note says that better.
  */
 export function secondLine(row: SeatRow): string | null {
   if (row.live === null) return null;
   if (row.live.length === 0) return 'nothing shipped yet';
-  return row.live[0].name;
+  return row.effort ? `${row.live[0].name} · ${effortWord(row.effort)}` : row.live[0].name;
+}
+
+/**
+ * The amber `effort?` beside a seat that still scores its models at their top
+ * effort while shipping one that publishes several. A seat whose models have
+ * one setting each has nothing to set, so it is not nagged.
+ */
+export function effortNote(row: SeatRow): { text: string; title: string } | null {
+  if (row.modality !== 'llm' || row.effort != null || row.multi_mode !== true) return null;
+  return {
+    text: 'effort?',
+    title: 'Runs at is not set: models are scored at their top effort'
+  };
 }
 
 /** Whatever the stored value was, only strings are kept. */

@@ -153,6 +153,8 @@ export interface SeatSessionLike {
   open(): Promise<void>;
   close(): void;
   edit(next: SettingsLike | { error: string }): void;
+  /** Runs at; optional so a stub without efforts still fits */
+  setEffort?(effort: Effort | null): void;
   ship(): Promise<void>;
   linkThen(localId: string, then: (id: string) => SettingsLike): Promise<void>;
   copy(to: string): Promise<string | null>;

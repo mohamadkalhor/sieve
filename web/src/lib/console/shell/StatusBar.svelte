@@ -10,11 +10,14 @@
    * The clock is the bar's own: `ago()` is asked again every half minute, so
    * "14 min ago" keeps meaning 14 min ago rather than freezing at mount.
    */
-  import { status as statusStore } from '../context';
+  import { seats as seatsStore, status as statusStore } from '../context';
   import { explainError } from '$lib/api/client';
-  import { bar } from './statusbar';
+  import { bar, noEffort } from './statusbar';
 
   const store = statusStore();
+  const seats = seatsStore();
+  /** EFFORT.md section 6: seats still scoring at top effort, counted */
+  const unset = $derived(noEffort(seats.rows));
 
   let now = $state(new Date());
   $effect(() => {
@@ -55,6 +58,9 @@
       <a class="item link" data-key="unscored" href="/unscored"
         >{view.unscored.toLocaleString('en-US')} unscored</a
       >
+    {/if}
+    {#if unset}
+      <a class="item link warn" data-key="effort" href={unset.href}>{unset.text}</a>
     {/if}
     {#if view.next}<span class="item right" data-key="next">{view.next}</span>{/if}
   {/if}
@@ -122,6 +128,9 @@
   }
   .link:hover {
     color: var(--c-ink);
+  }
+  .link.warn {
+    color: var(--c-warn);
   }
   .link:focus-visible {
     outline: 2px solid var(--c-accent);

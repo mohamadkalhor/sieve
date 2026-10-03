@@ -15,7 +15,7 @@
    */
   import type { SeatRow } from '$lib/api/client';
   import { badge } from '../logic/seats';
-  import { secondLine } from './view';
+  import { effortNote, secondLine } from './view';
 
   interface Props {
     row: SeatRow;
@@ -26,6 +26,7 @@
 
   const line = $derived(secondLine(row));
   const mark = $derived(badge(row));
+  const unset = $derived(effortNote(row));
   const changing = $derived(typeof row.changes === 'number' && row.changes > 0);
 </script>
 
@@ -41,6 +42,7 @@
     <span class="name">{row.name}</span>
     {#if line}<span class="line" title="last applied chain">{line}</span>{/if}
   </span>
+  {#if unset}<span class="badge warn" data-effort-note title={unset.title}>{unset.text}</span>{/if}
   {#if mark}<span class="badge" class:accent={mark.tone === 'accent'}>{mark.text}</span>{/if}
 </a>
 
@@ -106,5 +108,8 @@
   }
   .badge.accent {
     color: var(--c-accent);
+  }
+  .badge.warn {
+    color: var(--c-warn);
   }
 </style>

@@ -9,8 +9,9 @@
  */
 import type { PaletteContext, CommandLike, SeatSessionLike } from '../contracts';
 import type { Provider } from '../logic/commands';
-import { pin, remove, setMode } from '../logic/settings';
+import { pin, remove, setEffort, setMode } from '../logic/settings';
 import { MODALITY_LABEL } from '../logic/seats';
+import { effortOptions, effortFromOption } from '../seat/rows';
 
 /**
  * The eight sections, in the order the top bar shows them.
@@ -161,9 +162,36 @@ export function actionsProvider(ctx: PaletteContext): CommandLike[] {
           session.edit(setMode(settings, next, (session.preview?.models ?? []).map((row) => row.id)))
       });
     }
+    commands.push(...effortCommands(session));
   }
 
   return commands;
+}
+
+/**
+ * `effort medium` and its siblings for the open seat (EFFORT.md section 6):
+ * every effort but the one it already runs at, llm seats only. Through the
+ * session's own `setEffort` when it has one, so the hint beside Runs at can
+ * count the rows the change moved.
+ */
+export function effortCommands(session: SeatSessionLike): CommandLike[] {
+  const settings = session.settings;
+  if (!settings || session.profile?.modality !== 'llm') return [];
+  const now = settings.effort ?? null;
+  return effortOptions(true, now)
+    .filter((option) => effortFromOption(option.value) !== now)
+    .map((option) => ({
+      id: `effort:${session.name}:${option.value}`,
+      group: 'Actions' as const,
+      title: `effort ${option.label}`,
+      hint: option.value === 'any' ? `${session.name}: each model at its top effort` : `${session.name} runs at ${option.label}`,
+      keywords: `runs at reasoning ${option.value}`,
+      run: () => {
+        const effort = effortFromOption(option.value);
+        if (session.setEffort) session.setEffort(effort);
+        else session.edit(setEffort(settings as Parameters<typeof setEffort>[0], effort));
+      }
+    }));
 }
 
 /** What the palette is built over, in the order `match` sorts groups. */

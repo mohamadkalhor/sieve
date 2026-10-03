@@ -10,7 +10,8 @@
  * say", while `schedules` present with no `next_fire` means "nothing is
  * scheduled" -- and only the second one may say "no schedule".
  */
-import { STEP_LABEL, type ScheduleRow, type StatusRow } from '$lib/api/client';
+import { STEP_LABEL, type ScheduleRow, type SeatRow, type StatusRow } from '$lib/api/client';
+import { effortNote } from '../seats/view';
 import { ago } from '$lib/freshness';
 
 export type Tone = 'ok' | 'bad' | 'warn' | 'muted';
@@ -29,6 +30,22 @@ export interface Bar {
   unscored: number | null;
   /** the right-hand item, or null when this server does not schedule anything */
   next: string | null;
+}
+
+/**
+ * "2 seats have no effort set", linking to the first of them (EFFORT.md
+ * section 6). Null when every seat that needs one has one, and null while the
+ * seats list has not answered: not asked is not none.
+ */
+export function noEffort(rows: readonly SeatRow[] | null): { text: string; href: string } | null {
+  if (!rows) return null;
+  const unset = rows.filter((row) => effortNote(row) !== null);
+  if (!unset.length) return null;
+  const n = unset.length;
+  return {
+    text: `${n} ${n === 1 ? 'seat has' : 'seats have'} no effort set`,
+    href: `/seats/${encodeURIComponent(unset[0].name)}`
+  };
 }
 
 /** Thousands, because 4015 calls is a number nobody reads. */
