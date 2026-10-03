@@ -98,6 +98,7 @@ describe('Runs at', () => {
     await flush();
 
     expect(saves.at(-1)?.effort).toBe('medium');
+    expect(session.savedEffort).toBe('medium');
     expect(bodies.at(-1)?.effort).toBe('medium');
     // Same ids in the same order, and still a change: the chain carries it.
     expect(session.effortMoved).toBe(true);

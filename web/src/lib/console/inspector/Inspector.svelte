@@ -63,9 +63,11 @@
 
   const read = $derived.by((): CardRead => {
     if (!id || !modality) return IDLE;
+    // the saved effort, not the draft: the server scores the ladder from what
+    // it holds, so a read sent before the write lands would mark the old rung
     return cache.get(id, modality, standing.row, {
       name: session.name,
-      effort: session.settings?.effort ?? null
+      effort: session.savedEffort ?? null
     });
   });
 

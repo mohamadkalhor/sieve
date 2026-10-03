@@ -206,6 +206,12 @@ export class SeatSession implements SeatSessionLike {
    * whatever the last ship sent. Undefined on a server from before efforts.
    */
   shippedEffort = $state<Effort | null | undefined>(undefined);
+  /**
+   * The effort the server holds for this seat: the ladder is scored from the
+   * saved settings, so the inspector asks for it under this one, and a draft
+   * the write queue has not delivered yet does not mark the wrong rung.
+   */
+  savedEffort = $state<Effort | null | undefined>(undefined);
   /** the lineup on screen when the effort first left the shipped one */
   private effortBase = $state<string[] | null>(null);
 
@@ -339,6 +345,7 @@ export class SeatSession implements SeatSessionLike {
     this.loaded = { ...settings.weights };
     this.opened = copySettings(settings);
     this.shippedEffort = settings.effort;
+    this.savedEffort = settings.effort;
     this.effortBase = null;
     this.revision = 0;
     this.savedRevision = 0;
@@ -524,6 +531,7 @@ export class SeatSession implements SeatSessionLike {
         this.said = { ok: false, text: explainError(result.error) };
         return false;
       }
+      if (rev >= this.savedRevision) this.savedEffort = snapshot.effort;
       this.savedRevision = Math.max(this.savedRevision, rev);
       this.deps.onSaved?.(this.name);
       this.patchFromPreview();
