@@ -207,6 +207,7 @@ def test_the_settings_are_the_weights_and_how_many_to_ship(workspace: Config) ->
             "removed",
             "needs",
             "prefix_weights",
+            "effort",
         }
         assert settings["ship"] >= 1 and settings["mode"] == "auto"
         assert all(isinstance(w, float) for w in settings["weights"].values())
@@ -263,6 +264,10 @@ def test_the_weights_move_the_list_and_the_preview_says_what_would_ship(
             "confidence",
             "cost_per_task",
             "cost_from",
+            "scored_as",
+            "effort",
+            "effort_how",
+            "family",
         }
         assert first["local_ids"], "only a model this box can reach may ship"
         assert first["name"] and first["name"] != first["id"], "the page shows a name"
@@ -350,6 +355,7 @@ def test_the_retired_profile_keys_are_accepted_and_named(workspace: Config) -> N
             "removed",
             "needs",
             "prefix_weights",
+            "effort",
         }
 
         response = client.put(
