@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import json
+import threading
+from collections import OrderedDict
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -497,6 +500,51 @@ def rerank_cached(
     return ranking.model_copy(
         update={"ranks": reachable + [row for row in ranks if not row.reachable]}
     )
+
+
+def check_effort(modality: str, effort: str | None) -> None:
+    """An effort is a property of an llm seat; anywhere else it is refused."""
+    if effort is not None and modality != "llm":
+        raise ValueError("effort applies to llm seats only")
+
+
+def effort_change(before: str | None, after: str | None) -> str | None:
+    """The decision reason for a changed effort, or None if it did not change."""
+    if before == after:
+        return None
+    return f"effort {before or 'any'} → {after or 'any'}"
+
+
+#: rankings computed at an effort other than the stored one's, kept so a page
+#: flipping a seat between two efforts pays for each once (EFFORT.md section 4)
+EFFORT_CACHE_SIZE = 64
+_effort_rankings: OrderedDict[tuple[str | None, str, str | None, str], Ranking] = OrderedDict()
+_effort_guard = threading.Lock()
+
+
+def effort_ranking(
+    key: tuple[str | None, str, str | None, str],
+    build: Callable[[], Ranking],
+    touched: datetime | None = None,
+) -> Ranking:
+    """The ranking for `(owner, profile, effort, snapshot)`, built at most once.
+
+    `rerank_cached` reweighs axis values and cannot change which row a model
+    is scored on, so a preview at another effort needs a ranking of its own.
+    One that predates a hand-score change (`touched`) is built again.
+    """
+    with _effort_guard:
+        held = _effort_rankings.get(key)
+        if held is not None and (touched is None or held.computed_at >= touched):
+            _effort_rankings.move_to_end(key)
+            return held
+    built = build()
+    with _effort_guard:
+        _effort_rankings[key] = built
+        _effort_rankings.move_to_end(key)
+        while len(_effort_rankings) > EFFORT_CACHE_SIZE:
+            _effort_rankings.popitem(last=False)
+    return built
 
 
 def capability_map(store: Store, modality: Any) -> dict[str, Capability]:

@@ -271,3 +271,31 @@ def test_a_fold_rewrites_the_family_pointer_too() -> None:
 
     # and the folded row keeps the id it arrived under, as an alias
     assert "openai/gpt-5-6-luna" in by_id["openai/gpt-5.6-luna"].aliases
+
+
+# --------------------------------------------------------------------------- #
+# a seat's effort (EFFORT.md section 3)
+# --------------------------------------------------------------------------- #
+
+
+def test_resolve_doctests_cover_every_how() -> None:
+    import doctest
+    import typing
+
+    from sieve.catalog import effort as module
+    from sieve.contracts import EffortHow
+
+    failed, tried = doctest.testmod(module)
+    assert failed == 0
+    assert tried > 0
+    source = module.resolve.__doc__ or ""
+    for how in typing.get_args(EffortHow):
+        assert f"'{how}')" in source, how
+
+
+def test_the_seat_effort_type_is_the_ladder() -> None:
+    import typing
+
+    from sieve.contracts import Effort
+
+    assert typing.get_args(Effort) == EFFORT_ORDER

@@ -214,6 +214,7 @@ export interface Profile {
   removed?: string[];
   needs?: ("vision" | "reasoning" | "tools" | "structured_output")[];
   prefix_weights?: Record<string, number>;
+  effort?: "non-reasoning" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
 }
 
 
@@ -243,6 +244,9 @@ export interface Rank {
   cost_per_task?: number | null;
   cost_from?: "shape" | "telemetry" | null;
   flip?: string | null;
+  scored_as?: string | null;
+  effort?: "non-reasoning" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
+  effort_how?: "any" | "exact" | "nearest_below" | "nearest_above" | "id" | "one" | null;
 }
 
 
@@ -252,6 +256,7 @@ export interface Ranking {
   computed_at: string;
   snapshot: string;
   ranks?: Rank[];
+  effort?: "non-reasoning" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
 }
 
 

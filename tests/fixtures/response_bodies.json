@@ -942,6 +942,7 @@
      "name": "animate_general",
      "purpose": "animating a still image",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -961,6 +962,7 @@
      "name": "cheap_bulk",
      "purpose": "high-volume work where the cheapest adequate model wins",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -980,6 +982,7 @@
      "name": "coder",
      "purpose": "agentic coding inside a repository",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1002,6 +1005,7 @@
      "name": "edit_general",
      "purpose": "editing an existing image to instruction",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1020,6 +1024,7 @@
      "name": "image_general",
      "purpose": "everyday image generation",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1039,6 +1044,7 @@
      "name": "image_illustration",
      "purpose": "drawn and stylised work",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1058,6 +1064,7 @@
      "name": "image_photoreal",
      "purpose": "photographic images that must not look generated",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1077,6 +1084,7 @@
      "name": "jev",
      "purpose": "driving the jev CLI: one System One request built exactly to shape, run, and reported as numbers",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1098,6 +1106,7 @@
      "name": "judge",
      "purpose": "scoring or classifying against a rubric, exactly as written",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1117,6 +1126,7 @@
      "name": "music_general",
      "purpose": "generating music where vocals may or may not be wanted",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1135,6 +1145,7 @@
      "name": "premium",
      "purpose": "the best reachable model regardless of price -- flat-rate subscription seats",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1155,6 +1166,7 @@
      "name": "quick_chat",
      "purpose": "short interactive turns where waiting is the worst outcome",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1175,6 +1187,7 @@
      "name": "reader",
      "purpose": "summarising and answering over a large input",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1194,6 +1207,7 @@
      "name": "reasoner",
      "purpose": "hard problems where thinking time is worth paying for",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1214,6 +1228,7 @@
      "name": "researcher",
      "purpose": "multi-step research loops that call tools and read a lot",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1235,6 +1250,7 @@
      "name": "speech_general",
      "purpose": "reading text aloud",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1254,6 +1270,7 @@
      "name": "transcription",
      "purpose": "turning recorded speech into text",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1271,6 +1288,7 @@
      "name": "video_edit_general",
      "purpose": "editing an existing clip",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1290,6 +1308,7 @@
      "name": "video_general",
      "purpose": "everyday video generation",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1309,6 +1328,7 @@
      "name": "video_product_shot",
      "purpose": "short product clips with a moving camera and readable text",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1330,6 +1350,7 @@
      "name": "vision",
      "purpose": "reading images: screenshots, documents, photographs",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1349,6 +1370,7 @@
      "name": "voice_agent",
      "purpose": "a voice-to-voice agent a person talks to",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -1366,6 +1388,7 @@
      "name": "writer",
      "purpose": "long-form prose to a brief",
      "settings": {
+      "effort": null,
       "manual": [],
       "mode": "auto",
       "needs": [],
@@ -2082,6 +2105,7 @@
  "/v1/profiles": {
   "body": [
    {
+    "effort": null,
     "manual": [],
     "modality": "image-to-video",
     "mode": "auto",
@@ -2099,6 +2123,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "llm",
     "mode": "auto",
@@ -2116,6 +2141,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "llm",
     "mode": "auto",
@@ -2136,6 +2162,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "image-editing",
     "mode": "auto",
@@ -2152,6 +2179,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "text-to-image",
     "mode": "auto",
@@ -2169,6 +2197,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "text-to-image",
     "mode": "auto",
@@ -2186,6 +2215,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "text-to-image",
     "mode": "auto",
@@ -2203,6 +2233,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "llm",
     "mode": "auto",
@@ -2222,6 +2253,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "llm",
     "mode": "auto",
@@ -2239,6 +2271,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "music",
     "mode": "auto",
@@ -2255,6 +2288,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "llm",
     "mode": "auto",
@@ -2273,6 +2307,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "llm",
     "mode": "auto",
@@ -2291,6 +2326,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "llm",
     "mode": "auto",
@@ -2308,6 +2344,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "llm",
     "mode": "auto",
@@ -2326,6 +2363,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "llm",
     "mode": "auto",
@@ -2345,6 +2383,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "text-to-speech",
     "mode": "auto",
@@ -2362,6 +2401,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "speech-to-text",
     "mode": "auto",
@@ -2377,6 +2417,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "video-editing",
     "mode": "auto",
@@ -2394,6 +2435,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "text-to-video",
     "mode": "auto",
@@ -2411,6 +2453,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "text-to-video",
     "mode": "auto",
@@ -2430,6 +2473,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "llm",
     "mode": "auto",
@@ -2447,6 +2491,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "speech-to-speech",
     "mode": "auto",
@@ -2462,6 +2507,7 @@
     }
    },
    {
+    "effort": null,
     "manual": [],
     "modality": "llm",
     "mode": "auto",
@@ -2484,6 +2530,7 @@
  },
  "/v1/profiles/coder": {
   "body": {
+   "effort": null,
    "manual": [],
    "modality": "llm",
    "mode": "auto",
@@ -2508,6 +2555,7 @@
  "/v1/rankings/coder": {
   "body": {
    "computed_at": "9999-99-99T99:99:99.999999Z",
+   "effort": null,
    "modality": "llm",
    "profile": "coder",
    "ranks": [
@@ -2553,6 +2601,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.0135,
+     "effort": "high",
+     "effort_how": "any",
      "final": 0.7414499791144529,
      "flip": "raise long_context to 0.17 and meta/muse-spark-1.3 leads",
      "health": 1.0,
@@ -2562,7 +2612,8 @@
      "model_id": "google/gemini-3.8-flash",
      "position": 1,
      "reachable": true,
-     "score": 0.7414499791144529
+     "score": 0.7414499791144529,
+     "scored_as": "google/gemini-3.8-flash"
     },
     {
      "axes": [
@@ -2606,6 +2657,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.018500000000000003,
+     "effort": "max",
+     "effort_how": "any",
      "final": 0.7257186052251843,
      "flip": null,
      "health": 1.0,
@@ -2615,7 +2668,8 @@
      "model_id": "meta/muse-spark-1.3",
      "position": 2,
      "reachable": true,
-     "score": 0.7257186052251843
+     "score": 0.7257186052251843,
+     "scored_as": "meta/muse-spark-1.3"
     },
     {
      "axes": [
@@ -2659,6 +2713,8 @@
      "confidence": 0.955,
      "cost_from": "shape",
      "cost_per_task": 0.07200000000000001,
+     "effort": "max",
+     "effort_how": "any",
      "final": 0.7238261278195489,
      "flip": null,
      "health": 1.0,
@@ -2668,7 +2724,8 @@
      "model_id": "openai/gpt-5-6-sol",
      "position": 3,
      "reachable": true,
-     "score": 0.7238261278195489
+     "score": 0.7238261278195489,
+     "scored_as": "openai/gpt-5-6-sol"
     },
     {
      "axes": [
@@ -2712,6 +2769,8 @@
      "confidence": 0.955,
      "cost_from": "shape",
      "cost_per_task": 0.07200000000000001,
+     "effort": "xhigh",
+     "effort_how": "any",
      "final": 0.7196517160957951,
      "flip": null,
      "health": 1.0,
@@ -2721,7 +2780,8 @@
      "model_id": "openai/gpt-5-6-sol-xhigh",
      "position": 4,
      "reachable": true,
-     "score": 0.7196517160957951
+     "score": 0.7196517160957951,
+     "scored_as": "openai/gpt-5-6-sol-xhigh"
     },
     {
      "axes": [
@@ -2765,6 +2825,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.018500000000000003,
+     "effort": "xhigh",
+     "effort_how": "any",
      "final": 0.7080496886154782,
      "flip": null,
      "health": 1.0,
@@ -2774,7 +2836,8 @@
      "model_id": "meta/muse-spark-1-3-xhigh",
      "position": 5,
      "reachable": true,
-     "score": 0.7080496886154782
+     "score": 0.7080496886154782,
+     "scored_as": "meta/muse-spark-1-3-xhigh"
     },
     {
      "axes": [
@@ -2818,6 +2881,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.0135,
+     "effort": "medium",
+     "effort_how": "any",
      "final": 0.6926243449532924,
      "flip": null,
      "health": 1.0,
@@ -2827,7 +2892,8 @@
      "model_id": "google/gemini-3-8-flash-medium",
      "position": 6,
      "reachable": true,
-     "score": 0.6926243449532924
+     "score": 0.6926243449532924,
+     "scored_as": "google/gemini-3-8-flash-medium"
     },
     {
      "axes": [
@@ -2871,6 +2937,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.18,
+     "effort": "high",
+     "effort_how": "any",
      "final": 0.6906393635604162,
      "flip": null,
      "health": 1.0,
@@ -2880,7 +2948,8 @@
      "model_id": "openai/gpt-6-astra-high",
      "position": 7,
      "reachable": true,
-     "score": 0.6906393635604162
+     "score": 0.6906393635604162,
+     "scored_as": "openai/gpt-6-astra-high"
     },
     {
      "axes": [
@@ -2924,6 +2993,8 @@
      "confidence": 0.955,
      "cost_from": "shape",
      "cost_per_task": 0.04,
+     "effort": "max",
+     "effort_how": "any",
      "final": 0.6827588795220375,
      "flip": null,
      "health": 1.0,
@@ -2933,7 +3004,8 @@
      "model_id": "openai/gpt-5.6-terra",
      "position": 8,
      "reachable": true,
-     "score": 0.6827588795220375
+     "score": 0.6827588795220375,
+     "scored_as": "openai/gpt-5.6-terra"
     },
     {
      "axes": [
@@ -2977,6 +3049,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.18,
+     "effort": "max",
+     "effort_how": "any",
      "final": 0.6668207925115821,
      "flip": null,
      "health": 1.0,
@@ -2986,7 +3060,8 @@
      "model_id": "openai/gpt-6-astra",
      "position": 9,
      "reachable": true,
-     "score": 0.6668207925115821
+     "score": 0.6668207925115821,
+     "scored_as": "openai/gpt-6-astra"
     },
     {
      "axes": [
@@ -3030,6 +3105,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.0135,
+     "effort": "low",
+     "effort_how": "any",
      "final": 0.6375937286397814,
      "flip": null,
      "health": 1.0,
@@ -3039,7 +3116,8 @@
      "model_id": "google/gemini-3-8-flash-low",
      "position": 10,
      "reachable": true,
-     "score": 0.6375937286397814
+     "score": 0.6375937286397814,
+     "scored_as": "google/gemini-3-8-flash-low"
     },
     {
      "axes": [
@@ -3083,6 +3161,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.00214,
+     "effort": null,
+     "effort_how": null,
      "final": 0.7392530711247817,
      "flip": null,
      "health": 1.0,
@@ -3090,7 +3170,8 @@
      "model_id": "alibaba/qwen3-8-flash-next",
      "position": 0,
      "reachable": false,
-     "score": 0.7392530711247817
+     "score": 0.7392530711247817,
+     "scored_as": "alibaba/qwen3-8-flash-next"
     },
     {
      "axes": [
@@ -3134,6 +3215,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.18,
+     "effort": null,
+     "effort_how": null,
      "final": 0.009090909090909092,
      "flip": null,
      "health": 1.0,
@@ -3141,7 +3224,8 @@
      "model_id": "anthropic/claude-fable-5.1",
      "position": 0,
      "reachable": false,
-     "score": 0.009090909090909092
+     "score": 0.009090909090909092,
+     "scored_as": "anthropic/claude-fable-5.1"
     },
     {
      "axes": [
@@ -3185,6 +3269,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.09,
+     "effort": null,
+     "effort_how": null,
      "final": 0.023232323232323233,
      "flip": null,
      "health": 1.0,
@@ -3192,7 +3278,8 @@
      "model_id": "anthropic/claude-fable-5.1:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.023232323232323233
+     "score": 0.023232323232323233,
+     "scored_as": "anthropic/claude-fable-5.1:batch"
     },
     {
      "axes": [
@@ -3236,6 +3323,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.09,
+     "effort": null,
+     "effort_how": null,
      "final": 0.023232323232323233,
      "flip": null,
      "health": 1.0,
@@ -3243,7 +3332,8 @@
      "model_id": "anthropic/claude-opus-5",
      "position": 0,
      "reachable": false,
-     "score": 0.023232323232323233
+     "score": 0.023232323232323233,
+     "scored_as": "anthropic/claude-opus-5"
     },
     {
      "axes": [
@@ -3287,6 +3377,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.045,
+     "effort": null,
+     "effort_how": null,
      "final": 0.044444444444444446,
      "flip": null,
      "health": 1.0,
@@ -3294,7 +3386,8 @@
      "model_id": "anthropic/claude-opus-5:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.044444444444444446
+     "score": 0.044444444444444446,
+     "scored_as": "anthropic/claude-opus-5:batch"
     },
     {
      "axes": [
@@ -3338,6 +3431,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.036000000000000004,
+     "effort": null,
+     "effort_how": null,
      "final": 0.06565656565656566,
      "flip": null,
      "health": 1.0,
@@ -3345,7 +3440,8 @@
      "model_id": "anthropic/claude-sonnet-5",
      "position": 0,
      "reachable": false,
-     "score": 0.06565656565656566
+     "score": 0.06565656565656566,
+     "scored_as": "anthropic/claude-sonnet-5"
     },
     {
      "axes": [
@@ -3389,6 +3485,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.009000000000000001,
+     "effort": null,
+     "effort_how": null,
      "final": 0.11515151515151517,
      "flip": null,
      "health": 1.0,
@@ -3396,7 +3494,8 @@
      "model_id": "bytedance-seed/seed-2-1-turbo",
      "position": 0,
      "reachable": false,
-     "score": 0.11515151515151517
+     "score": 0.11515151515151517,
+     "scored_as": "bytedance-seed/seed-2-1-turbo"
     },
     {
      "axes": [
@@ -3440,6 +3539,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.01,
+     "effort": null,
+     "effort_how": null,
      "final": 0.10909090909090909,
      "flip": null,
      "health": 1.0,
@@ -3447,7 +3548,8 @@
      "model_id": "bytedance-seed/seed-2.0-code",
      "position": 0,
      "reachable": false,
-     "score": 0.10909090909090909
+     "score": 0.10909090909090909,
+     "scored_as": "bytedance-seed/seed-2.0-code"
     },
     {
      "axes": [
@@ -3491,6 +3593,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0030800000000000003,
+     "effort": null,
+     "effort_how": null,
      "final": 0.15959595959595962,
      "flip": null,
      "health": 1.0,
@@ -3498,7 +3602,8 @@
      "model_id": "deepseek/deepseek-v4-flash-vision-exp",
      "position": 0,
      "reachable": false,
-     "score": 0.15959595959595962
+     "score": 0.15959595959595962,
+     "scored_as": "deepseek/deepseek-v4-flash-vision-exp"
     },
     {
      "axes": [
@@ -3542,6 +3647,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.009240000000000002,
+     "effort": null,
+     "effort_how": null,
      "final": 0.11313131313131314,
      "flip": null,
      "health": 1.0,
@@ -3549,7 +3656,8 @@
      "model_id": "deepseek/deepseek-v4-pro-0813",
      "position": 0,
      "reachable": false,
-     "score": 0.11313131313131314
+     "score": 0.11313131313131314,
+     "scored_as": "deepseek/deepseek-v4-pro-0813"
     },
     {
      "axes": [
@@ -3593,6 +3701,8 @@
      "confidence": 0.47000000000000003,
      "cost_from": "shape",
      "cost_per_task": 0.03,
+     "effort": "medium",
+     "effort_how": null,
      "final": 0.30252787271208326,
      "flip": null,
      "health": 1.0,
@@ -3600,7 +3710,8 @@
      "model_id": "google/gemini-3-5-flash-medium",
      "position": 0,
      "reachable": false,
-     "score": 0.30252787271208326
+     "score": 0.30252787271208326,
+     "scored_as": "google/gemini-3-5-flash-medium"
     },
     {
      "axes": [
@@ -3644,6 +3755,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.04,
+     "effort": null,
+     "effort_how": null,
      "final": 0.05555555555555556,
      "flip": null,
      "health": 1.0,
@@ -3651,7 +3764,8 @@
      "model_id": "google/gemini-3-pro-image",
      "position": 0,
      "reachable": false,
-     "score": 0.05555555555555556
+     "score": 0.05555555555555556,
+     "scored_as": "google/gemini-3-pro-image"
     },
     {
      "axes": [
@@ -3695,6 +3809,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0074,
+     "effort": null,
+     "effort_how": null,
      "final": 0.11919191919191918,
      "flip": null,
      "health": 1.0,
@@ -3702,7 +3818,8 @@
      "model_id": "google/gemini-3.5-flash-lite",
      "position": 0,
      "reachable": false,
-     "score": 0.11919191919191918
+     "score": 0.11919191919191918,
+     "scored_as": "google/gemini-3.5-flash-lite"
     },
     {
      "axes": [
@@ -3746,6 +3863,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0037,
+     "effort": null,
+     "effort_how": null,
      "final": 0.15555555555555556,
      "flip": null,
      "health": 1.0,
@@ -3753,7 +3872,8 @@
      "model_id": "google/gemini-3.5-flash-lite:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.15555555555555556
+     "score": 0.15555555555555556,
+     "scored_as": "google/gemini-3.5-flash-lite:batch"
     },
     {
      "axes": [
@@ -3797,6 +3917,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.0135,
+     "effort": "high",
+     "effort_how": null,
      "final": 0.546261335156072,
      "flip": null,
      "health": 1.0,
@@ -3804,7 +3926,8 @@
      "model_id": "google/gemini-3.6-flash",
      "position": 0,
      "reachable": false,
-     "score": 0.546261335156072
+     "score": 0.546261335156072,
+     "scored_as": "google/gemini-3.6-flash"
     },
     {
      "axes": [
@@ -3848,6 +3971,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.00675,
+     "effort": null,
+     "effort_how": null,
      "final": 0.12323232323232323,
      "flip": null,
      "health": 1.0,
@@ -3855,7 +3980,8 @@
      "model_id": "google/gemini-3.6-flash:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.12323232323232323
+     "score": 0.12323232323232323,
+     "scored_as": "google/gemini-3.6-flash:batch"
     },
     {
      "axes": [
@@ -3899,6 +4025,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0135,
+     "effort": null,
+     "effort_how": null,
      "final": 0.10303030303030303,
      "flip": null,
      "health": 1.0,
@@ -3906,7 +4034,8 @@
      "model_id": "google/gemini-3.7-flash",
      "position": 0,
      "reachable": false,
-     "score": 0.10303030303030303
+     "score": 0.10303030303030303,
+     "scored_as": "google/gemini-3.7-flash"
     },
     {
      "axes": [
@@ -3950,6 +4079,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.00675,
+     "effort": null,
+     "effort_how": null,
      "final": 0.12323232323232323,
      "flip": null,
      "health": 1.0,
@@ -3957,7 +4088,8 @@
      "model_id": "google/gemini-3.7-flash:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.12323232323232323
+     "score": 0.12323232323232323,
+     "scored_as": "google/gemini-3.7-flash:batch"
     },
     {
      "axes": [
@@ -4001,6 +4133,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.00675,
+     "effort": null,
+     "effort_how": null,
      "final": 0.12323232323232323,
      "flip": null,
      "health": 1.0,
@@ -4008,7 +4142,8 @@
      "model_id": "google/gemini-3.8-flash:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.12323232323232323
+     "score": 0.12323232323232323,
+     "scored_as": "google/gemini-3.8-flash:batch"
     },
     {
      "axes": [
@@ -4052,6 +4187,8 @@
      "confidence": 0.875,
      "cost_from": "shape",
      "cost_per_task": 0.0014,
+     "effort": null,
+     "effort_how": null,
      "final": 0.3983599782283993,
      "flip": null,
      "health": 1.0,
@@ -4059,7 +4196,8 @@
      "model_id": "google/gemma-4-12b",
      "position": 0,
      "reachable": false,
-     "score": 0.3983599782283993
+     "score": 0.3983599782283993,
+     "scored_as": "google/gemma-4-12b"
     },
     {
      "axes": [
@@ -4103,6 +4241,8 @@
      "confidence": 0.8749999999999999,
      "cost_from": "shape",
      "cost_per_task": 0.00166,
+     "effort": null,
+     "effort_how": null,
      "final": 0.3929741572998153,
      "flip": null,
      "health": 1.0,
@@ -4110,7 +4250,8 @@
      "model_id": "google/gemma-4-26b-a4b",
      "position": 0,
      "reachable": false,
-     "score": 0.3929741572998153
+     "score": 0.3929741572998153,
+     "scored_as": "google/gemma-4-26b-a4b"
     },
     {
      "axes": [
@@ -4154,6 +4295,8 @@
      "confidence": 0.47000000000000003,
      "cost_from": "shape",
      "cost_per_task": 0.00184,
+     "effort": "non-reasoning",
+     "effort_how": null,
      "final": 0.28723422191843245,
      "flip": null,
      "health": 1.0,
@@ -4161,7 +4304,8 @@
      "model_id": "google/gemma-4-26b-a4b-non-reasoning",
      "position": 0,
      "reachable": false,
-     "score": 0.28723422191843245
+     "score": 0.28723422191843245,
+     "scored_as": "google/gemma-4-26b-a4b-non-reasoning"
     },
     {
      "axes": [
@@ -4205,6 +4349,8 @@
      "confidence": 0.755,
      "cost_from": null,
      "cost_per_task": null,
+     "effort": null,
+     "effort_how": null,
      "final": 0.2882776970836181,
      "flip": null,
      "health": 1.0,
@@ -4212,7 +4358,8 @@
      "model_id": "google/gemma-4-31b",
      "position": 0,
      "reachable": false,
-     "score": 0.2882776970836181
+     "score": 0.2882776970836181,
+     "scored_as": "google/gemma-4-31b"
     },
     {
      "axes": [
@@ -4256,6 +4403,8 @@
      "confidence": 0.9249999999999999,
      "cost_from": "shape",
      "cost_per_task": 0.0019199999999999998,
+     "effort": "non-reasoning",
+     "effort_how": null,
      "final": 0.4184686495278601,
      "flip": null,
      "health": 1.0,
@@ -4263,7 +4412,8 @@
      "model_id": "google/gemma-4-31b-non-reasoning",
      "position": 0,
      "reachable": false,
-     "score": 0.4184686495278601
+     "score": 0.4184686495278601,
+     "scored_as": "google/gemma-4-31b-non-reasoning"
     },
     {
      "axes": [
@@ -4307,6 +4457,8 @@
      "confidence": 0.6249999999999999,
      "cost_from": null,
      "cost_per_task": null,
+     "effort": null,
+     "effort_how": null,
      "final": 0.03250487329434698,
      "flip": null,
      "health": 1.0,
@@ -4314,7 +4466,8 @@
      "model_id": "google/gemma-4-e2b",
      "position": 0,
      "reachable": false,
-     "score": 0.03250487329434698
+     "score": 0.03250487329434698,
+     "scored_as": "google/gemma-4-e2b"
     },
     {
      "axes": [
@@ -4358,6 +4511,8 @@
      "confidence": 0.47000000000000003,
      "cost_from": "shape",
      "cost_per_task": 0.00036,
+     "effort": "non-reasoning",
+     "effort_how": null,
      "final": 0.2816102756892231,
      "flip": null,
      "health": 1.0,
@@ -4365,7 +4520,8 @@
      "model_id": "google/gemma-4-e4b-non-reasoning",
      "position": 0,
      "reachable": false,
-     "score": 0.2816102756892231
+     "score": 0.2816102756892231,
+     "scored_as": "google/gemma-4-e4b-non-reasoning"
     },
     {
      "axes": [
@@ -4409,6 +4565,8 @@
      "confidence": 0.565,
      "cost_from": null,
      "cost_per_task": null,
+     "effort": null,
+     "effort_how": null,
      "final": 0.3621070194425458,
      "flip": null,
      "health": 1.0,
@@ -4416,7 +4574,8 @@
      "model_id": "mbzuai/k2-horizon-375b-a23b",
      "position": 0,
      "reachable": false,
-     "score": 0.3621070194425458
+     "score": 0.3621070194425458,
+     "scored_as": "mbzuai/k2-horizon-375b-a23b"
     },
     {
      "axes": [
@@ -4460,6 +4619,8 @@
      "confidence": 0.22,
      "cost_from": null,
      "cost_per_task": null,
+     "effort": null,
+     "effort_how": null,
      "final": 0.02337092731829574,
      "flip": null,
      "health": 1.0,
@@ -4467,7 +4628,8 @@
      "model_id": "meta/llama-3-1-instruct-405b",
      "position": 0,
      "reachable": false,
-     "score": 0.02337092731829574
+     "score": 0.02337092731829574,
+     "scored_as": "meta/llama-3-1-instruct-405b"
     },
     {
      "axes": [
@@ -4511,6 +4673,8 @@
      "confidence": 0.47000000000000003,
      "cost_from": "shape",
      "cost_per_task": 0.00345,
+     "effort": null,
+     "effort_how": null,
      "final": 0.19859079516974254,
      "flip": null,
      "health": 1.0,
@@ -4518,7 +4682,8 @@
      "model_id": "meta/llama-3-2-instruct-11b-vision",
      "position": 0,
      "reachable": false,
-     "score": 0.19859079516974254
+     "score": 0.19859079516974254,
+     "scored_as": "meta/llama-3-2-instruct-11b-vision"
     },
     {
      "axes": [
@@ -4562,6 +4727,8 @@
      "confidence": 0.06999999999999999,
      "cost_from": null,
      "cost_per_task": null,
+     "effort": null,
+     "effort_how": null,
      "final": 0.003258145363408521,
      "flip": null,
      "health": 1.0,
@@ -4569,7 +4736,8 @@
      "model_id": "meta/llama-3-2-instruct-90b-vision",
      "position": 0,
      "reachable": false,
-     "score": 0.003258145363408521
+     "score": 0.003258145363408521,
+     "scored_as": "meta/llama-3-2-instruct-90b-vision"
     },
     {
      "axes": [
@@ -4613,6 +4781,8 @@
      "confidence": 0.9199999999999999,
      "cost_from": "shape",
      "cost_per_task": 0.00668,
+     "effort": null,
+     "effort_how": null,
      "final": 0.22395286511733883,
      "flip": null,
      "health": 1.0,
@@ -4620,7 +4790,8 @@
      "model_id": "meta/llama-3-3-instruct-70b",
      "position": 0,
      "reachable": false,
-     "score": 0.22395286511733883
+     "score": 0.22395286511733883,
+     "scored_as": "meta/llama-3-3-instruct-70b"
     },
     {
      "axes": [
@@ -4664,6 +4835,8 @@
      "confidence": 0.9999999999999999,
      "cost_from": "shape",
      "cost_per_task": 0.0039,
+     "effort": null,
+     "effort_how": null,
      "final": 0.29986951754385965,
      "flip": null,
      "health": 1.0,
@@ -4671,7 +4844,8 @@
      "model_id": "meta/llama-4-maverick",
      "position": 0,
      "reachable": false,
-     "score": 0.29986951754385965
+     "score": 0.29986951754385965,
+     "scored_as": "meta/llama-4-maverick"
     },
     {
      "axes": [
@@ -4715,6 +4889,8 @@
      "confidence": 0.9699999999999999,
      "cost_from": "shape",
      "cost_per_task": 0.00288,
+     "effort": null,
+     "effort_how": null,
      "final": 0.2446043090681249,
      "flip": null,
      "health": 1.0,
@@ -4722,7 +4898,8 @@
      "model_id": "meta/llama-4-scout",
      "position": 0,
      "reachable": false,
-     "score": 0.2446043090681249
+     "score": 0.2446043090681249,
+     "scored_as": "meta/llama-4-scout"
     },
     {
      "axes": [
@@ -4766,6 +4943,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.0058,
+     "effort": "high",
+     "effort_how": null,
      "final": 0.48415653717627405,
      "flip": null,
      "health": 1.0,
@@ -4773,7 +4952,8 @@
      "model_id": "meta/muse-glimmer",
      "position": 0,
      "reachable": false,
-     "score": 0.48415653717627405
+     "score": 0.48415653717627405,
+     "scored_as": "meta/muse-glimmer"
     },
     {
      "axes": [
@@ -4817,6 +4997,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0046,
+     "effort": null,
+     "effort_how": null,
      "final": 0.13737373737373737,
      "flip": null,
      "health": 1.0,
@@ -4824,7 +5006,8 @@
      "model_id": "meta/muse-glimmer-30b",
      "position": 0,
      "reachable": false,
-     "score": 0.13737373737373737
+     "score": 0.13737373737373737,
+     "scored_as": "meta/muse-glimmer-30b"
     },
     {
      "axes": [
@@ -4868,6 +5051,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0058,
+     "effort": null,
+     "effort_how": null,
      "final": 0.13434343434343435,
      "flip": null,
      "health": 1.0,
@@ -4875,7 +5060,8 @@
      "model_id": "meta/muse-glimmer-30b:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.13434343434343435
+     "score": 0.13434343434343435,
+     "scored_as": "meta/muse-glimmer-30b:batch"
     },
     {
      "axes": [
@@ -4919,6 +5105,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.018500000000000003,
+     "effort": null,
+     "effort_how": null,
      "final": 0.08585858585858586,
      "flip": null,
      "health": 1.0,
@@ -4926,7 +5114,8 @@
      "model_id": "meta/muse-spark-1.1",
      "position": 0,
      "reachable": false,
-     "score": 0.08585858585858586
+     "score": 0.08585858585858586,
+     "scored_as": "meta/muse-spark-1.1"
     },
     {
      "axes": [
@@ -4970,6 +5159,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.018500000000000003,
+     "effort": "xhigh",
+     "effort_how": null,
      "final": 0.5730270705172021,
      "flip": null,
      "health": 1.0,
@@ -4977,7 +5168,8 @@
      "model_id": "meta/muse-spark-1.2",
      "position": 0,
      "reachable": false,
-     "score": 0.5730270705172021
+     "score": 0.5730270705172021,
+     "scored_as": "meta/muse-spark-1.2"
     },
     {
      "axes": [
@@ -5021,6 +5213,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0012,
+     "effort": null,
+     "effort_how": null,
      "final": 0.18888888888888888,
      "flip": null,
      "health": 1.0,
@@ -5028,7 +5222,8 @@
      "model_id": "meta/muse-spark-1.2-contributor",
      "position": 0,
      "reachable": false,
-     "score": 0.18888888888888888
+     "score": 0.18888888888888888,
+     "scored_as": "meta/muse-spark-1.2-contributor"
     },
     {
      "axes": [
@@ -5072,6 +5267,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0012,
+     "effort": null,
+     "effort_how": null,
      "final": 0.18888888888888888,
      "flip": null,
      "health": 1.0,
@@ -5079,7 +5276,8 @@
      "model_id": "meta/muse-spark-1.3-contributor",
      "position": 0,
      "reachable": false,
-     "score": 0.18888888888888888
+     "score": 0.18888888888888888,
+     "scored_as": "meta/muse-spark-1.3-contributor"
     },
     {
      "axes": [
@@ -5123,6 +5321,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.054,
+     "effort": null,
+     "effort_how": null,
      "final": 0.04141414141414142,
      "flip": null,
      "health": 1.0,
@@ -5130,7 +5330,8 @@
      "model_id": "moonshotai/kimi-k3",
      "position": 0,
      "reachable": false,
-     "score": 0.04141414141414142
+     "score": 0.04141414141414142,
+     "scored_as": "moonshotai/kimi-k3"
     },
     {
      "axes": [
@@ -5174,6 +5375,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.054,
+     "effort": null,
+     "effort_how": null,
      "final": 0.04141414141414142,
      "flip": null,
      "health": 1.0,
@@ -5181,7 +5384,8 @@
      "model_id": "moonshotai/kimi-k3:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.04141414141414142
+     "score": 0.04141414141414142,
+     "scored_as": "moonshotai/kimi-k3:batch"
     },
     {
      "axes": [
@@ -5225,6 +5429,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.0084,
+     "effort": "max",
+     "effort_how": null,
      "final": 0.465312134502924,
      "flip": null,
      "health": 1.0,
@@ -5232,7 +5438,8 @@
      "model_id": "multiversecomputing/quasar-438b",
      "position": 0,
      "reachable": false,
-     "score": 0.465312134502924
+     "score": 0.465312134502924,
+     "scored_as": "multiversecomputing/quasar-438b"
     },
     {
      "axes": [
@@ -5276,6 +5483,8 @@
      "confidence": 0.47000000000000003,
      "cost_from": "shape",
      "cost_per_task": 0.042,
+     "effort": "xhigh",
+     "effort_how": null,
      "final": 0.3094665261638946,
      "flip": null,
      "health": 1.0,
@@ -5283,7 +5492,8 @@
      "model_id": "openai/gpt-5-3-codex",
      "position": 0,
      "reachable": false,
-     "score": 0.3094665261638946
+     "score": 0.3094665261638946,
+     "scored_as": "openai/gpt-5-3-codex"
     },
     {
      "axes": [
@@ -5327,6 +5537,8 @@
      "confidence": 0.785,
      "cost_from": "shape",
      "cost_per_task": 0.1,
+     "effort": null,
+     "effort_how": null,
      "final": 0.23782342219184327,
      "flip": null,
      "health": 1.0,
@@ -5334,7 +5546,8 @@
      "model_id": "openai/gpt-5-5-instant-06-26",
      "position": 0,
      "reachable": false,
-     "score": 0.23782342219184327
+     "score": 0.23782342219184327,
+     "scored_as": "openai/gpt-5-5-instant-06-26"
     },
     {
      "axes": [
@@ -5378,6 +5591,8 @@
      "confidence": 0.0,
      "cost_from": null,
      "cost_per_task": null,
+     "effort": "xhigh",
+     "effort_how": null,
      "final": 0.0,
      "flip": null,
      "health": 1.0,
@@ -5385,7 +5600,8 @@
      "model_id": "openai/gpt-5-5-pro",
      "position": 0,
      "reachable": false,
-     "score": 0.0
+     "score": 0.0,
+     "scored_as": "openai/gpt-5-5-pro"
     },
     {
      "axes": [
@@ -5429,6 +5645,8 @@
      "confidence": 0.785,
      "cost_from": "shape",
      "cost_per_task": 0.004,
+     "effort": "high",
+     "effort_how": null,
      "final": 0.511149616465406,
      "flip": null,
      "health": 1.0,
@@ -5436,7 +5654,8 @@
      "model_id": "openai/gpt-5-6-luna-high",
      "position": 0,
      "reachable": false,
-     "score": 0.511149616465406
+     "score": 0.511149616465406,
+     "scored_as": "openai/gpt-5-6-luna-high"
     },
     {
      "axes": [
@@ -5480,6 +5699,8 @@
      "confidence": 0.785,
      "cost_from": "shape",
      "cost_per_task": 0.004,
+     "effort": "low",
+     "effort_how": null,
      "final": 0.39620073384218124,
      "flip": null,
      "health": 1.0,
@@ -5487,7 +5708,8 @@
      "model_id": "openai/gpt-5-6-luna-low",
      "position": 0,
      "reachable": false,
-     "score": 0.39620073384218124
+     "score": 0.39620073384218124,
+     "scored_as": "openai/gpt-5-6-luna-low"
     },
     {
      "axes": [
@@ -5531,6 +5753,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.004,
+     "effort": "medium",
+     "effort_how": null,
      "final": 0.4333307131465027,
      "flip": null,
      "health": 1.0,
@@ -5538,7 +5762,8 @@
      "model_id": "openai/gpt-5-6-luna-medium",
      "position": 0,
      "reachable": false,
-     "score": 0.4333307131465027
+     "score": 0.4333307131465027,
+     "scored_as": "openai/gpt-5-6-luna-medium"
     },
     {
      "axes": [
@@ -5582,6 +5807,8 @@
      "confidence": 0.785,
      "cost_from": "shape",
      "cost_per_task": 0.004,
+     "effort": "non-reasoning",
+     "effort_how": null,
      "final": 0.33030986082630825,
      "flip": null,
      "health": 1.0,
@@ -5589,7 +5816,8 @@
      "model_id": "openai/gpt-5-6-luna-non-reasoning",
      "position": 0,
      "reachable": false,
-     "score": 0.33030986082630825
+     "score": 0.33030986082630825,
+     "scored_as": "openai/gpt-5-6-luna-non-reasoning"
     },
     {
      "axes": [
@@ -5633,6 +5861,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.004,
+     "effort": "xhigh",
+     "effort_how": null,
      "final": 0.5723054321409585,
      "flip": null,
      "health": 1.0,
@@ -5640,7 +5870,8 @@
      "model_id": "openai/gpt-5-6-luna-xhigh",
      "position": 0,
      "reachable": false,
-     "score": 0.5723054321409585
+     "score": 0.5723054321409585,
+     "scored_as": "openai/gpt-5-6-luna-xhigh"
     },
     {
      "axes": [
@@ -5684,6 +5915,8 @@
      "confidence": 0.955,
      "cost_from": "shape",
      "cost_per_task": 0.07200000000000001,
+     "effort": "high",
+     "effort_how": null,
      "final": 0.6724834054834055,
      "flip": null,
      "health": 1.0,
@@ -5691,7 +5924,8 @@
      "model_id": "openai/gpt-5-6-sol-high",
      "position": 0,
      "reachable": false,
-     "score": 0.6724834054834055
+     "score": 0.6724834054834055,
+     "scored_as": "openai/gpt-5-6-sol-high"
     },
     {
      "axes": [
@@ -5735,6 +5969,8 @@
      "confidence": 0.955,
      "cost_from": "shape",
      "cost_per_task": 0.07200000000000001,
+     "effort": "low",
+     "effort_how": null,
      "final": 0.4990570776689198,
      "flip": null,
      "health": 1.0,
@@ -5742,7 +5978,8 @@
      "model_id": "openai/gpt-5-6-sol-low",
      "position": 0,
      "reachable": false,
-     "score": 0.4990570776689198
+     "score": 0.4990570776689198,
+     "scored_as": "openai/gpt-5-6-sol-low"
     },
     {
      "axes": [
@@ -5786,6 +6023,8 @@
      "confidence": 0.955,
      "cost_from": "shape",
      "cost_per_task": 0.07200000000000001,
+     "effort": "medium",
+     "effort_how": null,
      "final": 0.6482961997797524,
      "flip": null,
      "health": 1.0,
@@ -5793,7 +6032,8 @@
      "model_id": "openai/gpt-5-6-sol-medium",
      "position": 0,
      "reachable": false,
-     "score": 0.6482961997797524
+     "score": 0.6482961997797524,
+     "scored_as": "openai/gpt-5-6-sol-medium"
     },
     {
      "axes": [
@@ -5837,6 +6077,8 @@
      "confidence": 0.785,
      "cost_from": "shape",
      "cost_per_task": 0.07200000000000001,
+     "effort": "non-reasoning",
+     "effort_how": null,
      "final": 0.37447044695071013,
      "flip": null,
      "health": 1.0,
@@ -5844,7 +6086,8 @@
      "model_id": "openai/gpt-5-6-sol-non-reasoning",
      "position": 0,
      "reachable": false,
-     "score": 0.37447044695071013
+     "score": 0.37447044695071013,
+     "scored_as": "openai/gpt-5-6-sol-non-reasoning"
     },
     {
      "axes": [
@@ -5888,6 +6131,8 @@
      "confidence": 0.955,
      "cost_from": "shape",
      "cost_per_task": 0.04,
+     "effort": "high",
+     "effort_how": null,
      "final": 0.4898151186045923,
      "flip": null,
      "health": 1.0,
@@ -5895,7 +6140,8 @@
      "model_id": "openai/gpt-5-6-terra-high",
      "position": 0,
      "reachable": false,
-     "score": 0.4898151186045923
+     "score": 0.4898151186045923,
+     "scored_as": "openai/gpt-5-6-terra-high"
     },
     {
      "axes": [
@@ -5939,6 +6185,8 @@
      "confidence": 0.9249999999999999,
      "cost_from": "shape",
      "cost_per_task": 0.04,
+     "effort": "low",
+     "effort_how": null,
      "final": 0.40635150375939855,
      "flip": null,
      "health": 1.0,
@@ -5946,7 +6194,8 @@
      "model_id": "openai/gpt-5-6-terra-low",
      "position": 0,
      "reachable": false,
-     "score": 0.40635150375939855
+     "score": 0.40635150375939855,
+     "scored_as": "openai/gpt-5-6-terra-low"
     },
     {
      "axes": [
@@ -5990,6 +6239,8 @@
      "confidence": 0.835,
      "cost_from": "shape",
      "cost_per_task": 0.04,
+     "effort": "medium",
+     "effort_how": null,
      "final": 0.43089452798663325,
      "flip": null,
      "health": 1.0,
@@ -5997,7 +6248,8 @@
      "model_id": "openai/gpt-5-6-terra-medium",
      "position": 0,
      "reachable": false,
-     "score": 0.43089452798663325
+     "score": 0.43089452798663325,
+     "scored_as": "openai/gpt-5-6-terra-medium"
     },
     {
      "axes": [
@@ -6041,6 +6293,8 @@
      "confidence": 0.785,
      "cost_from": "shape",
      "cost_per_task": 0.04,
+     "effort": "non-reasoning",
+     "effort_how": null,
      "final": 0.325187030075188,
      "flip": null,
      "health": 1.0,
@@ -6048,7 +6302,8 @@
      "model_id": "openai/gpt-5-6-terra-non-reasoning",
      "position": 0,
      "reachable": false,
-     "score": 0.325187030075188
+     "score": 0.325187030075188,
+     "scored_as": "openai/gpt-5-6-terra-non-reasoning"
     },
     {
      "axes": [
@@ -6092,6 +6347,8 @@
      "confidence": 0.955,
      "cost_from": "shape",
      "cost_per_task": 0.04,
+     "effort": "xhigh",
+     "effort_how": null,
      "final": 0.5450418707754235,
      "flip": null,
      "health": 1.0,
@@ -6099,7 +6356,8 @@
      "model_id": "openai/gpt-5-6-terra-xhigh",
      "position": 0,
      "reachable": false,
-     "score": 0.5450418707754235
+     "score": 0.5450418707754235,
+     "scored_as": "openai/gpt-5-6-terra-xhigh"
     },
     {
      "axes": [
@@ -6143,6 +6401,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.504,
+     "effort": null,
+     "effort_how": null,
      "final": 0.0,
      "flip": null,
      "health": 1.0,
@@ -6150,7 +6410,8 @@
      "model_id": "openai/gpt-5.2-pro",
      "position": 0,
      "reachable": false,
-     "score": 0.0
+     "score": 0.0,
+     "scored_as": "openai/gpt-5.2-pro"
     },
     {
      "axes": [
@@ -6194,6 +6455,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.004,
+     "effort": "max",
+     "effort_how": null,
      "final": 0.6362084377610694,
      "flip": null,
      "health": 1.0,
@@ -6201,7 +6464,8 @@
      "model_id": "openai/gpt-5.6-luna",
      "position": 0,
      "reachable": false,
-     "score": 0.6362084377610694
+     "score": 0.6362084377610694,
+     "scored_as": "openai/gpt-5.6-luna"
     },
     {
      "axes": [
@@ -6245,6 +6509,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.004,
+     "effort": null,
+     "effort_how": null,
      "final": 0.14545454545454548,
      "flip": null,
      "health": 1.0,
@@ -6252,7 +6518,8 @@
      "model_id": "openai/gpt-5.6-luna-pro",
      "position": 0,
      "reachable": false,
-     "score": 0.14545454545454548
+     "score": 0.14545454545454548,
+     "scored_as": "openai/gpt-5.6-luna-pro"
     },
     {
      "axes": [
@@ -6296,6 +6563,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.002,
+     "effort": null,
+     "effort_how": null,
      "final": 0.1767676767676768,
      "flip": null,
      "health": 1.0,
@@ -6303,7 +6572,8 @@
      "model_id": "openai/gpt-5.6-luna-pro:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.1767676767676768
+     "score": 0.1767676767676768,
+     "scored_as": "openai/gpt-5.6-luna-pro:batch"
     },
     {
      "axes": [
@@ -6347,6 +6617,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.002,
+     "effort": null,
+     "effort_how": null,
      "final": 0.1767676767676768,
      "flip": null,
      "health": 1.0,
@@ -6354,7 +6626,8 @@
      "model_id": "openai/gpt-5.6-luna:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.1767676767676768
+     "score": 0.1767676767676768,
+     "scored_as": "openai/gpt-5.6-luna:batch"
     },
     {
      "axes": [
@@ -6398,6 +6671,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.036000000000000004,
+     "effort": null,
+     "effort_how": null,
      "final": 0.06565656565656566,
      "flip": null,
      "health": 1.0,
@@ -6405,7 +6680,8 @@
      "model_id": "openai/gpt-5.6-sol-pro",
      "position": 0,
      "reachable": false,
-     "score": 0.06565656565656566
+     "score": 0.06565656565656566,
+     "scored_as": "openai/gpt-5.6-sol-pro"
     },
     {
      "axes": [
@@ -6449,6 +6725,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.018000000000000002,
+     "effort": null,
+     "effort_how": null,
      "final": 0.09090909090909091,
      "flip": null,
      "health": 1.0,
@@ -6456,7 +6734,8 @@
      "model_id": "openai/gpt-5.6-sol-pro:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.09090909090909091
+     "score": 0.09090909090909091,
+     "scored_as": "openai/gpt-5.6-sol-pro:batch"
     },
     {
      "axes": [
@@ -6500,6 +6779,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.04,
+     "effort": null,
+     "effort_how": null,
      "final": 0.05555555555555556,
      "flip": null,
      "health": 1.0,
@@ -6507,7 +6788,8 @@
      "model_id": "openai/gpt-5.6-terra-pro",
      "position": 0,
      "reachable": false,
-     "score": 0.05555555555555556
+     "score": 0.05555555555555556,
+     "scored_as": "openai/gpt-5.6-terra-pro"
     },
     {
      "axes": [
@@ -6551,6 +6833,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.02,
+     "effort": null,
+     "effort_how": null,
      "final": 0.0787878787878788,
      "flip": null,
      "health": 1.0,
@@ -6558,7 +6842,8 @@
      "model_id": "openai/gpt-5.6-terra-pro:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.0787878787878788
+     "score": 0.0787878787878788,
+     "scored_as": "openai/gpt-5.6-terra-pro:batch"
     },
     {
      "axes": [
@@ -6602,6 +6887,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.02,
+     "effort": null,
+     "effort_how": null,
      "final": 0.0787878787878788,
      "flip": null,
      "health": 1.0,
@@ -6609,7 +6896,8 @@
      "model_id": "openai/gpt-5.6-terra:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.0787878787878788
+     "score": 0.0787878787878788,
+     "scored_as": "openai/gpt-5.6-terra:batch"
     },
     {
      "axes": [
@@ -6653,6 +6941,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.18,
+     "effort": "low",
+     "effort_how": null,
      "final": 0.6032928438520544,
      "flip": null,
      "health": 1.0,
@@ -6660,7 +6950,8 @@
      "model_id": "openai/gpt-6-astra-low",
      "position": 0,
      "reachable": false,
-     "score": 0.6032928438520544
+     "score": 0.6032928438520544,
+     "scored_as": "openai/gpt-6-astra-low"
     },
     {
      "axes": [
@@ -6704,6 +6995,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.18,
+     "effort": "medium",
+     "effort_how": null,
      "final": 0.6613763812941446,
      "flip": null,
      "health": 1.0,
@@ -6711,7 +7004,8 @@
      "model_id": "openai/gpt-6-astra-medium",
      "position": 0,
      "reachable": false,
-     "score": 0.6613763812941446
+     "score": 0.6613763812941446,
+     "scored_as": "openai/gpt-6-astra-medium"
     },
     {
      "axes": [
@@ -6755,6 +7049,8 @@
      "confidence": 0.765,
      "cost_from": "shape",
      "cost_per_task": 0.18,
+     "effort": "non-reasoning",
+     "effort_how": null,
      "final": 0.5716550609478241,
      "flip": null,
      "health": 1.0,
@@ -6762,7 +7058,8 @@
      "model_id": "openai/gpt-6-astra-non-reasoning",
      "position": 0,
      "reachable": false,
-     "score": 0.5716550609478241
+     "score": 0.5716550609478241,
+     "scored_as": "openai/gpt-6-astra-non-reasoning"
     },
     {
      "axes": [
@@ -6806,6 +7103,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.18,
+     "effort": null,
+     "effort_how": null,
      "final": 0.009090909090909092,
      "flip": null,
      "health": 1.0,
@@ -6813,7 +7112,8 @@
      "model_id": "openai/gpt-6-astra-pro",
      "position": 0,
      "reachable": false,
-     "score": 0.009090909090909092
+     "score": 0.009090909090909092,
+     "scored_as": "openai/gpt-6-astra-pro"
     },
     {
      "axes": [
@@ -6857,6 +7157,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.09,
+     "effort": null,
+     "effort_how": null,
      "final": 0.023232323232323233,
      "flip": null,
      "health": 1.0,
@@ -6864,7 +7166,8 @@
      "model_id": "openai/gpt-6-astra-pro:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.023232323232323233
+     "score": 0.023232323232323233,
+     "scored_as": "openai/gpt-6-astra-pro:batch"
     },
     {
      "axes": [
@@ -6908,6 +7211,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.18,
+     "effort": "xhigh",
+     "effort_how": null,
      "final": 0.6483020572263993,
      "flip": null,
      "health": 1.0,
@@ -6915,7 +7220,8 @@
      "model_id": "openai/gpt-6-astra-xhigh",
      "position": 0,
      "reachable": false,
-     "score": 0.6483020572263993
+     "score": 0.6483020572263993,
+     "scored_as": "openai/gpt-6-astra-xhigh"
     },
     {
      "axes": [
@@ -6959,6 +7265,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.09,
+     "effort": null,
+     "effort_how": null,
      "final": 0.023232323232323233,
      "flip": null,
      "health": 1.0,
@@ -6966,7 +7274,8 @@
      "model_id": "openai/gpt-6-astra:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.023232323232323233
+     "score": 0.023232323232323233,
+     "scored_as": "openai/gpt-6-astra:batch"
     },
     {
      "axes": [
@@ -7010,6 +7319,8 @@
      "confidence": 0.9999999999999999,
      "cost_from": "shape",
      "cost_per_task": 0.0023899999999999998,
+     "effort": "high",
+     "effort_how": null,
      "final": 0.4247800989215464,
      "flip": null,
      "health": 1.0,
@@ -7017,7 +7328,8 @@
      "model_id": "openai/gpt-oss-120b",
      "position": 0,
      "reachable": false,
-     "score": 0.4247800989215464
+     "score": 0.4247800989215464,
+     "scored_as": "openai/gpt-oss-120b"
     },
     {
      "axes": [
@@ -7061,6 +7373,8 @@
      "confidence": 0.9699999999999999,
      "cost_from": "shape",
      "cost_per_task": 0.00229,
+     "effort": "low",
+     "effort_how": null,
      "final": 0.34936074798739275,
      "flip": null,
      "health": 1.0,
@@ -7068,7 +7382,8 @@
      "model_id": "openai/gpt-oss-120b-low",
      "position": 0,
      "reachable": false,
-     "score": 0.34936074798739275
+     "score": 0.34936074798739275,
+     "scored_as": "openai/gpt-oss-120b-low"
     },
     {
      "axes": [
@@ -7112,6 +7427,8 @@
      "confidence": 0.9999999999999999,
      "cost_from": "shape",
      "cost_per_task": 0.0008600000000000001,
+     "effort": "high",
+     "effort_how": null,
      "final": 0.397925825453786,
      "flip": null,
      "health": 1.0,
@@ -7119,7 +7436,8 @@
      "model_id": "openai/gpt-oss-20b",
      "position": 0,
      "reachable": false,
-     "score": 0.397925825453786
+     "score": 0.397925825453786,
+     "scored_as": "openai/gpt-oss-20b"
     },
     {
      "axes": [
@@ -7163,6 +7481,8 @@
      "confidence": 0.47000000000000003,
      "cost_from": "shape",
      "cost_per_task": 0.0009599999999999999,
+     "effort": "low",
+     "effort_how": null,
      "final": 0.30322009569377995,
      "flip": null,
      "health": 1.0,
@@ -7170,7 +7490,8 @@
      "model_id": "openai/gpt-oss-20b-low",
      "position": 0,
      "reachable": false,
-     "score": 0.30322009569377995
+     "score": 0.30322009569377995,
+     "scored_as": "openai/gpt-oss-20b-low"
     },
     {
      "axes": [
@@ -7214,6 +7535,8 @@
      "confidence": 0.47000000000000003,
      "cost_from": "shape",
      "cost_per_task": 0.032,
+     "effort": null,
+     "effort_how": null,
      "final": 0.24846381104275844,
      "flip": null,
      "health": 1.0,
@@ -7221,7 +7544,8 @@
      "model_id": "openai/o3",
      "position": 0,
      "reachable": false,
-     "score": 0.24846381104275844
+     "score": 0.24846381104275844,
+     "scored_as": "openai/o3"
     },
     {
      "axes": [
@@ -7265,6 +7589,8 @@
      "confidence": 0.565,
      "cost_from": null,
      "cost_per_task": null,
+     "effort": null,
+     "effort_how": null,
      "final": 0.10915100250626567,
      "flip": null,
      "health": 1.0,
@@ -7272,7 +7598,8 @@
      "model_id": "openbmb/minicpm5-2b",
      "position": 0,
      "reachable": false,
-     "score": 0.10915100250626567
+     "score": 0.10915100250626567,
+     "scored_as": "openbmb/minicpm5-2b"
     },
     {
      "axes": [
@@ -7316,6 +7643,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0005,
+     "effort": null,
+     "effort_how": null,
      "final": 0.197979797979798,
      "flip": null,
      "health": 1.0,
@@ -7323,7 +7652,8 @@
      "model_id": "qwen/qwen3.7-flash",
      "position": 0,
      "reachable": false,
-     "score": 0.197979797979798
+     "score": 0.197979797979798,
+     "scored_as": "qwen/qwen3.7-flash"
     },
     {
      "axes": [
@@ -7367,6 +7697,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.00936,
+     "effort": null,
+     "effort_how": null,
      "final": 0.11111111111111112,
      "flip": null,
      "health": 1.0,
@@ -7374,7 +7706,8 @@
      "model_id": "qwen/qwen3.8-27b",
      "position": 0,
      "reachable": false,
-     "score": 0.11111111111111112
+     "score": 0.11111111111111112,
+     "scored_as": "qwen/qwen3.8-27b"
     },
     {
      "axes": [
@@ -7418,6 +7751,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.00214,
+     "effort": null,
+     "effort_how": null,
      "final": 0.17272727272727273,
      "flip": null,
      "health": 1.0,
@@ -7425,7 +7760,8 @@
      "model_id": "qwen/qwen3.8-flash",
      "position": 0,
      "reachable": false,
-     "score": 0.17272727272727273
+     "score": 0.17272727272727273,
+     "scored_as": "qwen/qwen3.8-flash"
     },
     {
      "axes": [
@@ -7469,6 +7805,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.028,
+     "effort": null,
+     "effort_how": null,
      "final": 0.07373737373737374,
      "flip": null,
      "health": 1.0,
@@ -7476,7 +7814,8 @@
      "model_id": "qwen/qwen3.8-max-0902",
      "position": 0,
      "reachable": false,
-     "score": 0.07373737373737374
+     "score": 0.07373737373737374,
+     "scored_as": "qwen/qwen3.8-max-0902"
     },
     {
      "axes": [
@@ -7520,6 +7859,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0156,
+     "effort": null,
+     "effort_how": null,
      "final": 0.09696969696969698,
      "flip": null,
      "health": 1.0,
@@ -7527,7 +7868,8 @@
      "model_id": "sakana/sakana-namazu",
      "position": 0,
      "reachable": false,
-     "score": 0.09696969696969698
+     "score": 0.09696969696969698,
+     "scored_as": "sakana/sakana-namazu"
     },
     {
      "axes": [
@@ -7571,6 +7913,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0161,
+     "effort": null,
+     "effort_how": null,
      "final": 0.09393939393939395,
      "flip": null,
      "health": 1.0,
@@ -7578,7 +7922,8 @@
      "model_id": "thinkingmachines/inkling",
      "position": 0,
      "reachable": false,
-     "score": 0.09393939393939395
+     "score": 0.09393939393939395,
+     "scored_as": "thinkingmachines/inkling"
     },
     {
      "axes": [
@@ -7622,6 +7967,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.005999999999999999,
+     "effort": null,
+     "effort_how": null,
      "final": 0.13131313131313133,
      "flip": null,
      "health": 1.0,
@@ -7629,7 +7976,8 @@
      "model_id": "thinkingmachines/inkling-small",
      "position": 0,
      "reachable": false,
-     "score": 0.13131313131313133
+     "score": 0.13131313131313133,
+     "scored_as": "thinkingmachines/inkling-small"
     },
     {
      "axes": [
@@ -7673,6 +8021,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0063999999999999994,
+     "effort": null,
+     "effort_how": null,
      "final": 0.12929292929292932,
      "flip": null,
      "health": 1.0,
@@ -7680,7 +8030,8 @@
      "model_id": "thinkingmachines/inkling-small:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.12929292929292932
+     "score": 0.12929292929292932,
+     "scored_as": "thinkingmachines/inkling-small:batch"
     },
     {
      "axes": [
@@ -7724,6 +8075,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0161,
+     "effort": null,
+     "effort_how": null,
      "final": 0.09393939393939395,
      "flip": null,
      "health": 1.0,
@@ -7731,7 +8084,8 @@
      "model_id": "thinkingmachines/inkling:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.09393939393939395
+     "score": 0.09393939393939395,
+     "scored_as": "thinkingmachines/inkling:batch"
     },
     {
      "axes": [
@@ -7775,6 +8129,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.028,
+     "effort": null,
+     "effort_how": null,
      "final": 0.07373737373737374,
      "flip": null,
      "health": 1.0,
@@ -7782,7 +8138,8 @@
      "model_id": "x-ai/grok-4.6",
      "position": 0,
      "reachable": false,
-     "score": 0.07373737373737374
+     "score": 0.07373737373737374,
+     "scored_as": "x-ai/grok-4.6"
     },
     {
      "axes": [
@@ -7826,6 +8183,8 @@
      "confidence": 0.0,
      "cost_from": null,
      "cost_per_task": null,
+     "effort": null,
+     "effort_how": null,
      "final": 0.0,
      "flip": null,
      "health": 1.0,
@@ -7833,7 +8192,8 @@
      "model_id": "xai/grok-1",
      "position": 0,
      "reachable": false,
-     "score": 0.0
+     "score": 0.0,
+     "scored_as": "xai/grok-1"
     },
     {
      "axes": [
@@ -7877,6 +8237,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.02,
+     "effort": null,
+     "effort_how": null,
      "final": 0.0787878787878788,
      "flip": null,
      "health": 1.0,
@@ -7884,7 +8246,8 @@
      "model_id": "z-ai/glm-5.3",
      "position": 0,
      "reachable": false,
-     "score": 0.0787878787878788
+     "score": 0.0787878787878788,
+     "scored_as": "z-ai/glm-5.3"
     },
     {
      "axes": [
@@ -7928,6 +8291,8 @@
      "confidence": 0.8150000000000001,
      "cost_from": "shape",
      "cost_per_task": 0.0021999999999999997,
+     "effort": null,
+     "effort_how": null,
      "final": 0.7213237734487735,
      "flip": null,
      "health": 1.0,
@@ -7935,7 +8300,8 @@
      "model_id": "z-ai/glm-5.3-flash",
      "position": 0,
      "reachable": false,
-     "score": 0.7213237734487735
+     "score": 0.7213237734487735,
+     "scored_as": "z-ai/glm-5.3-flash"
     },
     {
      "axes": [
@@ -7979,6 +8345,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0021999999999999997,
+     "effort": null,
+     "effort_how": null,
      "final": 0.1686868686868687,
      "flip": null,
      "health": 1.0,
@@ -7986,7 +8354,8 @@
      "model_id": "z-ai/glm-5.3-flash:batch",
      "position": 0,
      "reachable": false,
-     "score": 0.1686868686868687
+     "score": 0.1686868686868687,
+     "scored_as": "z-ai/glm-5.3-flash:batch"
     },
     {
      "axes": [
@@ -8030,6 +8399,8 @@
      "confidence": 0.2,
      "cost_from": "shape",
      "cost_per_task": 0.0010450000000000001,
+     "effort": null,
+     "effort_how": null,
      "final": 0.19191919191919193,
      "flip": null,
      "health": 1.0,
@@ -8037,7 +8408,8 @@
      "model_id": "~z-ai/glm-flash-latest",
      "position": 0,
      "reachable": false,
-     "score": 0.19191919191919193
+     "score": 0.19191919191919193,
+     "scored_as": "~z-ai/glm-flash-latest"
     }
    ],
    "snapshot": "none"

@@ -108,6 +108,16 @@ ProfileMode = Literal["auto", "manual"]
 #: is not assumed to (PLAN 2.2), so an unknown fails a need the same as a no --
 #: and the page says which of the two it was.
 Need = Literal["vision", "reasoning", "tools", "structured_output"]
+
+#: The reasoning effort a seat runs at -- the same seven modes, in the same
+#: order, as `sieve.catalog.effort.EFFORT_ORDER` (a test holds them equal).
+Effort = Literal["non-reasoning", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+#: How a row's `scored_as` was chosen (`sieve.catalog.effort.resolve`):
+#: `any` the seat names no effort, `one` the family has one setting, `id` the
+#: router id names its own effort, `exact` the seat's effort is published,
+#: `nearest_below`/`nearest_above` it is not and the closest one was used.
+EffortHow = Literal["any", "exact", "nearest_below", "nearest_above", "id", "one"]
 NEEDS: tuple[Need, ...] = get_args(Need)
 
 SCOPES: tuple[Scope, ...] = ("read", "profiles:write", "apply", "telemetry")
@@ -328,6 +338,11 @@ class ProfileSettings(_Model):
     #: through it, for this seat only. Apart from cost: 1.2 lifts a router's
     #: models a fifth, 0.5 halves them, 0 sinks them. A prefix not named is 1.
     prefix_weights: dict[str, float] = Field(default_factory=dict)
+    #: the reasoning effort this seat runs at, llm seats only. None is "any":
+    #: every model is scored on the row its router id matched. Set, each
+    #: model is scored on its family's row at this effort -- its id, pins and
+    #: chain stay what they were (EFFORT.md section 1).
+    effort: Effort | None = None
 
 
 class Outcome(_Model):
@@ -361,6 +376,7 @@ class Profile(_Model):
     removed: list[str] = Field(default_factory=list)
     needs: list[Need] = Field(default_factory=list)
     prefix_weights: dict[str, float] = Field(default_factory=dict)
+    effort: Effort | None = None
 
 
 class AxisScore(_Model):
@@ -388,6 +404,13 @@ class Rank(_Model):
     # than one that admits it.
     cost_from: Literal["shape", "telemetry"] | None = None
     flip: str | None = None
+    #: the catalogue id whose observations made this score. `model_id` is
+    #: still the model the router reaches; effort only changes which row of
+    #: its family is read. None on a ranking stored before effort existed.
+    scored_as: str | None = None
+    #: the effort of `scored_as` (None = a model with one setting)
+    effort: Effort | None = None
+    effort_how: EffortHow | None = None
 
 
 class Ranking(_Model):
@@ -396,6 +419,9 @@ class Ranking(_Model):
     computed_at: datetime
     snapshot: str
     ranks: list[Rank] = Field(default_factory=list)
+    #: the seat effort this ranking was computed at, so a cached one is only
+    #: reused for the same effort
+    effort: Effort | None = None
 
 
 class Chain(_Model):

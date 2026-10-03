@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 
 from sieve.api.app import create_app
+from sieve.catalog.effort import EFFORT_ORDER
 
 TOKEN_ENV = "SIEVE_TOKEN"
 
@@ -49,11 +50,22 @@ TOOLS: dict[str, dict[str, Any]] = {
         "required": ["name", "weights"],
     },
     "set_ship": {
-        "description": "How many models a profile ships (1-10). Needs the profiles:write scope.",
+        "description": (
+            "How many models a profile ships (1-10), and optionally the reasoning effort "
+            "an llm seat runs at. Needs the profiles:write scope."
+        ),
         "method": "PUT",
         "path": "/v1/profiles/{name}/settings",
         "body": "*",
-        "schema": {"name": {"type": "string"}, "ship": {"type": "integer"}},
+        "schema": {
+            "name": {"type": "string"},
+            "ship": {"type": "integer"},
+            "effort": {
+                "type": ["string", "null"],
+                "enum": [*EFFORT_ORDER, None],
+                "description": "null scores each model at the row it matched (any)",
+            },
+        },
         "required": ["name", "ship"],
     },
     "evaluate": {
@@ -179,7 +191,13 @@ class Bridge:
         body: Any = None
         key = spec.get("body")
         if key == "*":
-            body = {k: v for k, v in arguments.items() if k in spec.get("schema", {})}
+            # a path parameter is in the path, not the body: `set_ship` sent
+            # `name` to a settings route that refuses unknown keys
+            body = {
+                k: v
+                for k, v in arguments.items()
+                if k in spec.get("schema", {}) and f"{{{k}}}" not in spec["path"]
+            }
         elif key:
             body = arguments.get(key)
 
@@ -226,9 +244,13 @@ def build_server(bridge: Bridge | None = None) -> Any:
         """Replace a profile's axis weights (they must sum to 1). Needs profiles:write."""
         return await hub.call("set_weights", {"name": name, "weights": weights})
 
-    async def set_ship(name: str, ship: int) -> Any:
-        """How many models a profile ships, 1 to 10. Needs profiles:write."""
-        return await hub.call("set_ship", {"name": name, "ship": ship})
+    async def set_ship(name: str, ship: int, effort: str | None = None) -> Any:
+        """How many models a profile ships, 1 to 10, and optionally the reasoning
+        effort an llm seat runs at (`any` clears it). Needs profiles:write."""
+        args: dict[str, Any] = {"name": name, "ship": ship}
+        if effort is not None:
+            args["effort"] = None if effort == "any" else effort
+        return await hub.call("set_ship", args)
 
     async def evaluate(name: str) -> Any:
         """Dry run: the ranking, chain and decision this profile would produce now."""
