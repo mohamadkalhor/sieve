@@ -3,18 +3,19 @@ import { expect, test, type Page } from '@playwright/test';
 /**
  * Runs at, end to end (EFFORT.md section 7), on the seeded store.
  *
- * The seed's gateway reaches GPT-5.6 Luna bare -- so under "any" it is scored
- * at its top effort, max -- and by `openai/gpt-5-6-luna-xhigh`, an id that names
- * its own mode. Setting the coder seat to medium has to move the bare row's
- * score to the medium row (its pill says so), leave the id-named row alone,
- * count as a change on Ship, and mark the medium rung in the inspector's
- * ladder. The seat is put back to any at the end: the store is shared by
- * every spec in the run.
+ * The seed's gateway reaches `openai/gpt-oss-20b` bare, and AA publishes that
+ * family at two efforts, its top one and low -- no medium. Under "any" the
+ * bare id is scored at the row it matched; setting the coder seat to medium
+ * has to score it at low instead, the nearest effort below (the dashed
+ * stand-in pill), count as a change on Ship, and mark the low rung in the
+ * inspector's ladder with the unpublished medium rung greyed above it. The
+ * seat is put back to any at the end: the store is shared by every spec in
+ * the run. The exact and id-named looks are pinned in vitest
+ * (`tests/console/h-effort.test.ts`).
  */
 
 const SEAT = 'coder';
-const BARE = 'openai/gpt-5-6-luna';
-const XHIGH = 'openai/gpt-5-6-luna-xhigh';
+const BARE = 'openai/gpt-oss-20b';
 const POOL_TABLE = { name: 'Every reachable model' };
 /** The seeded store's write token: Runs at is a setting, and a setting is saved. */
 const TOKEN = 'ci-secret';
@@ -28,8 +29,11 @@ async function signIn(page: Page): Promise<void> {
   await expect(field).toHaveCount(0);
 }
 
-function row(page: Page, id: string) {
-  return page.getByRole('table', POOL_TABLE).locator(`[role="row"][data-row="${id}"]`);
+function pill(page: Page, id: string) {
+  return page
+    .getByRole('table', POOL_TABLE)
+    .locator(`[role="row"][data-row="${id}"]`)
+    .locator('[data-effort-pill]');
 }
 
 async function runsAt(page: Page, label: string): Promise<void> {
@@ -54,35 +58,32 @@ test('Runs at re-scores the seat at that effort and Ship counts it', async ({ pa
     'true'
   );
 
-  // under any, the bare id is scored at the row it matched: the top effort
-  const bare = row(page, BARE);
-  await expect(bare.locator('[data-effort-pill]')).toHaveText('max');
-  await expect(bare.locator('[data-effort-pill]')).toHaveAttribute('data-look', 'any');
-  const before = await bare.locator('.figure').innerText();
+  // under any, the bare id is scored at the row it matched
+  await expect(pill(page, BARE)).toHaveAttribute('data-look', 'any');
+  const top = await pill(page, BARE).innerText();
+  expect(top).not.toBe('low');
 
   await runsAt(page, 'medium');
 
-  await expect(bare.locator('[data-effort-pill]')).toHaveText('medium');
-  await expect(bare.locator('[data-effort-pill]')).toHaveAttribute('data-look', 'exact');
-  // medium Luna is credited with less than max Luna
-  await expect(bare.locator('.figure')).not.toHaveText(before);
-  expect(Number(await bare.locator('.figure').innerText())).toBeLessThan(Number(before));
-  // the router id names its own mode, and the seat does not override it
-  await expect(row(page, XHIGH).locator('[data-effort-pill]')).toHaveText('xhigh · id');
+  // no medium row is published: a stand-in, from below, and it says so
+  await expect(pill(page, BARE)).toHaveText('low ↓');
+  await expect(pill(page, BARE)).toHaveAttribute('data-look', 'near');
+  await expect(pill(page, BARE)).toHaveAttribute('title', /^No medium row is published/);
 
   await expect(page.locator('[data-effort-hint]')).toContainText(
     "Was any: scored at each model's top effort."
   );
   // a new effort is a change even when no router id moves
-  const ship = page.getByRole('button', { name: /^Ship \d+ changes?$/ });
-  await expect(ship).toBeEnabled();
+  await expect(page.getByRole('button', { name: /^Ship \d+ changes?$/ })).toBeEnabled();
 
-  // the inspector opens on the ladder, the medium rung marked
-  await bare.click();
+  // the inspector opens on the ladder, the low rung marked, medium greyed
+  await page.getByRole('table', POOL_TABLE).locator(`[role="row"][data-row="${BARE}"]`).click();
   const ladder = page.locator('[data-block="ladder"]');
   await expect(ladder).toBeVisible();
-  await expect(ladder.locator('[data-here="true"]')).toHaveAttribute('data-effort', 'medium');
-  await expect(ladder).toContainText('The seat runs at medium, and');
+  await expect(ladder.locator('[data-here="true"]')).toHaveAttribute('data-effort', 'low');
+  await expect(ladder.locator('[data-effort="medium"]')).toHaveAttribute('data-published', 'false');
+  await expect(ladder.locator('[data-effort="medium"]')).toContainText('seat runs here');
+  await expect(ladder).toContainText('so it is scored at low, the nearest below');
 
   // it is a saved setting: a reload opens at medium
   await expect
@@ -91,15 +92,16 @@ test('Runs at re-scores the seat at that effort and Ship counts it', async ({ pa
   await page.reload();
   // the pasted token lives in memory, so a reload is signed out again
   await signIn(page);
-  await expect(
-    page.getByRole('radiogroup', { name: 'Effort this seat runs at' }).getByRole('radio', {
-      name: 'medium',
-      exact: true
-    })
-  ).toHaveAttribute('aria-checked', 'true');
+  await expect(control.getByRole('radio', { name: 'medium', exact: true })).toHaveAttribute(
+    'aria-checked',
+    'true'
+  );
 
   await runsAt(page, 'any');
-  await expect(row(page, BARE).locator('[data-effort-pill]')).toHaveText('max');
+  await expect(pill(page, BARE)).toHaveText(top);
+  await expect
+    .poll(async () => (await (await page.request.get(`/v1/profiles/${SEAT}/settings`)).json()).effort)
+    .toBeNull();
 
   expect(thrown, 'the seat page threw').toEqual([]);
 });

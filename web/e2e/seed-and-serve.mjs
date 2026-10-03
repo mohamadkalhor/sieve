@@ -84,9 +84,9 @@ models = [
   "anthropic/claude-opus-5", "anthropic/claude-sonnet-5", "openai/gpt-5-2",
   "google/gemini-3-pro", "z-ai/glm-5.3", "deepseek/deepseek-v4",
   "google/veo-3-1", "google/veo-3-1-fast",
-  # EFFORT.md section 7: a family AA publishes at six efforts (Luna, which wins no seat), reached bare
-  # (scored at max under "any") and by an id that names its own mode
-  "openai/gpt-5-6-luna", "openai/gpt-5-6-luna-xhigh"
+  # EFFORT.md section 7: a family AA publishes at two efforts (high, low), reached bare
+  # (scored at its top row under "any")
+  "openai/gpt-oss-20b"
 ]
 
 [targets.out]

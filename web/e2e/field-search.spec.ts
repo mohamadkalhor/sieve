@@ -56,7 +56,11 @@ test('the field starts unfiltered: no search, no clear button, nothing lit', asy
   await expect(page.getByLabel('Provider', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Model', { exact: true })).toHaveValue('');
   await expect(page.getByRole('button', { name: 'Clear' })).toHaveCount(0);
-  expect((await litSpread(page)).pixels, 'no search, no green').toBe(0);
+  // Nothing is lit, so there is no count. Not "no green pixels": a
+  // seat's #1 is drawn in the accent, which is the lit colour, and since the
+  // seed reaches a measured multi-effort model (EFFORT.md section 7) the
+  // seats' picks are on the chart.
+  await expect(page.locator('.count[role="status"]')).toHaveCount(0);
 });
 
 test('both boxes offer their options, so nobody types an id from memory', async ({ page }) => {
@@ -118,6 +122,8 @@ test('a model narrows to that family, and clearing gives the whole field back', 
   await page.goto('/field');
   await expect(page.locator('canvas')).toBeVisible();
   const whole = await page.locator('figure.field').getAttribute('aria-label');
+  // the seats' own picks, in the accent, before anything is lit
+  const resting = (await litSpread(page)).pixels;
 
   await page.getByLabel('Model', { exact: true }).fill(family);
   await expect(page.locator('.count[role="status"]')).toHaveText(`${modes.length} lit`);
@@ -129,7 +135,7 @@ test('a model narrows to that family, and clearing gives the whole field back', 
   await page.getByRole('button', { name: 'Clear' }).click();
   await expect(page.getByLabel('Model', { exact: true })).toHaveValue('');
   await expect(page.getByRole('button', { name: 'Clear' })).toHaveCount(0);
-  await expect.poll(async () => (await litSpread(page)).pixels).toBe(0);
+  await expect.poll(async () => (await litSpread(page)).pixels).toBe(resting);
 });
 
 test('a model outside the chosen provider does not widen the search', async ({ page }) => {
