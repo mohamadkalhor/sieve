@@ -89,6 +89,8 @@ test('Runs at re-scores the seat at that effort and Ship counts it', async ({ pa
     .poll(async () => (await (await page.request.get(`/v1/profiles/${SEAT}/settings`)).json()).effort)
     .toBe('medium');
   await page.reload();
+  // the pasted token lives in memory, so a reload is signed out again
+  await signIn(page);
   await expect(
     page.getByRole('radiogroup', { name: 'Effort this seat runs at' }).getByRole('radio', {
       name: 'medium',
