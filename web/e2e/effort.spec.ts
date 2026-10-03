@@ -16,6 +16,17 @@ const SEAT = 'coder';
 const SOL = 'openai/gpt-5-6-sol';
 const SOL_XHIGH = 'openai/gpt-5-6-sol-xhigh';
 const POOL_TABLE = { name: 'Every reachable model' };
+/** The seeded store's write token: Runs at is a setting, and a setting is saved. */
+const TOKEN = 'ci-secret';
+
+/** The `who` block of the top bar. Sign in after opening a page, never before. */
+async function signIn(page: Page): Promise<void> {
+  await page.locator('button.who').click();
+  const field = page.getByPlaceholder('paste a bearer token');
+  await field.fill(TOKEN);
+  await page.keyboard.press('Escape');
+  await expect(field).toHaveCount(0);
+}
 
 function row(page: Page, id: string) {
   return page.getByRole('table', POOL_TABLE).locator(`[role="row"][data-row="${id}"]`);
@@ -34,6 +45,7 @@ test('Runs at re-scores the seat at that effort and Ship counts it', async ({ pa
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/seats/${SEAT}?view=all`);
+  await signIn(page);
 
   const control = page.locator('[data-block="runs-at"]');
   await expect(control).toBeVisible();
