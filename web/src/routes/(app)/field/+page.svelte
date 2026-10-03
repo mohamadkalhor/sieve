@@ -1,6 +1,7 @@
 <script lang="ts">
   /** Field: every measured model at a glance, one axis against what it costs. */
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { api, type ApiError, type ModelRow } from '$lib/api/client';
   import type {
     Axis,
@@ -11,12 +12,14 @@
     Ranking
   } from '$lib/types';
   import {
+    atEffort,
     BLEND_IN,
     BLEND_OUT,
     hasSidedPrices,
     mark,
     postedPerMillion,
-    rawPerMillion
+    rawPerMillion,
+    seatLines
   } from '$lib/field';
   import Empty from '$lib/components/Empty.svelte';
   import FieldSearch from '$lib/components/FieldSearch.svelte';
@@ -145,6 +148,31 @@
   const marked = $derived(mark(models, { provider, model }));
   const searching = $derived(Boolean(provider.trim() || model.trim()));
 
+  /**
+   * EFFORT.md section 6: opened from a seat (`?seat=build`), the point at that
+   * seat's effort is ringed on each family line, so the line says where on it
+   * the seat sits. With nothing searched, the lines drawn are the families of
+   * the models the seat ships.
+   */
+  const fromSeat = $derived($page.url.searchParams.get('seat'));
+  let seatEffort = $state<string | null>(null);
+  let seatIds = $state<string[]>([]);
+  $effect(() => {
+    const which = fromSeat;
+    seatEffort = null;
+    seatIds = [];
+    if (!which) return;
+    void Promise.all([api.profileSettings(which), api.chain(which)]).then(([held, shipped]) => {
+      if (which !== fromSeat) return;
+      seatEffort = held.ok ? (held.value.effort ?? null) : null;
+      seatIds = shipped.ok ? [shipped.value.primary, ...(shipped.value.fallbacks ?? [])] : [];
+    });
+  });
+  const familyLines = $derived(
+    searching || !fromSeat ? marked.lines : seatLines(models, seatIds)
+  );
+  const ringed = $derived(atEffort(familyLines, seatEffort));
+
   function costOf(row: ModelRow): number | null {
     if (profileView) return costs.get(row.id) ?? null;
     if (price === 'blended') return postedPerMillion(row.price);
@@ -159,6 +187,7 @@
       reachable: row.reachable,
       primary: seats.has(row.id),
       fallback: fallbacks.has(row.id),
+      seatEffort: ringed.has(row.id),
       effort: row.effort,
       lit: marked.lit.has(row.id),
       dim: searching && !marked.lit.has(row.id),
@@ -169,7 +198,7 @@
   );
 
   const lines = $derived<Line[]>(
-    [...marked.lines].map(([family, modes]) => ({ family, ids: modes.map((m) => m.id) }))
+    [...familyLines].map(([family, modes]) => ({ family, ids: modes.map((m) => m.id) }))
   );
 
   function chooseView(next: string) {

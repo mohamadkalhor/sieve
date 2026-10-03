@@ -9,7 +9,8 @@
    * and an effort the family does not publish is still listed, greyed, so a
    * stand-in is visibly a stand-in. The sentence under it says the same thing
    * in words. Nothing here is drawn for a one-setting model: the card's ladder
-   * is empty and the parent skips the block.
+   * is empty and the parent skips the block. The link at the foot opens the
+   * Field from this seat, where the seat's effort is ringed on each line.
    */
   import type { Effort, EffortHow, LadderRung } from '$lib/api/client';
   import { ladderLines, ladderSentence, SAME_PRICE } from './view';
@@ -61,6 +62,7 @@
 
   {#if sentence}<p class="say">{sentence}</p>{/if}
   <p class="say">{SAME_PRICE}</p>
+  <a class="field" href={`/field?seat=${encodeURIComponent(seatName)}`}>See it on the Field</a>
 </section>
 
 <style>
@@ -177,6 +179,17 @@
 
   .iq {
     color: var(--c-muted);
+  }
+
+  .field {
+    align-self: flex-start;
+    font-size: 12px;
+    color: var(--c-ink-2);
+    text-underline-offset: 2px;
+  }
+
+  .field:hover {
+    color: var(--c-accent);
   }
 
   .say {

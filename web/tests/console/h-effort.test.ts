@@ -194,3 +194,36 @@ describe('ladderSentence', () => {
     expect(ladderSentence([rung({ effort: 'max' })], 'low', 'X', 'exact')).toBe('');
   });
 });
+
+/* ------------------------------------------------------------------------ */
+/* the Field ring                                                            */
+/* ------------------------------------------------------------------------ */
+
+import type { ModelRow } from '../../src/lib/api/client';
+import { atEffort, seatLines } from '../../src/lib/field';
+
+const mode = (id: string, family: string | null, effort: string | null): ModelRow =>
+  ({ id, family, effort, name: id, creator: 'x' }) as unknown as ModelRow;
+
+const FIELD = [
+  mode('astra', 'astra', 'max'),
+  mode('astra-medium', 'astra', 'medium'),
+  mode('astra-low', 'astra', 'low'),
+  mode('glm', 'glm', 'max'),
+  mode('glm-low', 'glm', 'low'),
+  mode('muse', null, null)
+];
+
+describe('the Field from a seat', () => {
+  it("draws the lines of the seat's own families", () => {
+    expect([...seatLines(FIELD, ['astra', 'muse']).keys()]).toEqual(['astra']);
+    expect(seatLines(FIELD, []).size).toBe(0);
+  });
+
+  it("rings the mode at the seat's effort, and nothing where none is published", () => {
+    const lines = seatLines(FIELD, ['astra', 'glm']);
+    expect([...atEffort(lines, 'medium')]).toEqual(['astra-medium']);
+    expect([...atEffort(lines, 'low')].sort()).toEqual(['astra-low', 'glm-low']);
+    expect(atEffort(lines, null).size).toBe(0);
+  });
+});

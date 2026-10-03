@@ -200,3 +200,36 @@ function ordered(rows: ModelRow[]): ModelRow[] {
     (a, b) => effortRank(a.effort) - effortRank(b.effort) || a.id.localeCompare(b.id)
   );
 }
+
+/**
+ * The lines a seat's own models sit on (EFFORT.md section 6): every
+ * multi-effort family one of `ids` belongs to. Used when the Field is opened
+ * from a seat and nothing has been searched, so the seat's families are drawn
+ * without asking for them.
+ */
+export function seatLines(models: ModelRow[], ids: Iterable<string>): Map<string, ModelRow[]> {
+  const wanted = new Set(ids);
+  const families = new Set(
+    models.filter((m) => wanted.has(m.id) && m.family).map((m) => m.family as string)
+  );
+  const out = new Map<string, ModelRow[]>();
+  for (const [family, modes] of familyModes(models)) {
+    if (families.has(family)) out.set(family, modes);
+  }
+  return out;
+}
+
+/**
+ * The point to ring on each line: the mode at the seat's effort. A family
+ * that does not publish that effort gets no ring -- the Field shows rows,
+ * and there is no row there to point at. Null effort (any) rings nothing.
+ */
+export function atEffort(lines: Map<string, ModelRow[]>, effort: string | null): Set<string> {
+  const out = new Set<string>();
+  if (!effort) return out;
+  for (const modes of lines.values()) {
+    const hit = modes.find((m) => m.effort === effort);
+    if (hit) out.add(hit.id);
+  }
+  return out;
+}

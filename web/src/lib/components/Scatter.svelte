@@ -34,6 +34,11 @@
     measured?: boolean;
     /** in the chain of the profile being viewed, after its pick */
     fallback?: boolean;
+    /**
+     * The mode at the effort the seat the Field was opened from runs at
+     * (EFFORT.md section 6): ringed in the accent, on top of its line.
+     */
+    seatEffort?: boolean;
   }
 
   /** One model's effort modes, already in effort order. */
@@ -504,6 +509,16 @@
     }
 
     drawLines(ctx, colour);
+    // After the lines, so the ring sits on top of the line it marks a place on.
+    for (const { point, px, py, off } of placed) {
+      if (!point.seatEffort || point.hidden || off) continue;
+      ctx.strokeStyle = colour('--accent');
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(px, py, 9, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
     titles(ctx, colour);
   }
 
