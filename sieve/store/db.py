@@ -118,6 +118,11 @@ class Store:
         self._local = threading.local()
         self._memory: sqlite3.Connection | None = None
         self._all: list[sqlite3.Connection] = []
+        # Which thread opened each connection. A server's worker threads come
+        # and go, and a connection whose thread has exited is never used again,
+        # so it is closed rather than held open until the process dies.
+        self._owners: dict[sqlite3.Connection, threading.Thread] = {}
+        self._owners_lock = threading.Lock()
         self._write_lock = threading.RLock()
         # Built views of the current snapshot, so a ranking costs the ranking
         # and not another scan of the observation table. See `store/cache.py`.
@@ -125,13 +130,35 @@ class Store:
         self.migrate()
 
     def _connect(self) -> sqlite3.Connection:
+        self._close_orphans()
         connection = sqlite3.connect(str(self.path), check_same_thread=False)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA busy_timeout=5000")
-        self._all.append(connection)
+        with self._owners_lock:
+            self._all.append(connection)
+            if not self._shared:
+                self._owners[connection] = threading.current_thread()
         return connection
+
+    def _close_orphans(self) -> None:
+        """Close the connections of threads that have exited.
+
+        Without this every short-lived worker thread leaves a connection (two
+        file handles: the db and its WAL) open for good, and a long-running
+        server runs out of file descriptors."""
+        with self._owners_lock:
+            kept: list[sqlite3.Connection] = []
+            for connection in self._all:
+                owner = self._owners.get(connection)
+                if owner is None or owner.is_alive():
+                    kept.append(connection)
+                    continue
+                del self._owners[connection]
+                with suppress(sqlite3.Error):
+                    connection.close()
+            self._all = kept
 
     @property
     def db(self) -> sqlite3.Connection:
@@ -183,6 +210,7 @@ class Store:
             with suppress(sqlite3.Error):
                 connection.close()
         self._all.clear()
+        self._owners.clear()
         self._memory = None
         self._local = threading.local()
 
